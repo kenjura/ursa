@@ -5,6 +5,7 @@
   "description": "static site generator from MD/wikitext/YML",
   "main": "index.js",
   "scripts": {
+    "serve": "nodemon src/serve.js",
     "start": "node src/index.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
@@ -16,7 +17,11 @@
     "markdown-it-container": "^3.0.0",
     "markdown-it-deflist": "^2.1.0",
     "markdown-it-sup": "^1.0.0",
+    "node-static": "github:cloudhead/node-static",
     "node-watch": "^0.7.3",
     "recursive-readdir": "^2.2.2"
+  },
+  "devDependencies": {
+    "nodemon": "^2.0.15"
   }
 }
