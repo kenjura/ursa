@@ -1,15 +1,18 @@
 import watch from 'node-watch';
 
 import { generate } from './jobs/generate.js';
-import { resolve } from 'path';
+import { join, resolve } from 'path';
 
-serve(resolve(process.cwd(), 'build'));
+const source = process.env.SOURCE ?? join(process.cwd(), 'source');
+const build = process.env.BUILD ?? join(process.cwd(), 'build');
 
-generate({ source:resolve(process.cwd(), 'source') });
+serve(build);
+
+generate({ source });
 
 watch(resolve(process.cwd()), { recursive:true, filter }, async (evt, name) => {
     console.log('files changed! generating output');
-    await generate({ source:resolve(process.cwd(), 'source') });
+    await generate({ source });
 
 });
 
