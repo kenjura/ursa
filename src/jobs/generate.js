@@ -3,18 +3,21 @@ import recurse from 'recursive-readdir';
 import { copyFile, readdir, readFile } from 'fs/promises';
 import { renderFile } from '../helper/fileRenderer.js';
 import { outputFile } from 'fs-extra';
-import { parse, resolve } from 'path';
+import { join, parse, resolve } from 'path';
 import { URL } from 'url';
 
 export async function generate({ 
-    source=resolve(process.cwd(), '.'),
-    meta=resolve(process.cwd(), 'meta'),
-    output=resolve(process.cwd(), 'build'),
+    source=join(process.cwd(), '.'),
+    meta=join(process.cwd(), 'meta'),
+    output=join(process.cwd(), 'build'),
 }={}) {
     console.log({source, meta, output});
 
     const allSourceFilenames = await recurse(source);
     // console.log(allSourceFilenames);
+
+    if (source.substr(-1) !== '/') source += '/'; // warning: might not work in windows
+    if (output.substr(-1) !== '/') output += '/';
 
     const templates = await getTemplates(meta); // todo: error if no default template
     console.log({templates});
