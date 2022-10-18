@@ -1,7 +1,7 @@
 {
   "name": "ursa",
   "type": "module",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "description": "static site generator from MD/wikitext/YML",
   "main": "index.js",
   "scripts": {
@@ -13,6 +13,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "express": "^4.18.2",
     "fs-extra": "^10.0.1",
     "markdown-it": "^12.3.2",
     "markdown-it-container": "^3.0.0",
