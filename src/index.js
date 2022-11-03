@@ -1,5 +1,8 @@
-import { generate } from './jobs/generate.js';
+import { generate } from "./jobs/generate.js";
 
-import { resolve } from 'path';
+import { resolve } from "path";
 
-generate({ source:resolve(process.cwd(), 'source') });
+const source = process.env.SOURCE ?? join(process.cwd(), "source");
+const build = process.env.BUILD ?? join(process.cwd(), "build");
+
+generate({ source, build });
