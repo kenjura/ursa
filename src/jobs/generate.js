@@ -1,6 +1,7 @@
 import recurse from "recursive-readdir";
 
 import { copyFile, readdir, readFile } from "fs/promises";
+import { getAutomenu } from "../helper/automenu.js";
 import { renderFile } from "../helper/fileRenderer.js";
 import { outputFile } from "fs-extra";
 import { join, parse, resolve } from "path";
@@ -20,9 +21,9 @@ export async function generate({
   if (output.substr(-1) !== "/") output += "/";
 
   const templates = await getTemplates(meta); // todo: error if no default template
-  console.log({ templates });
+  // console.log({ templates });
 
-  const menu = await getMenu(allSourceFilenames);
+  const menu = await getMenu(allSourceFilenames, source);
 
   // read all articles, process them, copy them to build
   const articleExtensions = /\.(md|txt|yml)/;
@@ -99,19 +100,24 @@ async function getTemplates(meta) {
   return templates;
 }
 
-async function getMenu(allSourceFilenames) {
+async function getMenu(allSourceFilenames, source) {
   // todo: handle various incarnations of menu filename
 
-  const allMenus = allSourceFilenames.filter((filename) =>
-    filename.match(/_?menu\.(html|yml|md|txt)/)
-  );
-  console.log({ allMenus });
-
-  // pick best menu...TODO: actually apply logic here
-  const bestMenu = allMenus[0];
-  const rawBody = await readFile(bestMenu, "utf8");
-  const type = parse(bestMenu).ext;
-  const menuBody = renderFile({ fileContents: rawBody, type });
-
+  const rawMenu = await getAutomenu(source);
+  const menuBody = renderFile({ fileContents: rawMenu, type: ".md" });
   return menuBody;
+
+  // const allMenus = allSourceFilenames.filter((filename) =>
+  //   filename.match(/_?menu\.(html|yml|md|txt)/)
+  // );
+  // console.log({ allMenus });
+  // if (allMenus.length === 0) return "";
+
+  // // pick best menu...TODO: actually apply logic here
+  // const bestMenu = allMenus[0];
+  // const rawBody = await readFile(bestMenu, "utf8");
+  // const type = parse(bestMenu).ext;
+  // const menuBody = renderFile({ fileContents: rawBody, type });
+
+  // return menuBody;
 }
