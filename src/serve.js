@@ -50,62 +50,11 @@ function serve(root) {
   const app = express();
   const port = process.env.PORT || 8080;
 
-  app.get("/", async (req, res) => {
-    console.log({ build });
-    const dir = await readdir(build);
-    const html = dir
-      .map((file) => `<li><a href="${file}">${file}</a></li>`)
-      .join("");
-    res.setHeader("Content-Type", "text/html");
-    res.send(html);
-  });
-
-  app.use(express.static(build, { extensions: [".html"] }));
+  app.use(
+    express.static(build, { extensions: [".html"], index: "index.html" })
+  );
 
   app.listen(port, () => {
     console.log(`server listening on port ${port}`);
   });
-
-  //   const staticServer = new Server(root, { defaultExtension: "html" });
-
-  //   const port = process.env.PORT || 8080;
-  //   console.log("blee");
-  //   console.log(port);
-
-  //   const requestListener = function (req, res) {
-  //     staticServer.serve(req, res, (err, result) => {
-  //       if (err) {
-  //         console.log("file server error: ", err);
-  //         res.writeHead(err.status, err.headers);
-  //         res.end();
-  //       }
-  //     });
-  //   };
-
-  //   const httpServer = http.createServer(requestListener);
-
-  //   // .createServer(function (req, res) {
-  //   //   console.log(`Serving ${req.url}`);
-  //   //   staticServer.serve(req, res, (err, result) => {
-  //   //     if (err) {
-  //   //       console.error("file server encountered an error: ", err);
-  //   //       res.writeHead(err.status, err.headers);
-  //   //       res.end();
-  //   //     }
-  //   //   });
-  //   // })
-  //   // .listen(port);
-
-  //   httpServer.on("connect", () =>
-  //     console.log(`server is connected on port ${port}`)
-  //   );
-  //   httpServer.on("connection", () =>
-  //     console.log(`server is connected on port ${port}`)
-  //   );
-  //   httpServer.on("error", (a, b, c) => console.error({ a, b, c }));
-
-  //   httpServer.listen(port, "localhost", (a, b, c) =>
-  //     console.log(`server is listening on port ${port}`)
-  //   );
-  //   console.log(httpServer);
 }

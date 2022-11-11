@@ -25,3 +25,8 @@ Defaults:
 - output: the "build" directory in cwd
 
 This is not very useful. Will make these configurable.
+
+
+# Inputs and Outputs
+
+SOURCE folder should have at least an index.md in it
