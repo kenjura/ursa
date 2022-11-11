@@ -38,11 +38,14 @@
             }
             nav a {
                 text-decoration: none;
-                /* padding: 0.15rem 1rem; */
+                box-sizing: border-box;
                 color: inherit;
+                display: inline-block;
+                padding: 0.15rem 1rem;
+                width: 100%;
             }
             nav a:hover {
-                color: #7070b7;
+                /* color: #7070b7; */
             }
             nav ul {
                 margin: 0;
@@ -50,13 +53,12 @@
             }
             nav li {
                 list-style: none;
-                padding: 0.15rem 1rem;
             }
             nav ul ul {
                 display: none;
                 position: absolute;
                 background-color: #123;
-                padding: 10px;
+                /* padding: 10px; */
                 left: 100%;
                 top: 0;
             }
@@ -69,6 +71,10 @@
             }
             nav li:hover {
                 background-color: rgba(255,255,255,0.1);
+            }
+            nav li li {
+                width: 100%;
+                white-space: nowrap;
             }
 
             
