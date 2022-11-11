@@ -4,7 +4,7 @@ import watch from "node-watch";
 import { generate } from "./jobs/generate.js";
 import { join, resolve } from "path";
 
-const source = process.env.SOURCE ?? join(process.cwd(), "source");
+const source = resolve(process.env.SOURCE ?? join(process.cwd(), "source"));
 const build = process.env.BUILD ?? join(process.cwd(), "build");
 
 await generate({ source });
@@ -21,15 +21,20 @@ watch(
   }
 );
 
+watch(source, { recursive: true }, async (evt, name) => {
+  console.log("source files changed! generating output");
+  await generate({ source });
+});
+
 /**
  * we're only interested in meta (and maybe, in the future, source)
  * for src changes, we need the node process to restart
  */
 function filter(filename, skip) {
-  console.log("testing ", filename);
+  // console.log("testing ", filename);
   if (/\/build/.test(filename)) return skip;
-  if (/\/source/.test(filename)) return skip;
   if (/\/node_modules/.test(filename)) return skip;
+  if (/\.git/.test(filename)) return skip;
   if (/\/src/.test(filename)) return skip;
   if (/\/meta/.test(filename)) return true;
   return false;
@@ -55,7 +60,7 @@ function serve(root) {
     res.send(html);
   });
 
-  app.use(express.static(build));
+  app.use(express.static(build, { extensions: [".html"] }));
 
   app.listen(port, () => {
     console.log(`server listening on port ${port}`);
