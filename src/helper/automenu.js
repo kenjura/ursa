@@ -36,7 +36,7 @@ function renderMenuItem({ path, name, children, source }) {
   //     : null;
   const html = `
 <li data-has-children="${!!children}">
-  <a href="${href}">${label}</a>
+  <a href="/${href}">${label}</a>
   ${
     children
       ? `<ul>
