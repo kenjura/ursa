@@ -43,6 +43,7 @@
                 display: inline-block;
                 padding: 0.15rem 1rem;
                 width: 100%;
+                position: relative;
             }
             nav a:hover {
                 /* color: #7070b7; */
@@ -61,9 +62,12 @@
                 /* padding: 10px; */
                 left: 100%;
                 top: 0;
+                height: 100%;
+                min-width: 100%;
+                overflow: auto;
             }
             nav li {
-                position: relative;
+                /* position: relative; */
             }
             nav li:hover > ul {
                 display: block;
@@ -75,6 +79,13 @@
             nav li li {
                 width: 100%;
                 white-space: nowrap;
+            }
+            nav li[data-has-children="true"] > a::after {
+                content: "›";
+                position: absolute;
+                top: 2px;
+                right: 2px;
+                opacity: 0.5;
             }
 
             
