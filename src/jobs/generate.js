@@ -2,6 +2,7 @@ import recurse from "recursive-readdir";
 
 import { copyFile, mkdir, readdir, readFile } from "fs/promises";
 import { getAutomenu } from "../helper/automenu.js";
+import { extractMetadata } from "../helper/metadataExtractor.js";
 import { renderFile } from "../helper/fileRenderer.js";
 import { copy as copyDir, emptyDir, outputFile } from "fs-extra";
 import { join, parse, resolve } from "path";
