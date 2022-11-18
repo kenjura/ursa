@@ -1,6 +1,7 @@
 import recurse from "recursive-readdir";
 
 import { copyFile, readdir, readFile } from "fs/promises";
+import { emptyDir } from "fs-extra";
 import { getAutomenu } from "../helper/automenu.js";
 import { renderFile } from "../helper/fileRenderer.js";
 import { extractMetadata } from "../helper/metadataExtractor.js";
@@ -25,6 +26,9 @@ export async function generate({
   // console.log({ templates });
 
   const menu = await getMenu(allSourceFilenames, source);
+
+  // clean build directory
+  await emptyDir(output);
 
   // read all articles, process them, copy them to build
   const articleExtensions = /\.(md|txt|yml)/;
