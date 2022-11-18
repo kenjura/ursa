@@ -50,6 +50,16 @@ function serve(root) {
     express.static(build, { extensions: [".html"], index: "index.html" })
   );
 
+  app.get("/", async (req, res) => {
+    console.log({ build });
+    const dir = await readdir(build);
+    const html = dir
+      .map((file) => `<li><a href="${file}">${file}</a></li>`)
+      .join("");
+    res.setHeader("Content-Type", "text/html");
+    res.send(html);
+  });
+
   app.listen(port, () => {
     console.log(`server listening on port ${port}`);
   });
