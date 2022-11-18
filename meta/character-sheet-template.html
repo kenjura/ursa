@@ -1,85 +1,7 @@
 <html>
   <head>
-    <style>
-      @import url("https://fonts.googleapis.com/css2?family=Work+Sans:wght@100;300;400;600&display=swap");
-
-      body {
-        background-color: #123;
-        color: #ccc;
-        font-family: "Work Sans", sans-serif;
-      }
-      article {
-        max-width: 40em;
-        margin: 0 auto;
-        padding: 5em;
-        box-shadow: 0px 0px 5px 2px rgba(0, 0, 0, 0.3);
-        background-color: rgba(0, 0, 0, 0.15);
-      }
-      article aside {
-        float: right;
-        border: 1px solid #234;
-        margin: 0 0 20px 20px;
-        padding: 20px;
-      }
-      article aside img {
-        max-width: 12rem;
-      }
-      article a {
-        color: #136ac1;
-        text-decoration: none;
-      }
-
-      nav {
-        position: fixed;
-        max-width: calc(50vw - 28rem);
-        left: 1rem;
-        top: 1rem;
-        font-weight: 300;
-      }
-      nav a {
-        text-decoration: none;
-        /* padding: 0.15rem 1rem; */
-        color: inherit;
-      }
-      nav a:hover {
-        color: #7070b7;
-      }
-      nav ul {
-        margin: 0;
-        padding: 0;
-      }
-      nav li {
-        list-style: none;
-        padding: 0.15rem 1rem;
-      }
-      nav ul ul {
-        display: none;
-        position: absolute;
-        background-color: #123;
-        padding: 10px;
-        left: 100%;
-        top: 0;
-      }
-      nav li {
-        position: relative;
-      }
-      nav li:hover > ul {
-        display: block;
-        background-color: rgba(255, 255, 255, 0.1);
-      }
-      nav li:hover {
-        background-color: rgba(255, 255, 255, 0.1);
-      }
-
-      #global-nav {
-        position: fixed;
-        max-width: calc(50vw - 28rem);
-        left: 1rem;
-        bottom: 1rem;
-        font-weight: 300;
-      }
-    </style>
-    <link rel="stylesheet" href="style.css" />
+    <link rel="stylesheet" href="/public/default.css" />
+    <link rel="stylesheet" href="/public/character-sheet/css/character-sheet.css" />
   </head>
   <body>
     <nav>${menu}</nav>
@@ -87,40 +9,8 @@
     <article>${body}</article>
     <div id="global-nav">global nav here</div>
     <script>
-      function CharacterSheet({ character }) {
-        return `<div class="character-sheet">
-                        ${Attributes({ attributes: character.attributes })}
-                    </div>`;
-      }
-      function Attributes({ attributes }) {
-        return `<div class="attributes">
-            <header>Attributes</header>
-            <table>
-                ${attributes.map((attribute) => Attribute({ attribute }))}
-            </table>
-        </div>`;
-      }
-      function Attribute({ attribute }) {
-        return `<tr>
-            <td>${attribute.name}</td>
-            <td>${Modifier({ modifier: attribute.modifier })}</td>
-        </tr>`;
-      }
-      function Modifier({ modifier }) {
-        if (isNaN(modifier)) return "?";
-        if (modifier > 0) return `+${modifier}`;
-        if (modifier === 0) return "+0";
-        if (modifier < 0) return modifier;
-        return "??";
-      }
-
-      function start() {
-        const character = window.meta.character;
-        const characterHtml = CharacterSheet({ character });
-        document.querySelector("article").innerHTML = characterHtml;
-      }
       window.meta = JSON.parse(`${meta}`);
-      start();
     </script>
+    <script type="module" src="/public/character-sheet/js/main.js"></script>
   </body>
 </html>
