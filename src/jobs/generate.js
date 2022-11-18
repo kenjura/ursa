@@ -3,6 +3,7 @@ import recurse from "recursive-readdir";
 import { copyFile, readdir, readFile } from "fs/promises";
 import { getAutomenu } from "../helper/automenu.js";
 import { renderFile } from "../helper/fileRenderer.js";
+import { extractMetadata } from "../helper/metadataExtractor.js";
 import { outputFile } from "fs-extra";
 import { join, parse, resolve } from "path";
 import { URL } from "url";
@@ -34,15 +35,18 @@ export async function generate({
     allSourceFilenamesThatAreArticles.map(async (file) => {
       console.log(`processing article ${file}`);
 
-      const requestedTemplateName = null; // todo: read the file to figure out which template. For now, assuming null, i.e. default
-      const template =
-        templates[requestedTemplateName] || templates["default-template"];
       const rawBody = await readFile(file, "utf8");
       const type = parse(file).ext;
+      const meta = extractMetadata(rawBody);
       const body = renderFile({ fileContents: rawBody, type });
+
+      const requestedTemplateName = meta && meta.template;
+      const template =
+        templates[requestedTemplateName] || templates["default-template"];
 
       const finalHtml = template
         .replace("${menu}", menu)
+        .replace("${meta}", JSON.stringify(meta))
         .replace("${body}", body);
 
       const outputFilename = file

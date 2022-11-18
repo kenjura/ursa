@@ -12,14 +12,10 @@ console.log("done generating. now serving...");
 
 serve(build);
 
-watch(
-  resolve(process.cwd()),
-  { recursive: true, filter },
-  async (evt, name) => {
-    console.log("files changed! generating output");
-    await generate({ source });
-  }
-);
+watch(source, { recursive: true, filter }, async (evt, name) => {
+  console.log("files changed! generating output");
+  await generate({ source });
+});
 
 watch(source, { recursive: true }, async (evt, name) => {
   console.log("source files changed! generating output");
