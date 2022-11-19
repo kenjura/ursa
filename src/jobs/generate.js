@@ -4,6 +4,7 @@ import { copyFile, mkdir, readdir, readFile } from "fs/promises";
 import { getAutomenu } from "../helper/automenu.js";
 import { extractMetadata } from "../helper/metadataExtractor.js";
 import { renderFile } from "../helper/fileRenderer.js";
+import { transformAllJSXInDirectory } from "../helper/jsxHelper.js";
 import { copy as copyDir, emptyDir, outputFile } from "fs-extra";
 import { join, parse, resolve } from "path";
 import { URL } from "url";
@@ -33,6 +34,7 @@ export async function generate({
   const pub = join(output, "public");
   await mkdir(pub);
   await copyDir(meta, pub);
+  transformAllJSXInDirectory(pub);
 
   // read all articles, process them, copy them to build
   const articleExtensions = /\.(md|txt|yml)/;

@@ -6,11 +6,13 @@
   <body>
     <nav>${menu}</nav>
     <header>Character Sheet</header>
-    <article>${body}</article>
+    <article id="react-root">${body}</article>
     <div id="global-nav">global nav here</div>
     <script>
       window.meta = JSON.parse(`${meta}`);
     </script>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script type="module" src="/public/character-sheet/js/main.js"></script>
   </body>
 </html>
