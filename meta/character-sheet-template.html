@@ -1,16 +1,76 @@
 <html>
-  <head>
-    <link rel="stylesheet" href="/public/default.css" />
-    <link rel="stylesheet" href="/public/character-sheet/css/character-sheet.css" />
-  </head>
-  <body>
-    <nav>${menu}</nav>
-    <header>Character Sheet</header>
-    <article>${body}</article>
-    <div id="global-nav">global nav here</div>
-    <script>
-      window.meta = JSON.parse(`${meta}`);
-    </script>
-    <script type="module" src="/public/character-sheet/js/main.js"></script>
-  </body>
+
+<head>
+  <link rel="stylesheet" href="/public/default.css" />
+  <link rel="stylesheet" href="/public/cssui.bundle.min.css" />
+  <link rel="stylesheet" href="/public/character-sheet.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css" />
+  <style>
+
+  </style>
+</head>
+
+<body data-template-id="character-sheet">
+  <nav id="nav-main">
+    <span id="menu-icon" class="material-symbols-outlined">
+      menu
+    </span>
+    ${menu}
+  </nav>
+  <nav id="tabs" level="2">
+    <!-- <ul>
+            <li><a href="#article">Article</a></li>
+            <li><a href="#character-sheet">Character Sheet</a></li>
+        </ul> -->
+
+  </nav>
+  <article>
+    <div id="tab-container" data-tabs>
+      <input checked="checked" id="tab1" type="radio" name="tab" data-tab="tab1" />
+      <input id="tab2" type="radio" name="tab" data-tab="tab2" />
+      <nav>
+        <label for="tab1" data-tab-label="tab1" role="tab">Article</label>
+        <label for="tab2" data-tab-label="tab2" role="tab">Character Sheet</label>
+      </nav>
+      <section data-tab-panel="tab1" role="tabpanel" aria-labelledby="tab1">
+        ${body}
+      </section>
+      <section data-tab-panel="tab2" role="tabpanel" aria-labelledby="tab2">
+        ${transformedMetadata}
+      </section>
+    </div>
+  </article>
+  <div id="global-nav">
+    global nav here
+  </div>
+
+  <script src="https://cdn.ably.com/lib/ably.min-1.js"></script>
+  <script>
+    const COMPROMISED_CLIENT_SIDE_SECRET_API_KEY =
+      'thisiswheretheapikeywouldgoIFIHADONE';
+    const CHAT_CHANNEL_NAME = 'chat-channel';
+
+    var client = new Ably.Realtime(COMPROMISED_CLIENT_SIDE_SECRET_API_KEY);
+    let channel;
+    client.connection.on('connected', function () {
+      channel = client.channels.get(CHAT_CHANNEL_NAME);
+      channel.subscribe(function (message) {
+        // message.name; // 'greeting'
+        // message.data; // 'Hello World!'
+      });
+    });
+
+    function roll(mod) {
+      const d20 = Math.ceil(Math.random() * 20);
+      const result = d20 + mod;
+      body = `Rolled a ${d20} with a modifier of ${mod}. Result is ${result}.`;
+      channel.publish('test-message', {
+        author: 'me',
+        datetime: new Date(),
+        body,
+      });
+    }
+  </script>
+</body>
+
 </html>

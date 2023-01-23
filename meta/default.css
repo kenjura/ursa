@@ -1,4 +1,5 @@
 @import url("https://fonts.googleapis.com/css2?family=Work+Sans:wght@100;300;400;600&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200");
 
 body {
   background-color: #123;
@@ -17,23 +18,24 @@ article aside {
   border: 1px solid #234;
   margin: 0 0 20px 20px;
   padding: 20px;
+  max-width: 40%;
 }
 article aside img {
-  max-width: 12rem;
+  max-width: 100%;
 }
 article a {
   color: #136ac1;
   text-decoration: none;
 }
 
-nav {
+nav#nav-main {
   position: fixed;
   max-width: calc(50vw - 28rem);
   left: 1rem;
   top: 1rem;
   font-weight: 300;
 }
-nav a {
+nav#nav-main a {
   text-decoration: none;
   box-sizing: border-box;
   color: inherit;
@@ -42,17 +44,17 @@ nav a {
   width: 100%;
   position: relative;
 }
-nav a:hover {
+nav#nav-main a:hover {
   /* color: #7070b7; */
 }
-nav ul {
+nav#nav-main ul {
   margin: 0;
   padding: 0;
 }
-nav li {
+nav#nav-main li {
   list-style: none;
 }
-nav ul ul {
+nav#nav-main ul ul {
   display: none;
   position: absolute;
   background-color: #123;
@@ -63,21 +65,21 @@ nav ul ul {
   min-width: 100%;
   overflow: auto;
 }
-nav li {
+nav#nav-main li {
   /* position: relative; */
 }
-nav li:hover > ul {
+nav#nav-main li:hover > ul {
   display: block;
   background-color: rgba(255, 255, 255, 0.1);
 }
-nav li:hover {
+nav#nav-main li:hover {
   background-color: rgba(255, 255, 255, 0.1);
 }
-nav li li {
+nav#nav-main li li {
   width: 100%;
   white-space: nowrap;
 }
-nav li[data-has-children="true"] > a::after {
+nav#nav-main li[data-has-children="true"] > a::after {
   content: ">";
   position: absolute;
   top: 5px;
@@ -92,4 +94,61 @@ nav li[data-has-children="true"] > a::after {
   left: 1rem;
   bottom: 1rem;
   font-weight: 300;
+}
+
+@media screen and (min-width:1200px) {
+  nav#nav-main #menu-icon {
+    display: none;
+  }
+  nav#mobile-menu {
+    display: none;
+  }
+  nav#desktop-menu {
+    display: block;
+  }
+}
+
+@media screen and (max-width:1199px) {
+  nav#mobile-menu {
+    display: block;
+  }
+  nav#desktop-menu {
+    display: none;
+  }
+  nav#nav-main {
+    font-size: 3rem;
+  }
+  nav#nav-main ul {
+    background-color: #123;
+    width: calc(100vw - 32px);
+    height: calc(100vw - 32px);
+  }
+  nav#nav-main > ul {
+    display: block; /* temp! */
+  }  
+  nav#nav-main #menu-icon {
+    display: block;
+  }
+  nav#nav-main:hover > ul {
+    display: block;
+  }
+  article {
+    max-width: 100%;
+  }
+  nav#nav-main li {
+    position: relative;
+  }
+  nav#nav-main ul ul {
+    top: 100%;
+    left: 0;
+  }
+}
+
+
+.material-symbols-outlined {
+  font-variation-settings:
+  'FILL' 0,
+  'wght' 400,
+  'GRAD' 0,
+  'opsz' 48
 }

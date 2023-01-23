@@ -1,0 +1,50 @@
+nav#tabs {
+    position: absolute;
+    top: 0;
+    left: calc(50% - 20em);
+    background: rgba(255,255,255,0.1);
+    height: 40px;
+}
+
+nav#tabs li {
+    display: inline-block;
+}
+nav#tabs li a {
+    background: rgba(255,255,255,0.1);
+    height: 40px;
+    line-height: 40px;
+}
+
+article {
+    box-sizing: content-box;
+
+}
+
+div#tab-container {
+    --tab-panel-background: transparent;
+    --tab-background-color: rgba(255,255,255,0.25) !important;
+}
+
+[data-tab=tab1]:checked~nav [data-tab-label=tab1], [data-tab=tab2]:checked~nav [data-tab-label=tab2], [data-tab=tab3]:checked~nav [data-tab-label=tab3] {
+    --tab-background-color: rgba(255,255,255,0.55) !important;
+}
+
+#character-sheet .rollable {
+    display: inline-block;
+    position: relative;
+    left: 3px;
+    transition: filter 0.3s, transform 0.3s;
+    
+    animation-play-state: paused;
+}
+#character-sheet .rollable:hover {
+    filter: brightness(1.5);
+    transform: scale(1.1);
+    animation-play-state: running;
+}
+
+#character-sheet .rollable .hexagon {
+    position: absolute;
+    top: 0px;
+    left: -7.5px;
+}
