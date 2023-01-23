@@ -2,10 +2,12 @@ import recurse from "recursive-readdir";
 
 import { copyFile, mkdir, readdir, readFile } from "fs/promises";
 import { getAutomenu } from "../helper/automenu.js";
+import { filterAsync } from "../helper/filterAsync.js";
+import { isDirectory } from "../helper/isDirectory.js";
 import { extractMetadata } from "../helper/metadataExtractor.js";
 import { renderFile } from "../helper/fileRenderer.js";
 import { copy as copyDir, emptyDir, outputFile } from "fs-extra";
-import { join, parse, resolve } from "path";
+import { basename, extname, join, parse, resolve } from "path";
 import { URL } from "url";
 
 export async function generate({
@@ -15,8 +17,8 @@ export async function generate({
 } = {}) {
   console.log({ source, meta, output });
 
-  const allSourceFilenames = await recurse(source);
-  // console.log(allSourceFilenames);
+  const allSourceFilenames = await recurse(source, [() => false]);
+  console.log(allSourceFilenames);
 
   if (source.substr(-1) !== "/") source += "/"; // warning: might not work in windows
   if (output.substr(-1) !== "/") output += "/";
@@ -39,6 +41,13 @@ export async function generate({
   const allSourceFilenamesThatAreArticles = allSourceFilenames.filter(
     (filename) => filename.match(articleExtensions)
   );
+  const allSourceFilenamesThatAreDirectories = await filterAsync(
+    allSourceFilenames,
+    (filename) => isDirectory(filename)
+  );
+
+  // process individual articles
+  const jsonCache = new Map();
   await Promise.all(
     allSourceFilenamesThatAreArticles.map(async (file) => {
       console.log(`processing article ${file}`);
@@ -47,6 +56,8 @@ export async function generate({
       const type = parse(file).ext;
       const meta = extractMetadata(rawBody);
       const body = renderFile({ fileContents: rawBody, type });
+      const ext = extname(file);
+      const base = basename(file, ext);
 
       const requestedTemplateName = meta && meta.template;
       const template =
@@ -64,6 +75,65 @@ export async function generate({
       console.log(`writing article to ${outputFilename}`);
 
       await outputFile(outputFilename, finalHtml);
+
+      // json
+
+      const jsonOutputFilename = outputFilename.replace(".html", ".json");
+      const jsonObject = {
+        name: base,
+        contents: rawBody,
+        metadata: meta,
+        transformedMetadata: null,
+        html: finalHtml,
+      };
+      jsonCache.set(file, jsonObject);
+      const json = JSON.stringify(jsonObject);
+      console.log(`writing article to ${jsonOutputFilename}`);
+      await outputFile(jsonOutputFilename, json);
+    })
+  );
+
+  console.log(jsonCache.keys());
+  // process directory indices
+  await Promise.all(
+    allSourceFilenamesThatAreDirectories.map(async (dir) => {
+      console.log(`processing directory ${dir}`);
+
+      const pathsInThisDirectory = allSourceFilenames.filter((filename) =>
+        filename.match(new RegExp(`${dir}.+`))
+      );
+
+      const jsonObjects = pathsInThisDirectory
+        .map((path) => {
+          const object = jsonCache.get(path);
+          return typeof object === "object" ? object : null;
+        })
+        .filter((a) => a);
+
+      const json = JSON.stringify(jsonObjects);
+
+      const outputFilename = dir.replace(source, output) + ".json";
+
+      console.log(`writing directory index to ${outputFilename}`);
+      await outputFile(outputFilename, json);
+
+      // html
+      const template = templates["default-template"]; // TODO: figure out a way to specify template for a directory index
+      const indexHtml = `<ul>${pathsInThisDirectory
+        .map((path) => {
+          const partialPath = path
+            .replace(source, "")
+            .replace(parse(path).ext, ".html");
+          const name = basename(path, parse(path).ext);
+          return `<li><a href="${partialPath}">${name}</a></li>`;
+        })
+        .join("")}</ul>`;
+      const finalHtml = template
+        .replace("${menu}", menu)
+        .replace("${body}", indexHtml);
+      const htmlOutputFilename = dir.replace(source, output) + ".html";
+      console.log(`writing directory index to ${htmlOutputFilename}`);
+      await outputFile(htmlOutputFilename, finalHtml);
     })
   );
 

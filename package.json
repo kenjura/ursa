@@ -5,8 +5,8 @@
   "description": "static site generator from MD/wikitext/YML",
   "main": "index.js",
   "scripts": {
-    "serve": "nodemon src/serve.js",
-    "serve:debug": "nodemon --inspect-brk src/serve.js",
+    "serve": "nodemon --config nodemon.json  src/serve.js",
+    "serve:debug": "nodemon --config nodemon.json  --inspect-brk src/serve.js",
     "start": "node src/index.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
@@ -23,7 +23,7 @@
     "markdown-it-sup": "^1.0.0",
     "node-static": "github:cloudhead/node-static",
     "node-watch": "^0.7.3",
-    "recursive-readdir": "^2.2.2",
+    "recursive-readdir": "github:kenjura/recursive-readdir",
     "yaml": "^2.1.3"
   },
   "devDependencies": {
