@@ -66,7 +66,7 @@ export async function generate({
       const requestedTemplateName = meta && meta.template;
       const template =
         templates[requestedTemplateName] || templates["default-template"];
-      console.log({ requestedTemplateName, templates: templates.keys });
+      // console.log({ requestedTemplateName, templates: templates.keys });
 
       const finalHtml = template
         .replace("${menu}", menu)
@@ -210,7 +210,7 @@ async function getMenu(allSourceFilenames, source) {
 }
 
 async function getTransformedMetadata(dirname, metadata) {
-  console.log("getTransformedMetadata > ", { dirname });
+  // console.log("getTransformedMetadata > ", { dirname });
   // custom transform? else, use default
   const customTransformFnFilename = join(dirname, "transformMetadata.js");
   let transformFn = defaultTransformFn;

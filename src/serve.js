@@ -8,19 +8,19 @@ const source = resolve(process.env.SOURCE ?? join(process.cwd(), "source"));
 const meta = resolve(process.env.META ?? join(process.cwd(), "meta"));
 const build = process.env.BUILD ?? join(process.cwd(), "build");
 
-await generate({ source });
+await generate({ source, meta, build });
 console.log("done generating. now serving...");
 
 serve(build);
 
 watch(meta, { recursive: true }, async (evt, name) => {
   console.log("meta files changed! generating output");
-  await generate({ source });
+  await generate({ source, meta, build });
 });
 
 watch(source, { recursive: true }, async (evt, name) => {
   console.log("source files changed! generating output");
-  await generate({ source });
+  await generate({ source, meta, build });
 });
 
 /**
