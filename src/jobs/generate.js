@@ -68,9 +68,15 @@ export async function generate({
         dirname(file),
         meta
       );
-      const body = renderFile({ fileContents: rawBody, type });
       const ext = extname(file);
       const base = basename(file, ext);
+      const dir = addTrailingSlash(dirname(file)).replace(source, "");
+      const body = renderFile({
+        fileContents: rawBody,
+        type,
+        dirname: dir,
+        basename: base,
+      });
 
       const requestedTemplateName = meta && meta.template;
       const template =
@@ -246,4 +252,11 @@ async function getTransformedMetadata(dirname, metadata) {
   function defaultTransformFn(metadata) {
     return "default transform";
   }
+}
+
+function addTrailingSlash(somePath) {
+  if (typeof somePath !== "string") return somePath;
+  if (somePath.length < 1) return somePath;
+  if (somePath[somePath.length - 1] == "/") return somePath;
+  return `${somePath}/`;
 }
