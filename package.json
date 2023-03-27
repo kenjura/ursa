@@ -23,6 +23,7 @@
     "markdown-it-sup": "^1.0.0",
     "node-static": "github:cloudhead/node-static",
     "node-watch": "^0.7.3",
+    "object-to-xml": "^2.0.0",
     "recursive-readdir": "github:kenjura/recursive-readdir",
     "yaml": "^2.1.3"
   },
