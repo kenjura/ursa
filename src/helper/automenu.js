@@ -94,7 +94,6 @@ export async function OLDgetAutomenu(source) {
     if (a.filename < b.filename) return -1;
     return 0;
   });
-  debugger;
   const menuItems = sortedFilenames
     .filter((filename) => filename.indexOf(".md") > -1)
     .filter((filename) => filename.indexOf("menu.") === -1)
