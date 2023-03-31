@@ -2,9 +2,9 @@
   "name": "@kenjura/ursa",
   "author": "Andrew London <andrew@kenjura.com>",
   "type": "module",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "                                                                                                                                            static site generator from MD/wikitext/YML",
-  "main": "src/index.js",
+  "main": "lib/index.js",
   "scripts": {
     "serve": "nodemon --config nodemon.json  src/serve.js",
     "serve:debug": "nodemon --config nodemon.json  --inspect-brk src/serve.js",
