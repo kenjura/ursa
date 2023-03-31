@@ -1,8 +1,9 @@
 {
-  "name": "ursa",
+  "name": "@kenjura/ursa",
+  "author": "Andrew London <andrew@kenjura.com>",
   "type": "module",
   "version": "0.3.0",
-  "description": "static site generator from MD/wikitext/YML",
+  "description": "                                                                                                                                            static site generator from MD/wikitext/YML",
   "main": "src/index.js",
   "scripts": {
     "serve": "nodemon --config nodemon.json  src/serve.js",
@@ -10,8 +11,11 @@
     "start": "node src/index.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "author": "",
   "license": "ISC",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kenjura/ursa.git"
+  },
   "dependencies": {
     "directory-tree": "^3.3.2",
     "express": "^4.18.2",
