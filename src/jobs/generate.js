@@ -17,7 +17,11 @@ export async function generate({
 } = {}) {
   console.log({ source, meta, output });
 
-  const allSourceFilenames = await recurse(source, [() => false]);
+  const allSourceFilenamesUnfiltered = await recurse(source, [() => false]);
+  const includeFilter = process.env.INCLUDE_FILTER
+    ? (fileName) => fileName.match(process.env.INCLUDE_FILTER)
+    : Boolean;
+  const allSourceFilenames = allSourceFilenamesUnfiltered.filter(includeFilter);
   console.log(allSourceFilenames);
 
   if (source.substr(-1) !== "/") source += "/"; // warning: might not work in windows
