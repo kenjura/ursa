@@ -1,3 +1,21 @@
+# 0.5.0
+
+2023-05-08
+
+- added INCLUDE_FILTER env var
+
+# 0.4.2
+
+2023-03-01
+
+- bug fixes
+
+# 0.4.0
+
+2023-03-31
+
+- Now a library
+
 # 0.3.0
 
 2022-10-17
