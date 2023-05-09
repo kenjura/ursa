@@ -6,21 +6,23 @@ import { join, resolve } from "path";
 
 const source = resolve(process.env.SOURCE ?? join(process.cwd(), "source"));
 const meta = resolve(process.env.META ?? join(process.cwd(), "meta"));
-const build = process.env.BUILD ?? join(process.cwd(), "build");
+const output = resolve(process.env.OUTPUT ?? join(process.cwd(), "build"));
 
-await generate({ source });
+console.log({ source, meta, output });
+
+await generate({ source, meta, output });
 console.log("done generating. now serving...");
 
-serve(build);
+serve(output);
 
 watch(meta, { recursive: true }, async (evt, name) => {
   console.log("meta files changed! generating output");
-  await generate({ source });
+  await generate({ source, meta, output });
 });
 
 watch(source, { recursive: true }, async (evt, name) => {
   console.log("source files changed! generating output");
-  await generate({ source });
+  await generate({ source, meta, output });
 });
 
 /**
@@ -47,11 +49,13 @@ function serve(root) {
   const app = express();
   const port = process.env.PORT || 8080;
 
-  app.use(express.static(build, { extensions: ["html"], index: "index.html" }));
+  app.use(
+    express.static(output, { extensions: ["html"], index: "index.html" })
+  );
 
   app.get("/", async (req, res) => {
-    console.log({ build });
-    const dir = await readdir(build);
+    console.log({ output });
+    const dir = await readdir(output);
     const html = dir
       .map((file) => `<li><a href="${file}">${file}</a></li>`)
       .join("");

@@ -1,17 +1,21 @@
 {
-  "name": "ursa",
+  "name": "@kenjura/ursa",
+  "author": "Andrew London <andrew@kenjura.com>",
   "type": "module",
-  "version": "0.3.0",
-  "description": "static site generator from MD/wikitext/YML",
-  "main": "index.js",
+  "version": "0.4.2",
+  "description": "                                                                                                                                            static site generator from MD/wikitext/YML",
+  "main": "lib/index.js",
   "scripts": {
     "serve": "nodemon --config nodemon.json  src/serve.js",
     "serve:debug": "nodemon --config nodemon.json  --inspect-brk src/serve.js",
     "start": "node src/index.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "author": "",
   "license": "ISC",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kenjura/ursa.git"
+  },
   "dependencies": {
     "directory-tree": "^3.3.2",
     "express": "^4.18.2",
@@ -23,6 +27,7 @@
     "markdown-it-sup": "^1.0.0",
     "node-static": "github:cloudhead/node-static",
     "node-watch": "^0.7.3",
+    "object-to-xml": "^2.0.0",
     "recursive-readdir": "github:kenjura/recursive-readdir",
     "yaml": "^2.1.3"
   },

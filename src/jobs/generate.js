@@ -4,11 +4,18 @@ import { copyFile, mkdir, readdir, readFile } from "fs/promises";
 import { getAutomenu } from "../helper/automenu.js";
 import { filterAsync } from "../helper/filterAsync.js";
 import { isDirectory } from "../helper/isDirectory.js";
-import { extractMetadata } from "../helper/metadataExtractor.js";
+import {
+  extractMetadata,
+  extractRawMetadata,
+} from "../helper/metadataExtractor.js";
 import { renderFile } from "../helper/fileRenderer.js";
 import { copy as copyDir, emptyDir, outputFile } from "fs-extra";
 import { basename, dirname, extname, join, parse, resolve } from "path";
 import { URL } from "url";
+import o2x from "object-to-xml";
+
+const DEFAULT_TEMPLATE_NAME =
+  process.env.DEFAULT_TEMPLATE_NAME ?? "default-template";
 
 export async function generate({
   source = join(process.cwd(), "."),
@@ -59,18 +66,26 @@ export async function generate({
       const rawBody = await readFile(file, "utf8");
       const type = parse(file).ext;
       const meta = extractMetadata(rawBody);
+      const rawMeta = extractRawMetadata(rawBody);
+      const bodyLessMeta = rawBody.replace(rawMeta, "");
       const transformedMetadata = await getTransformedMetadata(
         dirname(file),
         meta
       );
-      const body = renderFile({ fileContents: rawBody, type });
       const ext = extname(file);
       const base = basename(file, ext);
+      const dir = addTrailingSlash(dirname(file)).replace(source, "");
+      const body = renderFile({
+        fileContents: rawBody,
+        type,
+        dirname: dir,
+        basename: base,
+      });
 
       const requestedTemplateName = meta && meta.template;
       const template =
-        templates[requestedTemplateName] || templates["default-template"];
-      console.log({ requestedTemplateName, templates: templates.keys });
+        templates[requestedTemplateName] || templates[DEFAULT_TEMPLATE_NAME];
+      // console.log({ requestedTemplateName, templates: templates.keys });
 
       const finalHtml = template
         .replace("${menu}", menu)
@@ -92,6 +107,8 @@ export async function generate({
       const jsonObject = {
         name: base,
         contents: rawBody,
+        bodyLessMeta: bodyLessMeta,
+        bodyHtml: body,
         metadata: meta,
         transformedMetadata,
         html: finalHtml,
@@ -100,6 +117,12 @@ export async function generate({
       const json = JSON.stringify(jsonObject);
       console.log(`writing article to ${jsonOutputFilename}`);
       await outputFile(jsonOutputFilename, json);
+
+      // xml
+
+      const xmlOutputFilename = outputFilename.replace(".html", ".xml");
+      const xml = `<article>${o2x(jsonObject)}</article>`;
+      await outputFile(xmlOutputFilename, xml);
     })
   );
 
@@ -170,7 +193,6 @@ export async function generate({
  * meta: full path to meta files (default-template.html, etc)
  */
 async function getTemplates(meta) {
-  debugger;
   const allMetaFilenames = await recurse(meta);
   const allHtmlFilenames = allMetaFilenames.filter((filename) =>
     filename.match(/\.html/)
@@ -214,7 +236,7 @@ async function getMenu(allSourceFilenames, source) {
 }
 
 async function getTransformedMetadata(dirname, metadata) {
-  console.log("getTransformedMetadata > ", { dirname });
+  // console.log("getTransformedMetadata > ", { dirname });
   // custom transform? else, use default
   const customTransformFnFilename = join(dirname, "transformMetadata.js");
   let transformFn = defaultTransformFn;
@@ -234,4 +256,11 @@ async function getTransformedMetadata(dirname, metadata) {
   function defaultTransformFn(metadata) {
     return "default transform";
   }
+}
+
+function addTrailingSlash(somePath) {
+  if (typeof somePath !== "string") return somePath;
+  if (somePath.length < 1) return somePath;
+  if (somePath[somePath.length - 1] == "/") return somePath;
+  return `${somePath}/`;
 }
