@@ -1,4 +1,4 @@
-import recurse from "recursive-readdir";
+import { recurse } from "../helper/recursive-readdir.js";
 
 import { copyFile, mkdir, readdir, readFile } from "fs/promises";
 import { getAutomenu } from "../helper/automenu.js";
