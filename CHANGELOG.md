@@ -1,3 +1,9 @@
+# 0.8.0
+
+2023-12-31
+
+- Fixed recursive-readdir to actually return directories, not just files
+
 # 0.7.0
 
 2023-08-01
