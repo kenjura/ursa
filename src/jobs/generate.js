@@ -107,11 +107,11 @@ export async function generate({
       const jsonObject = {
         name: base,
         contents: rawBody,
-        bodyLessMeta: bodyLessMeta,
+        // bodyLessMeta: bodyLessMeta,
         bodyHtml: body,
         metadata: meta,
         transformedMetadata,
-        html: finalHtml,
+        // html: finalHtml,
       };
       jsonCache.set(file, jsonObject);
       const json = JSON.stringify(jsonObject);

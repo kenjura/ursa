@@ -1,3 +1,9 @@
+# 0.9.0
+
+2024-02-10
+
+- Removed spammy debug data from json
+
 # 0.8.0
 
 2023-12-31
