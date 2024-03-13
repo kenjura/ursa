@@ -1,3 +1,9 @@
+# 0.10.0
+
+2024-03-13
+
+- Will no longer write an autoindex when index document already exists
+
 # 0.9.0
 
 2024-02-10

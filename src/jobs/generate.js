@@ -1,6 +1,6 @@
 import { recurse } from "../helper/recursive-readdir.js";
 
-import { copyFile, mkdir, readdir, readFile } from "fs/promises";
+import { copyFile, mkdir, readdir, readFile, stat } from "fs/promises";
 import { getAutomenu } from "../helper/automenu.js";
 import { filterAsync } from "../helper/filterAsync.js";
 import { isDirectory } from "../helper/isDirectory.js";
@@ -13,15 +13,21 @@ import { copy as copyDir, emptyDir, outputFile } from "fs-extra";
 import { basename, dirname, extname, join, parse, resolve } from "path";
 import { URL } from "url";
 import o2x from "object-to-xml";
+import { existsSync } from "fs";
+import { fileExists } from "../helper/fileExists.js";
 
 const DEFAULT_TEMPLATE_NAME =
   process.env.DEFAULT_TEMPLATE_NAME ?? "default-template";
 
 export async function generate({
-  source = join(process.cwd(), "."),
-  meta = join(process.cwd(), "meta"),
-  output = join(process.cwd(), "build"),
+  _source = join(process.cwd(), "."),
+  _meta = join(process.cwd(), "meta"),
+  _output = join(process.cwd(), "build"),
 } = {}) {
+  console.log({ _source, _meta, _output });
+  const source = resolve(_source) + "/";
+  const meta = resolve(_meta);
+  const output = resolve(_output) + "/";
   console.log({ source, meta, output });
 
   const allSourceFilenamesUnfiltered = await recurse(source, [() => false]);
@@ -29,10 +35,10 @@ export async function generate({
     ? (fileName) => fileName.match(process.env.INCLUDE_FILTER)
     : Boolean;
   const allSourceFilenames = allSourceFilenamesUnfiltered.filter(includeFilter);
-  console.log(allSourceFilenames);
+  // console.log(allSourceFilenames);
 
-  if (source.substr(-1) !== "/") source += "/"; // warning: might not work in windows
-  if (output.substr(-1) !== "/") output += "/";
+  // if (source.substr(-1) !== "/") source += "/"; // warning: might not work in windows
+  // if (output.substr(-1) !== "/") output += "/";
 
   const templates = await getTemplates(meta); // todo: error if no default template
   // console.log({ templates });
@@ -151,22 +157,25 @@ export async function generate({
       await outputFile(outputFilename, json);
 
       // html
-      const template = templates["default-template"]; // TODO: figure out a way to specify template for a directory index
-      const indexHtml = `<ul>${pathsInThisDirectory
-        .map((path) => {
-          const partialPath = path
-            .replace(source, "")
-            .replace(parse(path).ext, ".html");
-          const name = basename(path, parse(path).ext);
-          return `<li><a href="${partialPath}">${name}</a></li>`;
-        })
-        .join("")}</ul>`;
-      const finalHtml = template
-        .replace("${menu}", menu)
-        .replace("${body}", indexHtml);
       const htmlOutputFilename = dir.replace(source, output) + ".html";
-      console.log(`writing directory index to ${htmlOutputFilename}`);
-      await outputFile(htmlOutputFilename, finalHtml);
+      const indexAlreadyExists = fileExists(htmlOutputFilename);
+      if (!indexAlreadyExists) {
+        const template = templates["default-template"]; // TODO: figure out a way to specify template for a directory index
+        const indexHtml = `<ul>${pathsInThisDirectory
+          .map((path) => {
+            const partialPath = path
+              .replace(source, "")
+              .replace(parse(path).ext, ".html");
+            const name = basename(path, parse(path).ext);
+            return `<li><a href="${partialPath}">${name}</a></li>`;
+          })
+          .join("")}</ul>`;
+        const finalHtml = template
+          .replace("${menu}", menu)
+          .replace("${body}", indexHtml);
+        console.log(`writing directory index to ${htmlOutputFilename}`);
+        await outputFile(htmlOutputFilename, finalHtml);
+      }
     })
   );
 
