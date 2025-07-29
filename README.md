@@ -21,41 +21,68 @@ npm install @kenjura/ursa
 After global installation, you can use the `ursa` command:
 
 ```bash
-# Basic usage
+# Generate site once
 ursa <source-directory>
+ursa generate <source-directory>
+
+# Development server with live reloading
+ursa serve <source-directory>
 
 # With custom meta and output directories
 ursa content --meta=templates --output=dist
+ursa serve content --meta=templates --output=dist --port=3000
 
 # Using default meta and output directories (meta/ and output/)
 ursa content
+ursa serve content
 ```
+
+### CLI Commands
+
+#### `ursa [generate] <source>`
+Generate a static site once and exit.
+
+#### `ursa serve <source>`
+Start a development server that:
+- Generates the site initially
+- Starts an HTTP server to serve the output directory
+- Watches source and meta directories for changes
+- Automatically regenerates the site when files change
 
 ### CLI Options
 
 - `<source>` - Source directory containing markdown/wikitext files (required)
 - `--meta, -m` - Meta directory containing templates and styles (default: "meta")
 - `--output, -o` - Output directory for generated site (default: "output")
+- `--port, -p` - Port for development server (default: 8080, serve command only)
 
 ## Library Usage
 
 ### ES Modules (recommended)
 
 ```javascript
-import generateSite, { generate } from '@kenjura/ursa';
+import generateSite, { generate, serve } from '@kenjura/ursa';
 
-// Using the default export
+// One-time generation using the default export
 await generateSite({
   source: './content',
   meta: './meta',
   output: './dist'
 });
 
-// Using the named export (matches internal API)
+// One-time generation using the named export (matches internal API)
 await generate({
   _source: './content',
   _meta: './meta', 
   _output: './dist'
+});
+
+// Development server with live reloading
+await serve({
+  _source: './content',
+  _meta: './meta',
+  _output: './dist',
+  port: 3000  // optional, defaults to 8080
 });
 ```
 
@@ -63,10 +90,25 @@ await generate({
 
 ```javascript
 const generateSite = require('@kenjura/ursa').default;
-const { generate } = require('@kenjura/ursa');
+const { generate, serve } = require('@kenjura/ursa');
 
 // Usage is the same as above
 ```
+
+### Library Functions
+
+#### `generateSite({ source, meta, output })`
+Default export. Generates the site once with user-friendly parameter names.
+
+#### `generate({ _source, _meta, _output })`
+Named export that matches the internal API. Generates the site once.
+
+#### `serve({ _source, _meta, _output, port? })`
+Starts a development server with live reloading:
+- Generates the site initially
+- Starts HTTP server on specified port (default: 8080)
+- Watches for file changes in source and meta directories
+- Automatically regenerates when changes are detected
 
 ## Project Structure
 

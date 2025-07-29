@@ -1,29 +1,115 @@
 import express from "express";
 import watch from "node-watch";
-
 import { generate } from "./jobs/generate.js";
 import { join, resolve } from "path";
+import fs from "fs";
+import { promises } from "fs";
+const { readdir } = promises;
 
-const source = resolve(process.env.SOURCE ?? join(process.cwd(), "source"));
-const meta = resolve(process.env.META ?? join(process.cwd(), "meta"));
-const output = resolve(process.env.OUTPUT ?? join(process.cwd(), "build"));
+/**
+ * Configurable serve function for CLI and library use
+ */
+export async function serve({
+  _source,
+  _meta,
+  _output,
+  port = 8080
+} = {}) {
+  const sourceDir = resolve(_source);
+  const metaDir = resolve(_meta);
+  const outputDir = resolve(_output);
 
-console.log({ source, meta, output });
+  console.log({ source: sourceDir, meta: metaDir, output: outputDir, port });
 
-await generate({ source, meta, output });
-console.log("done generating. now serving...");
+  // Initial generation
+  console.log("Generating initial site...");
+  await generate({ _source: sourceDir, _meta: metaDir, _output: outputDir });
+  console.log("Initial generation complete. Starting server...");
 
-serve(output);
+  // Start file server
+  serveFiles(outputDir, port);
 
-watch(meta, { recursive: true }, async (evt, name) => {
-  console.log("meta files changed! generating output");
-  await generate({ source, meta, output });
-});
+  // Watch for changes
+  console.log("Watching for file changes...");
+  
+  watch(metaDir, { recursive: true }, async (evt, name) => {
+    console.log("Meta files changed! Regenerating...");
+    try {
+      await generate({ _source: sourceDir, _meta: metaDir, _output: outputDir });
+      console.log("Regeneration complete.");
+    } catch (error) {
+      console.error("Error during regeneration:", error.message);
+    }
+  });
 
-watch(source, { recursive: true }, async (evt, name) => {
-  console.log("source files changed! generating output");
-  await generate({ source, meta, output });
-});
+  watch(sourceDir, { recursive: true }, async (evt, name) => {
+    console.log("Source files changed! Regenerating...");
+    try {
+      await generate({ _source: sourceDir, _meta: metaDir, _output: outputDir });
+      console.log("Regeneration complete.");
+    } catch (error) {
+      console.error("Error during regeneration:", error.message);
+    }
+  });
+
+  console.log(`🚀 Development server running at http://localhost:${port}`);
+  console.log("📁 Serving files from:", outputDir);
+  console.log("👀 Watching for changes in:");
+  console.log("   Source:", sourceDir);
+  console.log("   Meta:", metaDir);
+  console.log("\nPress Ctrl+C to stop the server");
+}
+
+/**
+ * Start HTTP server to serve static files
+ */
+function serveFiles(outputDir, port = 8080) {
+  const app = express();
+
+  app.use(
+    express.static(outputDir, { extensions: ["html"], index: "index.html" })
+  );
+
+  app.get("/", async (req, res) => {
+    try {
+      console.log({ output: outputDir });
+      const dir = await readdir(outputDir);
+      const html = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>Ursa Development Server</title>
+          <style>
+            body { font-family: Arial, sans-serif; margin: 40px; }
+            h1 { color: #333; }
+            ul { list-style-type: none; padding: 0; }
+            li { margin: 8px 0; }
+            a { color: #0066cc; text-decoration: none; }
+            a:hover { text-decoration: underline; }
+          </style>
+        </head>
+        <body>
+          <h1>Ursa Development Server</h1>
+          <p>Files in ${outputDir}:</p>
+          <ul>
+            ${dir
+              .map((file) => `<li><a href="${file}">${file}</a></li>`)
+              .join("")}
+          </ul>
+        </body>
+        </html>
+      `;
+      res.setHeader("Content-Type", "text/html");
+      res.send(html);
+    } catch (error) {
+      res.status(500).send("Error reading directory");
+    }
+  });
+
+  app.listen(port, () => {
+    console.log(`🌐 Server listening on port ${port}`);
+  });
+}
 
 /**
  * we're only interested in meta (and maybe, in the future, source)
@@ -39,31 +125,26 @@ function filter(filename, skip) {
   return false;
 }
 
-import fs, { stat } from "fs";
-import { promises } from "fs";
-const { readdir } = promises;
-import http from "http";
-import { Server } from "node-static";
+// Default serve function for backward compatibility (only run when executed directly)
+if (import.meta.url === `file://${process.argv[1]}`) {
+  const source = resolve(process.env.SOURCE ?? join(process.cwd(), "source"));
+  const meta = resolve(process.env.META ?? join(process.cwd(), "meta"));
+  const output = resolve(process.env.OUTPUT ?? join(process.cwd(), "build"));
 
-function serve(root) {
-  const app = express();
-  const port = process.env.PORT || 8080;
+  console.log({ source, meta, output });
 
-  app.use(
-    express.static(output, { extensions: ["html"], index: "index.html" })
-  );
+  await generate({ _source: source, _meta: meta, _output: output });
+  console.log("done generating. now serving...");
 
-  app.get("/", async (req, res) => {
-    console.log({ output });
-    const dir = await readdir(output);
-    const html = dir
-      .map((file) => `<li><a href="${file}">${file}</a></li>`)
-      .join("");
-    res.setHeader("Content-Type", "text/html");
-    res.send(html);
+  serveFiles(output);
+
+  watch(meta, { recursive: true }, async (evt, name) => {
+    console.log("meta files changed! generating output");
+    await generate({ _source: source, _meta: meta, _output: output });
   });
 
-  app.listen(port, () => {
-    console.log(`server listening on port ${port}`);
+  watch(source, { recursive: true }, async (evt, name) => {
+    console.log("source files changed! generating output");
+    await generate({ _source: source, _meta: meta, _output: output });
   });
 }

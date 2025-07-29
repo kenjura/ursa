@@ -2,9 +2,11 @@
 nodemon.json
 TODO.md
 USAGE.md
+test-lib.js
 
 # Test files
 **/test/**
+**/test-*/**
 **/*.test.js
 **/__test__/**
 
