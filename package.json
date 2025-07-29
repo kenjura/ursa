@@ -5,6 +5,9 @@
   "version": "0.10.0",
   "description": "static site generator from MD/wikitext/YML",
   "main": "lib/index.js",
+  "bin": {
+    "ursa": "bin/ursa.js"
+  },
   "scripts": {
     "serve": "nodemon --config nodemon.json  src/serve.js",
     "serve:debug": "nodemon --config nodemon.json  --inspect-brk src/serve.js",
@@ -27,7 +30,8 @@
     "markdown-it-sup": "^1.0.0",
     "node-watch": "^0.7.3",
     "object-to-xml": "^2.0.0",
-    "yaml": "^2.1.3"
+    "yaml": "^2.1.3",
+    "yargs": "^17.7.2"
   },
   "devDependencies": {
     "jest": "^29.6.2",
@@ -43,6 +47,17 @@
   },
   "keywords": [
     "static-site",
-    "markdown"
+    "markdown",
+    "static-site-generator",
+    "wikitext",
+    "cli"
+  ],
+  "files": [
+    "lib/",
+    "src/",
+    "bin/",
+    "meta/",
+    "README.md",
+    "CHANGELOG.md"
   ]
 }
