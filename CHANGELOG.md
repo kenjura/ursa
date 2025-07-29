@@ -1,3 +1,9 @@
+# 0.11.0
+
+2025-07-28
+
+- added CLI commands (e.g. "ursa src" and "ursa serve src")
+
 # 0.10.0
 
 2024-03-13
