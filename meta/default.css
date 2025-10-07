@@ -9,6 +9,7 @@ body {
 :root {
   --article-width: 50rem;
   --global-nav-height: 48px;
+  --twisty-size: 1.1rem;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -76,11 +77,68 @@ button.menu-button:hover {
 }
 
 nav#nav-main {
-  display: none;
   position: fixed;
   top: calc(var(--global-nav-height) + 1rem);
   left: 1rem;
+  max-width: calc(50vw - var(--article-width) / 2 - 2rem);
+
+  ul {
+    list-style: none;
+    margin: 0 0 0 1rem;
+    padding: 0;
+
+    li {
+      margin-bottom: 0.25rem;
+      padding: 0;
+
+      /* display: grid; */
+      /* grid-template-columns: var(--twisty-size) 1fr; */
+
+      > ul {
+      max-height: 0;
+      overflow: hidden;
+      transition: max-height .3s ease;
+
+      }
+
+      .menu-twisty {
+        cursor: pointer;
+        display: inline-block;
+        width: var(--twisty-size);
+        text-align: center;
+        margin-right: 0.5rem;
+        transition: transform 0.3s ease;
+
+        :hover {
+          filter: brightness(1.3);
+        }
+      }
+      .menu-no-twisty {
+        display: inline-block;
+        width: var(--twisty-size);
+        text-align: center;
+        margin-right: 0.25rem;
+      }
+
+      > a {
+        text-decoration: none;        
+      }
+
+      .current-menu-item > a {
+        color: aqua;
+      }
+    }
+    li.expanded {
+      > .menu-twisty {
+        transform: rotate(90deg);
+      }
+      > ul {
+      max-height: 500px;
+      }
+    }
+  }
 }
+
 
 article#main-content {
   width: var(--article-width);
