@@ -17,6 +17,8 @@ import o2x from "object-to-xml";
 import { existsSync } from "fs";
 import { fileExists } from "../helper/fileExists.js";
 
+import { createWhitelistFilter } from "../helper/whitelistFilter.js";
+
 const DEFAULT_TEMPLATE_NAME =
   process.env.DEFAULT_TEMPLATE_NAME ?? "default-template";
 
@@ -24,18 +26,28 @@ export async function generate({
   _source = join(process.cwd(), "."),
   _meta = join(process.cwd(), "meta"),
   _output = join(process.cwd(), "build"),
+  _whitelist = null,
 } = {}) {
-  console.log({ _source, _meta, _output });
+  console.log({ _source, _meta, _output, _whitelist });
   const source = resolve(_source) + "/";
   const meta = resolve(_meta);
   const output = resolve(_output) + "/";
   console.log({ source, meta, output });
 
   const allSourceFilenamesUnfiltered = await recurse(source, [() => false]);
+  
+  // Apply include filter (existing functionality)
   const includeFilter = process.env.INCLUDE_FILTER
     ? (fileName) => fileName.match(process.env.INCLUDE_FILTER)
     : Boolean;
-  const allSourceFilenames = allSourceFilenamesUnfiltered.filter(includeFilter);
+  let allSourceFilenames = allSourceFilenamesUnfiltered.filter(includeFilter);
+  
+  // Apply whitelist filter if specified
+  if (_whitelist) {
+    const whitelistFilter = await createWhitelistFilter(_whitelist, source);
+    allSourceFilenames = allSourceFilenames.filter(whitelistFilter);
+    console.log(`Whitelist applied: ${allSourceFilenames.length} files after filtering`);
+  }
   // console.log(allSourceFilenames);
 
   // if (source.substr(-1) !== "/") source += "/"; // warning: might not work in windows
@@ -112,8 +124,7 @@ export async function generate({
         .replace("${meta}", JSON.stringify(meta))
         .replace("${transformedMetadata}", transformedMetadata)
         .replace("${body}", body)
-        .replace("${embeddedStyle}", embeddedStyle)
-        .replace("{flarb}", flarb);
+        .replace("${embeddedStyle}", embeddedStyle);
 
       const outputFilename = file
         .replace(source, output)

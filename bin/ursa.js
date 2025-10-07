@@ -27,20 +27,30 @@ yargs(hideBin(process.argv))
           default: 'output',
           describe: 'Output directory for generated site',
           type: 'string'
+        })
+        .option('whitelist', {
+          alias: 'w',
+          describe: 'Path to whitelist file containing patterns for files to include',
+          type: 'string'
         });
     },
     async (argv) => {
       const source = resolve(argv.source);
       const meta = resolve(argv.meta);
       const output = resolve(argv.output);
+      const whitelist = argv.whitelist ? resolve(argv.whitelist) : null;
       
       console.log(`Generating site from ${source} to ${output} using meta from ${meta}`);
+      if (whitelist) {
+        console.log(`Using whitelist: ${whitelist}`);
+      }
       
       try {
         await generate({
           _source: source,
           _meta: meta,
-          _output: output
+          _output: output,
+          _whitelist: whitelist
         });
         console.log('Site generation completed successfully!');
       } catch (error) {
@@ -76,6 +86,11 @@ yargs(hideBin(process.argv))
           default: 8080,
           describe: 'Port to serve on',
           type: 'number'
+        })
+        .option('whitelist', {
+          alias: 'w',
+          describe: 'Path to whitelist file containing patterns for files to include',
+          type: 'string'
         });
     },
     async (argv) => {
@@ -83,12 +98,16 @@ yargs(hideBin(process.argv))
       const meta = resolve(argv.meta);
       const output = resolve(argv.output);
       const port = argv.port;
+      const whitelist = argv.whitelist ? resolve(argv.whitelist) : null;
       
       console.log(`Starting development server...`);
       console.log(`Source: ${source}`);
       console.log(`Meta: ${meta}`);
       console.log(`Output: ${output}`);
       console.log(`Port: ${port}`);
+      if (whitelist) {
+        console.log(`Using whitelist: ${whitelist}`);
+      }
       
       try {
         const { serve } = await import('../src/serve.js');
@@ -96,7 +115,8 @@ yargs(hideBin(process.argv))
           _source: source,
           _meta: meta,
           _output: output,
-          port: port
+          port: port,
+          _whitelist: whitelist
         });
       } catch (error) {
         console.error('Error starting development server:', error.message);
@@ -125,20 +145,30 @@ yargs(hideBin(process.argv))
           default: 'output',
           describe: 'Output directory for generated site',
           type: 'string'
+        })
+        .option('whitelist', {
+          alias: 'w',
+          describe: 'Path to whitelist file containing patterns for files to include',
+          type: 'string'
         });
     },
     async (argv) => {
       const source = resolve(argv.source);
       const meta = resolve(argv.meta);
       const output = resolve(argv.output);
+      const whitelist = argv.whitelist ? resolve(argv.whitelist) : null;
       
       console.log(`Generating site from ${source} to ${output} using meta from ${meta}`);
+      if (whitelist) {
+        console.log(`Using whitelist: ${whitelist}`);
+      }
       
       try {
         await generate({
           _source: source,
           _meta: meta,
-          _output: output
+          _output: output,
+          _whitelist: whitelist
         });
         console.log('Site generation completed successfully!');
       } catch (error) {

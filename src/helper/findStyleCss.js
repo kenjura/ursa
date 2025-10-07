@@ -9,7 +9,7 @@ import { existsSync } from "fs";
  * @param {string} [baseDir] - Stop searching when this directory is reached
  * @returns {Promise<string|null>} CSS contents or null
  */
-export async function findStyleCss(startDir, names = ["style-ursa.css","style.css", "_style.css"], baseDir = null) {
+export async function findStyleCss(startDir, names = ["style-ursa.css", "style.css", "_style.css"], baseDir = null) {
   let dir = resolve(startDir);
   baseDir = baseDir ? resolve(baseDir) : dir.split(/[\\/]/)[0] === '' ? '/' : dir.split(/[\\/]/)[0];
   while (true) {

@@ -1,0 +1,20 @@
+# Example whitelist file for Ursa
+# Lines starting with # are comments and will be ignored
+# Empty lines are also ignored
+
+# Full absolute paths
+/full/path/to/important-file.md
+
+# Relative paths from source root
+character/classes/psion.md
+character/classes/
+spells/
+
+# Just filenames (will match anywhere)
+index.md
+README.md
+
+# Partial path matches
+/character/
+classes/psion
+important-document
