@@ -2,21 +2,31 @@
 
 <head>
     <link rel="stylesheet" href="/public/default.css" />
+    <!-- <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@1.0.4/css/bulma.min.css"> -->
 </head>
 
 <body data-template-id="default">
+    <nav id="nav-global">
+        <button class="menu-button" aria-label="Menu">☰</button>
+
+        <input id="global-search" type="text" placeholder="Search..." />
+
+        <span class="avatar" aria-hidden="true">👤</span>
+    </nav>
     <nav id="nav-main">
         <span id="menu-icon" class="material-symbols-outlined">
             menu
         </span>
         ${menu}
     </nav>
-    <article>
+    <article id="main-content">
         ${body}
     </article>
     <div id="global-nav">
         global nav here
     </div>
+
+    <script src="/public/toc.js"></script>
 </body>
 
 </html>
