@@ -9,6 +9,7 @@ import {
   extractRawMetadata,
 } from "../helper/metadataExtractor.js";
 import { renderFile } from "../helper/fileRenderer.js";
+import { findStyleCss } from "../helper/findStyleCss.js";
 import { copy as copyDir, emptyDir, outputFile } from "fs-extra";
 import { basename, dirname, extname, join, parse, resolve } from "path";
 import { URL } from "url";
@@ -81,6 +82,7 @@ export async function generate({
       const ext = extname(file);
       const base = basename(file, ext);
       const dir = addTrailingSlash(dirname(file)).replace(source, "");
+
       const body = renderFile({
         fileContents: rawBody,
         type,
@@ -88,16 +90,34 @@ export async function generate({
         basename: base,
       });
 
+      // Find nearest style.css or _style.css up the tree
+      let embeddedStyle = "";
+      try {
+        const css = await findStyleCss(resolve(_source, dir));
+        if (css) {
+          embeddedStyle = `<style>\n${css}\n</style>`;
+        }
+      } catch (e) {
+        // ignore
+      }
+
       const requestedTemplateName = meta && meta.template;
       const template =
         templates[requestedTemplateName] || templates[DEFAULT_TEMPLATE_NAME];
-      // console.log({ requestedTemplateName, templates: templates.keys });
 
-      const finalHtml = template
+      // Insert embeddedStyle just before </head> if present, else at top
+      let finalHtml = template
         .replace("${menu}", menu)
         .replace("${meta}", JSON.stringify(meta))
         .replace("${transformedMetadata}", transformedMetadata)
         .replace("${body}", body);
+      if (embeddedStyle && false) {  // TEMP: disable embedded styles for now
+        if (finalHtml.includes("</head>")) {
+          finalHtml = finalHtml.replace("</head>", `${embeddedStyle}\n</head>`);
+        } else {
+          finalHtml = embeddedStyle + "\n" + finalHtml;
+        }
+      }
 
       const outputFilename = file
         .replace(source, output)
