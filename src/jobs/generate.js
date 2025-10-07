@@ -86,7 +86,7 @@ export async function generate({
       const type = parse(file).ext;
       const meta = extractMetadata(rawBody);
       const rawMeta = extractRawMetadata(rawBody);
-      const bodyLessMeta = rawBody.replace(rawMeta, "");
+      const bodyLessMeta = rawMeta ? rawBody.replace(rawMeta, "") : rawBody;
       const transformedMetadata = await getTransformedMetadata(
         dirname(file),
         meta

@@ -33,8 +33,8 @@ export async function serve({
   // Watch for changes
   console.log("Watching for file changes...");
   
-  watch(metaDir, { recursive: true }, async (evt, name) => {
-    console.log("Meta files changed! Regenerating...");
+  watch(metaDir, { recursive: true, filter: /\.(js|json|css|html|md|txt|yml|yaml)$/ }, async (evt, name) => {
+    console.log(`Meta files changed! Event: ${evt}, File: ${name}`);
     try {
       await generate({ _source: sourceDir, _meta: metaDir, _output: outputDir, _whitelist });
       console.log("Regeneration complete.");
@@ -43,8 +43,8 @@ export async function serve({
     }
   });
 
-  watch(sourceDir, { recursive: true }, async (evt, name) => {
-    console.log("Source files changed! Regenerating...");
+  watch(sourceDir, { recursive: true, filter: /\.(js|json|css|html|md|txt|yml|yaml)$/ }, async (evt, name) => {
+    console.log(`Source files changed! Event: ${evt}, File: ${name}`);
     try {
       await generate({ _source: sourceDir, _meta: metaDir, _output: outputDir, _whitelist });
       console.log("Regeneration complete.");
