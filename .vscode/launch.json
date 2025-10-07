@@ -16,5 +16,33 @@
             },
             "program": "${workspaceFolder}/src/serve.js"
         }
+        ,
+        {
+            "type": "node",
+            "request": "launch",
+            "name": "Ursa Serve Debug",
+            "skipFiles": [
+                "<node_internals>/**"
+            ],
+            "args": [
+                "${workspaceFolder}/bin/ursa.js",
+                "serve:debug",
+                "~/Dropbox/RPG Root/RPG/wiki/system8"
+            ]
+        },
+        {
+            "type": "node",
+            "request": "launch",
+            "name": "Ursa CLI Serve Debug",
+            "skipFiles": [
+                "<node_internals>/**"
+            ],
+            "program": "${workspaceFolder}/bin/ursa.js",
+            "args": [
+                "serve",
+                "~/Dropbox/RPG Root/RPG/wiki/system8"
+            ],
+            "console": "integratedTerminal"
+        }
     ]
 }

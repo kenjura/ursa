@@ -95,10 +95,11 @@ export async function generate({
       try {
         const css = await findStyleCss(resolve(_source, dir));
         if (css) {
-          embeddedStyle = `<style>\n${css}\n</style>`;
+          embeddedStyle = css;
         }
       } catch (e) {
         // ignore
+        console.error(e);
       }
 
       const requestedTemplateName = meta && meta.template;
@@ -110,14 +111,9 @@ export async function generate({
         .replace("${menu}", menu)
         .replace("${meta}", JSON.stringify(meta))
         .replace("${transformedMetadata}", transformedMetadata)
-        .replace("${body}", body);
-      if (embeddedStyle && false) {  // TEMP: disable embedded styles for now
-        if (finalHtml.includes("</head>")) {
-          finalHtml = finalHtml.replace("</head>", `${embeddedStyle}\n</head>`);
-        } else {
-          finalHtml = embeddedStyle + "\n" + finalHtml;
-        }
-      }
+        .replace("${body}", body)
+        .replace("${embeddedStyle}", embeddedStyle)
+        .replace("{flarb}", flarb);
 
       const outputFilename = file
         .replace(source, output)
@@ -212,6 +208,7 @@ export async function generate({
 
       console.log(`writing static file to ${outputFilename}`);
 
+      await mkdir(dirname(outputFilename), { recursive: true });
       return await copyFile(file, outputFilename);
     })
   );
