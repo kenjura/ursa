@@ -154,7 +154,7 @@ article#main-content {
   margin: calc(var(--global-nav-height) + 16px) auto 0 auto;
 }
 
-@media (max-width: 600px) {
+@media (max-width: 800px) {
   article#main-content {
     width: calc(100vw - 2rem);
     margin: calc(var(--global-nav-height) + 16px) 1rem 0 1rem;
