@@ -144,3 +144,29 @@ article#main-content {
   width: var(--article-width);
   margin: calc(var(--global-nav-height) + 16px) auto 0 auto;
 }
+
+@media (max-width: 600px) {
+  nav#nav-main {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    max-width: none;
+    background: var(--bg-color);
+    z-index: 1000;
+    overflow-y: auto;
+    margin: 0;
+    padding: 2rem 1rem;
+  }
+  nav#nav-main.active {
+    display: block;
+  }
+  html {
+    font-size: 18px;
+    /* Prevents zoomed out appearance on mobile */
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+}

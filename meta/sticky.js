@@ -18,6 +18,29 @@ document.addEventListener('DOMContentLoaded', () => {
             } else {
                 el.classList.remove('stuck');
             }
+            if (el.tagName === 'H1') {
+                // Find the last stuck h2 and h3 (i.e., the "current" ones)
+                const stuckH2s = Array.from(headings).filter(h => h.tagName === 'H2' && h.classList.contains('stuck'));
+                const stuckH3s = Array.from(headings).filter(h => h.tagName === 'H3' && h.classList.contains('stuck'));
+                const stuckH2 = stuckH2s.length ? stuckH2s[stuckH2s.length - 1] : null;
+                const stuckH3 = stuckH3s.length ? stuckH3s[stuckH3s.length - 1] : null;
+
+                let newText = el.dataset.originalText || el.textContent;
+
+                if (!el.dataset.originalText) {
+                    el.dataset.originalText = el.textContent;
+                }
+
+                if (stuckH3 && stuckH2) {
+                    newText += ' > ' + stuckH2.textContent + ' > ' + stuckH3.textContent;
+                } else if (stuckH2) {
+                    newText += ' > ' + stuckH2.textContent;
+                }
+
+                el.textContent = newText;
+            } else if (el.tagName === 'H1' && !el.classList.contains('stuck') && el.dataset.originalText) {
+                el.textContent = el.dataset.originalText;
+            }
         });
     }
 
