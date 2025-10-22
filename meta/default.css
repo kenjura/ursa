@@ -150,7 +150,7 @@ article#main-content {
 
 @media (max-width: 600px) {
   nav#nav-main {
-    display: none;
+    display: none !important;
     position: fixed;
     top: 0;
     left: 0;
@@ -164,7 +164,7 @@ article#main-content {
     padding: 2rem 1rem;
   }
   nav#nav-main.active {
-    display: block;
+    display: block !important;
   }
   html {
     font-size: 18px;
