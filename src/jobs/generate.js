@@ -9,6 +9,30 @@ import {
   extractRawMetadata,
 } from "../helper/metadataExtractor.js";
 
+// Helper function to build search index from processed files
+function buildSearchIndex(jsonCache, source, output) {
+  const searchIndex = [];
+  
+  for (const [filePath, jsonObject] of jsonCache.entries()) {
+    // Generate URL path relative to output
+    const relativePath = filePath.replace(source, '').replace(/\.(md|txt|yml)$/, '.html');
+    const url = relativePath.startsWith('/') ? relativePath : '/' + relativePath;
+    
+    // Extract text content from body (strip HTML tags for search)
+    const textContent = jsonObject.bodyHtml.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+    const excerpt = textContent.substring(0, 200); // First 200 chars for preview
+    
+    searchIndex.push({
+      title: toTitleCase(jsonObject.name),
+      path: relativePath,
+      url: url,
+      content: excerpt
+    });
+  }
+  
+  return searchIndex;
+}
+
 // Helper function to convert filename to title case
 function toTitleCase(filename) {
   return filename
@@ -84,8 +108,48 @@ export async function generate({
     (filename) => isDirectory(filename)
   );
 
-  // process individual articles
+  // First pass: collect search index data
+  const searchIndex = [];
   const jsonCache = new Map();
+  
+  // Collect basic data for search index
+  for (const file of allSourceFilenamesThatAreArticles) {
+    const rawBody = await readFile(file, "utf8");
+    const type = parse(file).ext;
+    const ext = extname(file);
+    const base = basename(file, ext);
+    const dir = addTrailingSlash(dirname(file)).replace(source, "");
+    
+    // Generate title from filename (in title case)
+    const title = toTitleCase(base);
+    
+    // Generate URL path relative to output
+    const relativePath = file.replace(source, '').replace(/\.(md|txt|yml)$/, '.html');
+    const url = relativePath.startsWith('/') ? relativePath : '/' + relativePath;
+    
+    // Basic content processing for search (without full rendering)
+    const body = renderFile({
+      fileContents: rawBody,
+      type,
+      dirname: dir,
+      basename: base,
+    });
+    
+    // Extract text content from body (strip HTML tags for search)
+    const textContent = body.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+    const excerpt = textContent.substring(0, 200); // First 200 chars for preview
+    
+    searchIndex.push({
+      title: title,
+      path: relativePath,
+      url: url,
+      content: excerpt
+    });
+  }
+  
+  console.log(`Built search index with ${searchIndex.length} entries`);
+
+  // Second pass: process individual articles with search data available
   await Promise.all(
     allSourceFilenamesThatAreArticles.map(async (file) => {
       console.log(`processing article ${file}`);
@@ -136,7 +200,8 @@ export async function generate({
         .replace("${meta}", JSON.stringify(meta))
         .replace("${transformedMetadata}", transformedMetadata)
         .replace("${body}", body)
-        .replace("${embeddedStyle}", embeddedStyle);
+        .replace("${embeddedStyle}", embeddedStyle)
+        .replace("${searchIndex}", JSON.stringify(searchIndex));
 
       const outputFilename = file
         .replace(source, output)
@@ -172,6 +237,7 @@ export async function generate({
   );
 
   console.log(jsonCache.keys());
+  
   // process directory indices
   await Promise.all(
     allSourceFilenamesThatAreDirectories.map(async (dir) => {
@@ -211,7 +277,12 @@ export async function generate({
           .join("")}</ul>`;
         const finalHtml = template
           .replace("${menu}", menu)
-          .replace("${body}", indexHtml);
+          .replace("${body}", indexHtml)
+          .replace("${searchIndex}", JSON.stringify(searchIndex))
+          .replace("${title}", "Index")
+          .replace("${meta}", "{}")
+          .replace("${transformedMetadata}", "")
+          .replace("${embeddedStyle}", "");
         console.log(`writing directory index to ${htmlOutputFilename}`);
         await outputFile(htmlOutputFilename, finalHtml);
       }
