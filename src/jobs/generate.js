@@ -8,6 +8,14 @@ import {
   extractMetadata,
   extractRawMetadata,
 } from "../helper/metadataExtractor.js";
+
+// Helper function to convert filename to title case
+function toTitleCase(filename) {
+  return filename
+    .split(/[-_\s]+/) // Split on hyphens, underscores, and spaces
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(' ');
+}
 import { renderFile } from "../helper/fileRenderer.js";
 import { findStyleCss } from "../helper/findStyleCss.js";
 import { copy as copyDir, emptyDir, outputFile } from "fs-extra";
@@ -94,6 +102,9 @@ export async function generate({
       const ext = extname(file);
       const base = basename(file, ext);
       const dir = addTrailingSlash(dirname(file)).replace(source, "");
+      
+      // Generate title from filename (in title case)
+      const title = toTitleCase(base);
 
       const body = renderFile({
         fileContents: rawBody,
@@ -120,6 +131,7 @@ export async function generate({
 
       // Insert embeddedStyle just before </head> if present, else at top
       let finalHtml = template
+        .replace("${title}", title)
         .replace("${menu}", menu)
         .replace("${meta}", JSON.stringify(meta))
         .replace("${transformedMetadata}", transformedMetadata)
