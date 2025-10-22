@@ -81,6 +81,8 @@ nav#nav-main {
   top: calc(var(--global-nav-height) + 1rem);
   left: 1rem;
   max-width: calc(50vw - var(--article-width) / 2 - 2rem);
+  max-height: calc(100vh - var(--global-nav-height) - 2rem);
+  overflow-y: auto;
 
   ul {
     list-style: none;
@@ -90,6 +92,7 @@ nav#nav-main {
     li {
       margin-bottom: 0.25rem;
       padding: 0;
+      text-transform: capitalize;
 
       /* display: grid; */
       /* grid-template-columns: var(--twisty-size) 1fr; */
@@ -133,7 +136,7 @@ nav#nav-main {
         transform: rotate(90deg);
       }
       > ul {
-      max-height: 500px;
+      max-height: 100vh;
       }
     }
   }
