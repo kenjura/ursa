@@ -18,28 +18,35 @@ document.addEventListener('DOMContentLoaded', () => {
             } else {
                 el.classList.remove('stuck');
             }
+            
+            // Handle text updates for H1 elements
             if (el.tagName === 'H1') {
-                // Find the last stuck h2 and h3 (i.e., the "current" ones)
-                const stuckH2s = Array.from(headings).filter(h => h.tagName === 'H2' && h.classList.contains('stuck'));
-                const stuckH3s = Array.from(headings).filter(h => h.tagName === 'H3' && h.classList.contains('stuck'));
-                const stuckH2 = stuckH2s.length ? stuckH2s[stuckH2s.length - 1] : null;
-                const stuckH3 = stuckH3s.length ? stuckH3s[stuckH3s.length - 1] : null;
-
-                let newText = el.dataset.originalText || el.textContent;
-
+                // Store original text if not already stored
                 if (!el.dataset.originalText) {
                     el.dataset.originalText = el.textContent;
                 }
+                
+                // Only update text if this H1 is stuck
+                if (el.classList.contains('stuck')) {
+                    // Find the last stuck h2 and h3 (i.e., the "current" ones)
+                    const stuckH2s = Array.from(headings).filter(h => h.tagName === 'H2' && h.classList.contains('stuck'));
+                    const stuckH3s = Array.from(headings).filter(h => h.tagName === 'H3' && h.classList.contains('stuck'));
+                    const stuckH2 = stuckH2s.length ? stuckH2s[stuckH2s.length - 1] : null;
+                    const stuckH3 = stuckH3s.length ? stuckH3s[stuckH3s.length - 1] : null;
 
-                if (stuckH3 && stuckH2) {
-                    newText += ' > ' + stuckH2.textContent + ' > ' + stuckH3.textContent;
-                } else if (stuckH2) {
-                    newText += ' > ' + stuckH2.textContent;
+                    let newText = el.dataset.originalText;
+
+                    if (stuckH3 && stuckH2) {
+                        newText += ' > ' + (stuckH2.dataset.originalText || stuckH2.textContent) + ' > ' + (stuckH3.dataset.originalText || stuckH3.textContent);
+                    } else if (stuckH2) {
+                        newText += ' > ' + (stuckH2.dataset.originalText || stuckH2.textContent);
+                    }
+
+                    el.textContent = newText;
+                } else {
+                    // Restore original text if not stuck
+                    el.textContent = el.dataset.originalText;
                 }
-
-                el.textContent = newText;
-            } else if (el.tagName === 'H1' && !el.classList.contains('stuck') && el.dataset.originalText) {
-                el.textContent = el.dataset.originalText;
             }
         });
     }
