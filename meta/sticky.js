@@ -5,18 +5,34 @@ document.addEventListener('DOMContentLoaded', () => {
     const headings = article.querySelectorAll('h1, h2, h3');
 
     function updateStuckState() {
+        let currentStuckHeading = null;
+        
         headings.forEach(el => {
+            const wasStuck = el.classList.contains('stuck');
             const style = window.getComputedStyle(el);
             if (style.position === 'sticky' && style.top !== 'auto') {
                 const rect = el.getBoundingClientRect();
                 const top = parseInt(style.top, 10) || 0;
                 if (rect.top <= top && rect.bottom > top) {
                     el.classList.add('stuck');
+                    currentStuckHeading = el;
                 } else {
                     el.classList.remove('stuck');
                 }
             } else {
                 el.classList.remove('stuck');
+            }
+            
+            // Dispatch event if stuck state changed
+            if (wasStuck !== el.classList.contains('stuck')) {
+                const event = new CustomEvent('headingStuckStateChanged', {
+                    detail: { 
+                        heading: el, 
+                        stuck: el.classList.contains('stuck'),
+                        currentStuckHeading: currentStuckHeading
+                    }
+                });
+                document.dispatchEvent(event);
             }
             
             // Handle text updates for H1 elements
