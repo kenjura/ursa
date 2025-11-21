@@ -41,6 +41,11 @@ ursa content
 ursa serve content
 ```
 
+If not installed, you can run:
+```bash
+node bin/ursa (same args)
+```
+
 ### CLI Commands
 
 #### `ursa [generate] <source>`
