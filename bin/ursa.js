@@ -120,6 +120,7 @@ yargs(hideBin(process.argv))
         });
       } catch (error) {
         console.error('Error starting development server:', error.message);
+        console.error(error);
         process.exit(1);
       }
     }

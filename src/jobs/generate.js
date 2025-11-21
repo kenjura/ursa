@@ -136,7 +136,7 @@ export async function generate({
     });
     
     // Extract text content from body (strip HTML tags for search)
-    const textContent = body.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+    const textContent = body && body.replace && body.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim() || 'body is undefined for some reason'
     const excerpt = textContent.substring(0, 200); // First 200 chars for preview
     
     searchIndex.push({
