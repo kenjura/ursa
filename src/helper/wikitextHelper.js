@@ -1,11 +1,14 @@
+import { getImageTag } from './WikiImage.js';
+
 let instance = {};
 
 export function wikiToHtml({ wikitext, articleName, args } = {}) {
   if (!args) args = { db: "noDB", noSection: true, noTOC: true };
   if (!wikitext) return "nothing to render";
 
-  const linkbase = ("/" + args.db + "/").replace(/\/\//g, "/");
-  const imageroot = ("/" + args.db + "/img/").replace(/\/\//g, "/");
+  const db = args.db || "noDB";
+  const linkbase = ("/" + db + "/").replace(/\/\//g, "/");
+  const imageroot = ("/" + db + "/img/").replace(/\/\//g, "/");
 
   const allArticles = args.allArticles || [];
 
@@ -330,7 +333,7 @@ export function wikiToHtml({ wikitext, articleName, args } = {}) {
       case "IFRAME":
         return '<iframe src="' + articleName + '"' + getArg(0) + "></iframe>";
       case "IMAGE":
-        return WikiImage.getImageTag({
+        return getImageTag({
           name: articleName,
           args: args,
           imgUrl: imageroot + articleName,

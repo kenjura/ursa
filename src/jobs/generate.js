@@ -8,13 +8,48 @@ import {
   extractMetadata,
   extractRawMetadata,
 } from "../helper/metadataExtractor.js";
+
+// Helper function to build search index from processed files
+function buildSearchIndex(jsonCache, source, output) {
+  const searchIndex = [];
+  
+  for (const [filePath, jsonObject] of jsonCache.entries()) {
+    // Generate URL path relative to output
+    const relativePath = filePath.replace(source, '').replace(/\.(md|txt|yml)$/, '.html');
+    const url = relativePath.startsWith('/') ? relativePath : '/' + relativePath;
+    
+    // Extract text content from body (strip HTML tags for search)
+    const textContent = jsonObject.bodyHtml.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+    const excerpt = textContent.substring(0, 200); // First 200 chars for preview
+    
+    searchIndex.push({
+      title: toTitleCase(jsonObject.name),
+      path: relativePath,
+      url: url,
+      content: excerpt
+    });
+  }
+  
+  return searchIndex;
+}
+
+// Helper function to convert filename to title case
+function toTitleCase(filename) {
+  return filename
+    .split(/[-_\s]+/) // Split on hyphens, underscores, and spaces
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(' ');
+}
 import { renderFile } from "../helper/fileRenderer.js";
+import { findStyleCss } from "../helper/findStyleCss.js";
 import { copy as copyDir, emptyDir, outputFile } from "fs-extra";
 import { basename, dirname, extname, join, parse, resolve } from "path";
 import { URL } from "url";
 import o2x from "object-to-xml";
 import { existsSync } from "fs";
 import { fileExists } from "../helper/fileExists.js";
+
+import { createWhitelistFilter } from "../helper/whitelistFilter.js";
 
 const DEFAULT_TEMPLATE_NAME =
   process.env.DEFAULT_TEMPLATE_NAME ?? "default-template";
@@ -23,18 +58,28 @@ export async function generate({
   _source = join(process.cwd(), "."),
   _meta = join(process.cwd(), "meta"),
   _output = join(process.cwd(), "build"),
+  _whitelist = null,
 } = {}) {
-  console.log({ _source, _meta, _output });
+  console.log({ _source, _meta, _output, _whitelist });
   const source = resolve(_source) + "/";
   const meta = resolve(_meta);
   const output = resolve(_output) + "/";
   console.log({ source, meta, output });
 
   const allSourceFilenamesUnfiltered = await recurse(source, [() => false]);
+  
+  // Apply include filter (existing functionality)
   const includeFilter = process.env.INCLUDE_FILTER
     ? (fileName) => fileName.match(process.env.INCLUDE_FILTER)
     : Boolean;
-  const allSourceFilenames = allSourceFilenamesUnfiltered.filter(includeFilter);
+  let allSourceFilenames = allSourceFilenamesUnfiltered.filter(includeFilter);
+  
+  // Apply whitelist filter if specified
+  if (_whitelist) {
+    const whitelistFilter = await createWhitelistFilter(_whitelist, source);
+    allSourceFilenames = allSourceFilenames.filter(whitelistFilter);
+    console.log(`Whitelist applied: ${allSourceFilenames.length} files after filtering`);
+  }
   // console.log(allSourceFilenames);
 
   // if (source.substr(-1) !== "/") source += "/"; // warning: might not work in windows
@@ -63,8 +108,48 @@ export async function generate({
     (filename) => isDirectory(filename)
   );
 
-  // process individual articles
+  // First pass: collect search index data
+  const searchIndex = [];
   const jsonCache = new Map();
+  
+  // Collect basic data for search index
+  for (const file of allSourceFilenamesThatAreArticles) {
+    const rawBody = await readFile(file, "utf8");
+    const type = parse(file).ext;
+    const ext = extname(file);
+    const base = basename(file, ext);
+    const dir = addTrailingSlash(dirname(file)).replace(source, "");
+    
+    // Generate title from filename (in title case)
+    const title = toTitleCase(base);
+    
+    // Generate URL path relative to output
+    const relativePath = file.replace(source, '').replace(/\.(md|txt|yml)$/, '.html');
+    const url = relativePath.startsWith('/') ? relativePath : '/' + relativePath;
+    
+    // Basic content processing for search (without full rendering)
+    const body = renderFile({
+      fileContents: rawBody,
+      type,
+      dirname: dir,
+      basename: base,
+    });
+    
+    // Extract text content from body (strip HTML tags for search)
+    const textContent = body && body.replace && body.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim() || 'body is undefined for some reason'
+    const excerpt = textContent.substring(0, 200); // First 200 chars for preview
+    
+    searchIndex.push({
+      title: title,
+      path: relativePath,
+      url: url,
+      content: excerpt
+    });
+  }
+  
+  console.log(`Built search index with ${searchIndex.length} entries`);
+
+  // Second pass: process individual articles with search data available
   await Promise.all(
     allSourceFilenamesThatAreArticles.map(async (file) => {
       console.log(`processing article ${file}`);
@@ -73,7 +158,7 @@ export async function generate({
       const type = parse(file).ext;
       const meta = extractMetadata(rawBody);
       const rawMeta = extractRawMetadata(rawBody);
-      const bodyLessMeta = rawBody.replace(rawMeta, "");
+      const bodyLessMeta = rawMeta ? rawBody.replace(rawMeta, "") : rawBody;
       const transformedMetadata = await getTransformedMetadata(
         dirname(file),
         meta
@@ -81,6 +166,10 @@ export async function generate({
       const ext = extname(file);
       const base = basename(file, ext);
       const dir = addTrailingSlash(dirname(file)).replace(source, "");
+      
+      // Generate title from filename (in title case)
+      const title = toTitleCase(base);
+
       const body = renderFile({
         fileContents: rawBody,
         type,
@@ -88,16 +177,31 @@ export async function generate({
         basename: base,
       });
 
+      // Find nearest style.css or _style.css up the tree
+      let embeddedStyle = "";
+      try {
+        const css = await findStyleCss(resolve(_source, dir));
+        if (css) {
+          embeddedStyle = css;
+        }
+      } catch (e) {
+        // ignore
+        console.error(e);
+      }
+
       const requestedTemplateName = meta && meta.template;
       const template =
         templates[requestedTemplateName] || templates[DEFAULT_TEMPLATE_NAME];
-      // console.log({ requestedTemplateName, templates: templates.keys });
 
-      const finalHtml = template
+      // Insert embeddedStyle just before </head> if present, else at top
+      let finalHtml = template
+        .replace("${title}", title)
         .replace("${menu}", menu)
         .replace("${meta}", JSON.stringify(meta))
         .replace("${transformedMetadata}", transformedMetadata)
-        .replace("${body}", body);
+        .replace("${body}", body)
+        .replace("${embeddedStyle}", embeddedStyle)
+        .replace("${searchIndex}", JSON.stringify(searchIndex));
 
       const outputFilename = file
         .replace(source, output)
@@ -133,6 +237,7 @@ export async function generate({
   );
 
   console.log(jsonCache.keys());
+  
   // process directory indices
   await Promise.all(
     allSourceFilenamesThatAreDirectories.map(async (dir) => {
@@ -172,7 +277,12 @@ export async function generate({
           .join("")}</ul>`;
         const finalHtml = template
           .replace("${menu}", menu)
-          .replace("${body}", indexHtml);
+          .replace("${body}", indexHtml)
+          .replace("${searchIndex}", JSON.stringify(searchIndex))
+          .replace("${title}", "Index")
+          .replace("${meta}", "{}")
+          .replace("${transformedMetadata}", "")
+          .replace("${embeddedStyle}", "");
         console.log(`writing directory index to ${htmlOutputFilename}`);
         await outputFile(htmlOutputFilename, finalHtml);
       }
@@ -192,6 +302,7 @@ export async function generate({
 
       console.log(`writing static file to ${outputFilename}`);
 
+      await mkdir(dirname(outputFilename), { recursive: true });
       return await copyFile(file, outputFilename);
     })
   );

@@ -32,9 +32,18 @@ ursa serve <source-directory>
 ursa content --meta=templates --output=dist
 ursa serve content --meta=templates --output=dist --port=3000
 
+# Using a whitelist file to filter which files are processed
+ursa content --whitelist=my-whitelist.txt
+ursa serve content --whitelist=my-whitelist.txt
+
 # Using default meta and output directories (meta/ and output/)
 ursa content
 ursa serve content
+```
+
+If not installed, you can run:
+```bash
+node bin/ursa (same args)
 ```
 
 ### CLI Commands
@@ -55,6 +64,35 @@ Start a development server that:
 - `--meta, -m` - Meta directory containing templates and styles (default: "meta")
 - `--output, -o` - Output directory for generated site (default: "output")
 - `--port, -p` - Port for development server (default: 8080, serve command only)
+- `--whitelist, -w` - Path to whitelist file containing patterns for files to include
+
+### Whitelist File Format
+
+The whitelist file is a plain text file where each line specifies a pattern for files to include. Patterns can be:
+
+```text
+# Comments start with # and are ignored
+# Empty lines are also ignored
+
+# Full absolute paths
+/full/path/to/file.md
+
+# Relative paths from source root
+character/classes/psion.md
+character/classes/
+
+# Directory paths (include trailing slash to match directories)
+spells/
+documentation/
+
+# Just filenames (matches anywhere in the source tree)
+index.md
+README.md
+
+# Partial path matches
+important-document
+classes/wizard
+```
 
 ## Library Usage
 
@@ -67,14 +105,16 @@ import generateSite, { generate, serve } from '@kenjura/ursa';
 await generateSite({
   source: './content',
   meta: './meta',
-  output: './dist'
+  output: './dist',
+  whitelist: './my-whitelist.txt' // optional
 });
 
 // One-time generation using the named export (matches internal API)
 await generate({
   _source: './content',
   _meta: './meta', 
-  _output: './dist'
+  _output: './dist',
+  _whitelist: './my-whitelist.txt' // optional
 });
 
 // Development server with live reloading

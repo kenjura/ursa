@@ -2,6 +2,7 @@ build/
 output/
 source/
 .DS_Store
+whitelist.txt
 
 # Logs
 logs

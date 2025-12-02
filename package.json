@@ -11,6 +11,8 @@
   "scripts": {
     "serve": "nodemon --config nodemon.json  src/serve.js",
     "serve:debug": "nodemon --config nodemon.json  --inspect-brk src/serve.js",
+    "cli:debug": "node --inspect bin/ursa.js",
+    "cli:debug-brk": "node --inspect-brk bin/ursa.js",
     "start": "node src/index.js",
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js"
   },

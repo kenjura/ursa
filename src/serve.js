@@ -13,17 +13,18 @@ export async function serve({
   _source,
   _meta,
   _output,
-  port = 8080
+  port = 8080,
+  _whitelist = null
 } = {}) {
   const sourceDir = resolve(_source);
   const metaDir = resolve(_meta);
   const outputDir = resolve(_output);
 
-  console.log({ source: sourceDir, meta: metaDir, output: outputDir, port });
+  console.log({ source: sourceDir, meta: metaDir, output: outputDir, port, whitelist: _whitelist });
 
   // Initial generation
   console.log("Generating initial site...");
-  await generate({ _source: sourceDir, _meta: metaDir, _output: outputDir });
+  await generate({ _source: sourceDir, _meta: metaDir, _output: outputDir, _whitelist });
   console.log("Initial generation complete. Starting server...");
 
   // Start file server
@@ -32,20 +33,20 @@ export async function serve({
   // Watch for changes
   console.log("Watching for file changes...");
   
-  watch(metaDir, { recursive: true }, async (evt, name) => {
-    console.log("Meta files changed! Regenerating...");
+  watch(metaDir, { recursive: true, filter: /\.(js|json|css|html|md|txt|yml|yaml)$/ }, async (evt, name) => {
+    console.log(`Meta files changed! Event: ${evt}, File: ${name}`);
     try {
-      await generate({ _source: sourceDir, _meta: metaDir, _output: outputDir });
+      await generate({ _source: sourceDir, _meta: metaDir, _output: outputDir, _whitelist });
       console.log("Regeneration complete.");
     } catch (error) {
       console.error("Error during regeneration:", error.message);
     }
   });
 
-  watch(sourceDir, { recursive: true }, async (evt, name) => {
-    console.log("Source files changed! Regenerating...");
+  watch(sourceDir, { recursive: true, filter: /\.(js|json|css|html|md|txt|yml|yaml)$/ }, async (evt, name) => {
+    console.log(`Source files changed! Event: ${evt}, File: ${name}`);
     try {
-      await generate({ _source: sourceDir, _meta: metaDir, _output: outputDir });
+      await generate({ _source: sourceDir, _meta: metaDir, _output: outputDir, _whitelist });
       console.log("Regeneration complete.");
     } catch (error) {
       console.error("Error during regeneration:", error.message);
