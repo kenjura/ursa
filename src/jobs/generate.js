@@ -108,43 +108,51 @@ export async function generate({
     (filename) => isDirectory(filename)
   );
 
+  // Track errors for error report
+  const errors = [];
+
   // First pass: collect search index data
   const searchIndex = [];
   const jsonCache = new Map();
   
   // Collect basic data for search index
   for (const file of allSourceFilenamesThatAreArticles) {
-    const rawBody = await readFile(file, "utf8");
-    const type = parse(file).ext;
-    const ext = extname(file);
-    const base = basename(file, ext);
-    const dir = addTrailingSlash(dirname(file)).replace(source, "");
-    
-    // Generate title from filename (in title case)
-    const title = toTitleCase(base);
-    
-    // Generate URL path relative to output
-    const relativePath = file.replace(source, '').replace(/\.(md|txt|yml)$/, '.html');
-    const url = relativePath.startsWith('/') ? relativePath : '/' + relativePath;
-    
-    // Basic content processing for search (without full rendering)
-    const body = renderFile({
-      fileContents: rawBody,
-      type,
-      dirname: dir,
-      basename: base,
-    });
-    
-    // Extract text content from body (strip HTML tags for search)
-    const textContent = body && body.replace && body.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim() || 'body is undefined for some reason'
-    const excerpt = textContent.substring(0, 200); // First 200 chars for preview
-    
-    searchIndex.push({
-      title: title,
-      path: relativePath,
-      url: url,
-      content: excerpt
-    });
+    try {
+      const rawBody = await readFile(file, "utf8");
+      const type = parse(file).ext;
+      const ext = extname(file);
+      const base = basename(file, ext);
+      const dir = addTrailingSlash(dirname(file)).replace(source, "");
+      
+      // Generate title from filename (in title case)
+      const title = toTitleCase(base);
+      
+      // Generate URL path relative to output
+      const relativePath = file.replace(source, '').replace(/\.(md|txt|yml)$/, '.html');
+      const url = relativePath.startsWith('/') ? relativePath : '/' + relativePath;
+      
+      // Basic content processing for search (without full rendering)
+      const body = renderFile({
+        fileContents: rawBody,
+        type,
+        dirname: dir,
+        basename: base,
+      });
+      
+      // Extract text content from body (strip HTML tags for search)
+      const textContent = body && body.replace && body.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim() || 'body is undefined for some reason'
+      const excerpt = textContent.substring(0, 200); // First 200 chars for preview
+      
+      searchIndex.push({
+        title: title,
+        path: relativePath,
+        url: url,
+        content: excerpt
+      });
+    } catch (e) {
+      console.error(`Error processing ${file} (first pass): ${e.message}`);
+      errors.push({ file, phase: 'search-index', error: e });
+    }
   }
   
   console.log(`Built search index with ${searchIndex.length} entries`);
@@ -152,87 +160,92 @@ export async function generate({
   // Second pass: process individual articles with search data available
   await Promise.all(
     allSourceFilenamesThatAreArticles.map(async (file) => {
-      console.log(`processing article ${file}`);
-
-      const rawBody = await readFile(file, "utf8");
-      const type = parse(file).ext;
-      const meta = extractMetadata(rawBody);
-      const rawMeta = extractRawMetadata(rawBody);
-      const bodyLessMeta = rawMeta ? rawBody.replace(rawMeta, "") : rawBody;
-      const transformedMetadata = await getTransformedMetadata(
-        dirname(file),
-        meta
-      );
-      const ext = extname(file);
-      const base = basename(file, ext);
-      const dir = addTrailingSlash(dirname(file)).replace(source, "");
-      
-      // Generate title from filename (in title case)
-      const title = toTitleCase(base);
-
-      const body = renderFile({
-        fileContents: rawBody,
-        type,
-        dirname: dir,
-        basename: base,
-      });
-
-      // Find nearest style.css or _style.css up the tree
-      let embeddedStyle = "";
       try {
-        const css = await findStyleCss(resolve(_source, dir));
-        if (css) {
-          embeddedStyle = css;
+        console.log(`processing article ${file}`);
+
+        const rawBody = await readFile(file, "utf8");
+        const type = parse(file).ext;
+        const meta = extractMetadata(rawBody);
+        const rawMeta = extractRawMetadata(rawBody);
+        const bodyLessMeta = rawMeta ? rawBody.replace(rawMeta, "") : rawBody;
+        const transformedMetadata = await getTransformedMetadata(
+          dirname(file),
+          meta
+        );
+        const ext = extname(file);
+        const base = basename(file, ext);
+        const dir = addTrailingSlash(dirname(file)).replace(source, "");
+        
+        // Generate title from filename (in title case)
+        const title = toTitleCase(base);
+
+        const body = renderFile({
+          fileContents: rawBody,
+          type,
+          dirname: dir,
+          basename: base,
+        });
+
+        // Find nearest style.css or _style.css up the tree
+        let embeddedStyle = "";
+        try {
+          const css = await findStyleCss(resolve(_source, dir));
+          if (css) {
+            embeddedStyle = css;
+          }
+        } catch (e) {
+          // ignore
+          console.error(e);
         }
+
+        const requestedTemplateName = meta && meta.template;
+        const template =
+          templates[requestedTemplateName] || templates[DEFAULT_TEMPLATE_NAME];
+
+        // Insert embeddedStyle just before </head> if present, else at top
+        let finalHtml = template
+          .replace("${title}", title)
+          .replace("${menu}", menu)
+          .replace("${meta}", JSON.stringify(meta))
+          .replace("${transformedMetadata}", transformedMetadata)
+          .replace("${body}", body)
+          .replace("${embeddedStyle}", embeddedStyle)
+          .replace("${searchIndex}", JSON.stringify(searchIndex));
+
+        const outputFilename = file
+          .replace(source, output)
+          .replace(parse(file).ext, ".html");
+
+        console.log(`writing article to ${outputFilename}`);
+
+        await outputFile(outputFilename, finalHtml);
+
+        // json
+
+        const jsonOutputFilename = outputFilename.replace(".html", ".json");
+        const jsonObject = {
+          name: base,
+          contents: rawBody,
+          // bodyLessMeta: bodyLessMeta,
+          bodyHtml: body,
+          metadata: meta,
+          transformedMetadata,
+          // html: finalHtml,
+        };
+        jsonCache.set(file, jsonObject);
+        const json = JSON.stringify(jsonObject);
+        console.log(`writing article to ${jsonOutputFilename}`);
+        await outputFile(jsonOutputFilename, json);
+
+        // xml
+
+        const xmlOutputFilename = outputFilename.replace(".html", ".xml");
+        const xml = `<article>${o2x(jsonObject)}</article>`;
+        await outputFile(xmlOutputFilename, xml);
       } catch (e) {
-        // ignore
-        console.error(e);
+        console.error(`Error processing ${file} (second pass): ${e.message}`);
+        errors.push({ file, phase: 'article-generation', error: e });
       }
-
-      const requestedTemplateName = meta && meta.template;
-      const template =
-        templates[requestedTemplateName] || templates[DEFAULT_TEMPLATE_NAME];
-
-      // Insert embeddedStyle just before </head> if present, else at top
-      let finalHtml = template
-        .replace("${title}", title)
-        .replace("${menu}", menu)
-        .replace("${meta}", JSON.stringify(meta))
-        .replace("${transformedMetadata}", transformedMetadata)
-        .replace("${body}", body)
-        .replace("${embeddedStyle}", embeddedStyle)
-        .replace("${searchIndex}", JSON.stringify(searchIndex));
-
-      const outputFilename = file
-        .replace(source, output)
-        .replace(parse(file).ext, ".html");
-
-      console.log(`writing article to ${outputFilename}`);
-
-      await outputFile(outputFilename, finalHtml);
-
-      // json
-
-      const jsonOutputFilename = outputFilename.replace(".html", ".json");
-      const jsonObject = {
-        name: base,
-        contents: rawBody,
-        // bodyLessMeta: bodyLessMeta,
-        bodyHtml: body,
-        metadata: meta,
-        transformedMetadata,
-        // html: finalHtml,
-      };
-      jsonCache.set(file, jsonObject);
-      const json = JSON.stringify(jsonObject);
-      console.log(`writing article to ${jsonOutputFilename}`);
-      await outputFile(jsonOutputFilename, json);
-
-      // xml
-
-      const xmlOutputFilename = outputFilename.replace(".html", ".xml");
-      const xml = `<article>${o2x(jsonObject)}</article>`;
-      await outputFile(xmlOutputFilename, xml);
     })
   );
 
@@ -241,50 +254,55 @@ export async function generate({
   // process directory indices
   await Promise.all(
     allSourceFilenamesThatAreDirectories.map(async (dir) => {
-      console.log(`processing directory ${dir}`);
+      try {
+        console.log(`processing directory ${dir}`);
 
-      const pathsInThisDirectory = allSourceFilenames.filter((filename) =>
-        filename.match(new RegExp(`${dir}.+`))
-      );
+        const pathsInThisDirectory = allSourceFilenames.filter((filename) =>
+          filename.match(new RegExp(`${dir}.+`))
+        );
 
-      const jsonObjects = pathsInThisDirectory
-        .map((path) => {
-          const object = jsonCache.get(path);
-          return typeof object === "object" ? object : null;
-        })
-        .filter((a) => a);
-
-      const json = JSON.stringify(jsonObjects);
-
-      const outputFilename = dir.replace(source, output) + ".json";
-
-      console.log(`writing directory index to ${outputFilename}`);
-      await outputFile(outputFilename, json);
-
-      // html
-      const htmlOutputFilename = dir.replace(source, output) + ".html";
-      const indexAlreadyExists = fileExists(htmlOutputFilename);
-      if (!indexAlreadyExists) {
-        const template = templates["default-template"]; // TODO: figure out a way to specify template for a directory index
-        const indexHtml = `<ul>${pathsInThisDirectory
+        const jsonObjects = pathsInThisDirectory
           .map((path) => {
-            const partialPath = path
-              .replace(source, "")
-              .replace(parse(path).ext, ".html");
-            const name = basename(path, parse(path).ext);
-            return `<li><a href="${partialPath}">${name}</a></li>`;
+            const object = jsonCache.get(path);
+            return typeof object === "object" ? object : null;
           })
-          .join("")}</ul>`;
-        const finalHtml = template
-          .replace("${menu}", menu)
-          .replace("${body}", indexHtml)
-          .replace("${searchIndex}", JSON.stringify(searchIndex))
-          .replace("${title}", "Index")
-          .replace("${meta}", "{}")
-          .replace("${transformedMetadata}", "")
-          .replace("${embeddedStyle}", "");
-        console.log(`writing directory index to ${htmlOutputFilename}`);
-        await outputFile(htmlOutputFilename, finalHtml);
+          .filter((a) => a);
+
+        const json = JSON.stringify(jsonObjects);
+
+        const outputFilename = dir.replace(source, output) + ".json";
+
+        console.log(`writing directory index to ${outputFilename}`);
+        await outputFile(outputFilename, json);
+
+        // html
+        const htmlOutputFilename = dir.replace(source, output) + ".html";
+        const indexAlreadyExists = fileExists(htmlOutputFilename);
+        if (!indexAlreadyExists) {
+          const template = templates["default-template"]; // TODO: figure out a way to specify template for a directory index
+          const indexHtml = `<ul>${pathsInThisDirectory
+            .map((path) => {
+              const partialPath = path
+                .replace(source, "")
+                .replace(parse(path).ext, ".html");
+              const name = basename(path, parse(path).ext);
+              return `<li><a href="${partialPath}">${name}</a></li>`;
+            })
+            .join("")}</ul>`;
+          const finalHtml = template
+            .replace("${menu}", menu)
+            .replace("${body}", indexHtml)
+            .replace("${searchIndex}", JSON.stringify(searchIndex))
+            .replace("${title}", "Index")
+            .replace("${meta}", "{}")
+            .replace("${transformedMetadata}", "")
+            .replace("${embeddedStyle}", "");
+          console.log(`writing directory index to ${htmlOutputFilename}`);
+          await outputFile(htmlOutputFilename, finalHtml);
+        }
+      } catch (e) {
+        console.error(`Error processing directory ${dir}: ${e.message}`);
+        errors.push({ file: dir, phase: 'directory-index', error: e });
       }
     })
   );
@@ -296,16 +314,57 @@ export async function generate({
   );
   await Promise.all(
     allSourceFilenamesThatAreImages.map(async (file) => {
-      console.log(`processing static file ${file}`);
+      try {
+        console.log(`processing static file ${file}`);
 
-      const outputFilename = file.replace(source, output);
+        const outputFilename = file.replace(source, output);
 
-      console.log(`writing static file to ${outputFilename}`);
+        console.log(`writing static file to ${outputFilename}`);
 
-      await mkdir(dirname(outputFilename), { recursive: true });
-      return await copyFile(file, outputFilename);
+        await mkdir(dirname(outputFilename), { recursive: true });
+        return await copyFile(file, outputFilename);
+      } catch (e) {
+        console.error(`Error processing static file ${file}: ${e.message}`);
+        errors.push({ file, phase: 'static-file', error: e });
+      }
     })
   );
+
+  // Write error report if there were any errors
+  if (errors.length > 0) {
+    const errorReportPath = join(output, '_errors.log');
+    const failedFiles = errors.map(e => e.file);
+    
+    let report = `URSA GENERATION ERROR REPORT\n`;
+    report += `Generated: ${new Date().toISOString()}\n`;
+    report += `Total errors: ${errors.length}\n\n`;
+    report += `${'='.repeat(60)}\n`;
+    report += `FAILED FILES:\n`;
+    report += `${'='.repeat(60)}\n\n`;
+    failedFiles.forEach(f => {
+      report += `  - ${f}\n`;
+    });
+    report += `\n${'='.repeat(60)}\n`;
+    report += `ERROR DETAILS:\n`;
+    report += `${'='.repeat(60)}\n\n`;
+    
+    errors.forEach(({ file, phase, error }) => {
+      report += `${'─'.repeat(60)}\n`;
+      report += `File: ${file}\n`;
+      report += `Phase: ${phase}\n`;
+      report += `Error: ${error.message}\n`;
+      if (error.stack) {
+        report += `Stack:\n${error.stack}\n`;
+      }
+      report += `\n`;
+    });
+    
+    await outputFile(errorReportPath, report);
+    console.log(`\n⚠️  ${errors.length} error(s) occurred during generation.`);
+    console.log(`   Error report written to: ${errorReportPath}\n`);
+  } else {
+    console.log(`\n✅ Generation complete with no errors.\n`);
+  }
 }
 
 /**
