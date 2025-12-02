@@ -202,6 +202,10 @@ export async function generate({
         const template =
           templates[requestedTemplateName] || templates[DEFAULT_TEMPLATE_NAME];
 
+        if (!template) {
+          throw new Error(`Template not found. Requested: "${requestedTemplateName || DEFAULT_TEMPLATE_NAME}". Available templates: ${Object.keys(templates).join(', ') || 'none'}`);
+        }
+
         // Insert embeddedStyle just before </head> if present, else at top
         let finalHtml = template
           .replace("${title}", title)

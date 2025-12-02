@@ -3,7 +3,13 @@
 import yargs from 'yargs';
 import { hideBin } from 'yargs/helpers';
 import { generate } from '../src/jobs/generate.js';
-import { resolve } from 'path';
+import { resolve, dirname, join } from 'path';
+import { fileURLToPath } from 'url';
+
+// Get the directory where ursa is installed
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const PACKAGE_META = join(__dirname, '..', 'meta');
 
 yargs(hideBin(process.argv))
   .command(
@@ -18,8 +24,7 @@ yargs(hideBin(process.argv))
         })
         .option('meta', {
           alias: 'm',
-          default: 'meta',
-          describe: 'Meta directory containing templates and styles',
+          describe: 'Meta directory containing templates and styles (defaults to ursa package meta)',
           type: 'string'
         })
         .option('output', {
@@ -36,7 +41,7 @@ yargs(hideBin(process.argv))
     },
     async (argv) => {
       const source = resolve(argv.source);
-      const meta = resolve(argv.meta);
+      const meta = argv.meta ? resolve(argv.meta) : PACKAGE_META;
       const output = resolve(argv.output);
       const whitelist = argv.whitelist ? resolve(argv.whitelist) : null;
       
@@ -71,8 +76,7 @@ yargs(hideBin(process.argv))
         })
         .option('meta', {
           alias: 'm',
-          default: 'meta',
-          describe: 'Meta directory containing templates and styles',
+          describe: 'Meta directory containing templates and styles (defaults to ursa package meta)',
           type: 'string'
         })
         .option('output', {
@@ -95,7 +99,7 @@ yargs(hideBin(process.argv))
     },
     async (argv) => {
       const source = resolve(argv.source);
-      const meta = resolve(argv.meta);
+      const meta = argv.meta ? resolve(argv.meta) : PACKAGE_META;
       const output = resolve(argv.output);
       const port = argv.port;
       const whitelist = argv.whitelist ? resolve(argv.whitelist) : null;
