@@ -33,20 +33,24 @@ export async function serve({
   // Watch for changes
   console.log("Watching for file changes...");
   
+  // Meta changes trigger full rebuild (templates, CSS, etc. affect all pages)
   watch(metaDir, { recursive: true, filter: /\.(js|json|css|html|md|txt|yml|yaml)$/ }, async (evt, name) => {
     console.log(`Meta files changed! Event: ${evt}, File: ${name}`);
+    console.log("Full rebuild required (meta files affect all pages)...");
     try {
-      await generate({ _source: sourceDir, _meta: metaDir, _output: outputDir, _whitelist });
+      await generate({ _source: sourceDir, _meta: metaDir, _output: outputDir, _whitelist, _incremental: false });
       console.log("Regeneration complete.");
     } catch (error) {
       console.error("Error during regeneration:", error.message);
     }
   });
 
+  // Source changes use incremental mode (only regenerate changed files)
   watch(sourceDir, { recursive: true, filter: /\.(js|json|css|html|md|txt|yml|yaml)$/ }, async (evt, name) => {
     console.log(`Source files changed! Event: ${evt}, File: ${name}`);
+    console.log("Incremental rebuild...");
     try {
-      await generate({ _source: sourceDir, _meta: metaDir, _output: outputDir, _whitelist });
+      await generate({ _source: sourceDir, _meta: metaDir, _output: outputDir, _whitelist, _incremental: true });
       console.log("Regeneration complete.");
     } catch (error) {
       console.error("Error during regeneration:", error.message);
@@ -56,8 +60,8 @@ export async function serve({
   console.log(`🚀 Development server running at http://localhost:${port}`);
   console.log("📁 Serving files from:", outputDir);
   console.log("👀 Watching for changes in:");
-  console.log("   Source:", sourceDir);
-  console.log("   Meta:", metaDir);
+  console.log("   Source:", sourceDir, "(incremental)");
+  console.log("   Meta:", metaDir, "(full rebuild)");
   console.log("\nPress Ctrl+C to stop the server");
 }
 

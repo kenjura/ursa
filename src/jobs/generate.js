@@ -8,6 +8,13 @@ import {
   extractMetadata,
   extractRawMetadata,
 } from "../helper/metadataExtractor.js";
+import {
+  hashContent,
+  loadHashCache,
+  saveHashCache,
+  needsRegeneration,
+  updateHash,
+} from "../helper/contentHash.js";
 
 // Helper function to build search index from processed files
 function buildSearchIndex(jsonCache, source, output) {
@@ -59,8 +66,9 @@ export async function generate({
   _meta = join(process.cwd(), "meta"),
   _output = join(process.cwd(), "build"),
   _whitelist = null,
+  _incremental = false,  // When true, only regenerate changed files
 } = {}) {
-  console.log({ _source, _meta, _output, _whitelist });
+  console.log({ _source, _meta, _output, _whitelist, _incremental });
   const source = resolve(_source) + "/";
   const meta = resolve(_meta);
   const output = resolve(_output) + "/";
@@ -90,12 +98,19 @@ export async function generate({
 
   const menu = await getMenu(allSourceFilenames, source);
 
-  // clean build directory
-  await emptyDir(output);
+  // Load content hash cache for incremental builds
+  let hashCache = new Map();
+  if (_incremental) {
+    hashCache = await loadHashCache(output);
+    console.log(`Incremental mode: loaded ${hashCache.size} cached hashes`);
+  } else {
+    // Full rebuild: clean build directory
+    await emptyDir(output);
+  }
 
   // create public folder
   const pub = join(output, "public");
-  await mkdir(pub);
+  await mkdir(pub, { recursive: true });
   await copyDir(meta, pub);
 
   // read all articles, process them, copy them to build
@@ -157,13 +172,25 @@ export async function generate({
   
   console.log(`Built search index with ${searchIndex.length} entries`);
 
+  // Track files that were regenerated (for incremental mode stats)
+  let regeneratedCount = 0;
+  let skippedCount = 0;
+
   // Second pass: process individual articles with search data available
   await Promise.all(
     allSourceFilenamesThatAreArticles.map(async (file) => {
       try {
-        console.log(`processing article ${file}`);
-
         const rawBody = await readFile(file, "utf8");
+        
+        // In incremental mode, skip files that haven't changed
+        if (_incremental && !needsRegeneration(file, rawBody, hashCache)) {
+          skippedCount++;
+          return; // Skip this file
+        }
+        
+        console.log(`processing article ${file}`);
+        regeneratedCount++;
+
         const type = parse(file).ext;
         const meta = extractMetadata(rawBody);
         const rawMeta = extractRawMetadata(rawBody);
@@ -246,12 +273,20 @@ export async function generate({
         const xmlOutputFilename = outputFilename.replace(".html", ".xml");
         const xml = `<article>${o2x(jsonObject)}</article>`;
         await outputFile(xmlOutputFilename, xml);
+        
+        // Update the content hash for this file
+        updateHash(file, rawBody, hashCache);
       } catch (e) {
         console.error(`Error processing ${file} (second pass): ${e.message}`);
         errors.push({ file, phase: 'article-generation', error: e });
       }
     })
   );
+
+  // Log incremental mode stats
+  if (_incremental) {
+    console.log(`Incremental build: ${regeneratedCount} regenerated, ${skippedCount} unchanged`);
+  }
 
   console.log(jsonCache.keys());
   
@@ -319,6 +354,17 @@ export async function generate({
   await Promise.all(
     allSourceFilenamesThatAreImages.map(async (file) => {
       try {
+        // For incremental mode, check if file has changed using file stat as a quick check
+        if (_incremental) {
+          const fileStat = await stat(file);
+          const statKey = `${file}:stat`;
+          const newStatHash = `${fileStat.size}:${fileStat.mtimeMs}`;
+          if (hashCache.get(statKey) === newStatHash) {
+            return; // Skip unchanged static file
+          }
+          hashCache.set(statKey, newStatHash);
+        }
+        
         console.log(`processing static file ${file}`);
 
         const outputFilename = file.replace(source, output);
@@ -333,6 +379,11 @@ export async function generate({
       }
     })
   );
+
+  // Save the hash cache for next incremental build
+  if (_incremental || hashCache.size > 0) {
+    await saveHashCache(output, hashCache);
+  }
 
   // Write error report if there were any errors
   if (errors.length > 0) {
