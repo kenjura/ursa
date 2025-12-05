@@ -2,33 +2,36 @@ document.addEventListener('DOMContentLoaded', () => {
     const navMain = document.querySelector('nav#nav-main');
     if (!navMain) return;
 
-    const liWithUl = navMain.querySelectorAll('li:has(ul)');
-    liWithUl.forEach(li => {
-        li.classList.add('has-children');
-
-        const firstA = li.querySelector('a');
-        const twisty = document.createElement('span');
-        twisty.textContent = '▶';
-        twisty.className = 'menu-twisty';
-
-        if (firstA) {
-            li.insertBefore(twisty, firstA);
-        }
-
-        twisty.addEventListener('click', (e) => {
-            li.classList.toggle('expanded');
+    // Set up expand/collapse for items with children
+    const expandArrows = navMain.querySelectorAll('.expand-arrow');
+    expandArrows.forEach(arrow => {
+        arrow.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const li = arrow.closest('li');
+            if (li) {
+                li.classList.toggle('expanded');
+            }
         });
     });
 
-    const liWithoutUl = navMain.querySelectorAll('li:not(:has(ul))');
-    liWithoutUl.forEach(li => {
-        const dash = document.createElement('span');
-        dash.textContent = '-';
-        dash.className = 'menu-no-twisty';
-        li.insertBefore(dash, li.firstChild);
+    // Also allow clicking the menu-item-row to expand (but not the link itself)
+    const menuItemRows = navMain.querySelectorAll('.menu-item-row');
+    menuItemRows.forEach(row => {
+        row.addEventListener('click', (e) => {
+            // Only toggle if clicking the row itself, icon, or expand arrow area (not the link)
+            const clickedLink = e.target.closest('a');
+            if (!clickedLink) {
+                const li = row.closest('li');
+                if (li && li.classList.contains('has-children')) {
+                    li.classList.toggle('expanded');
+                }
+            }
+        });
     });
 
-    const pathParts = window.location.pathname.split('/').filter(Boolean).map(p => p.toLowerCase());
+    // Auto-expand and highlight based on current URL path
+    const pathParts = window.location.pathname.split('/').filter(Boolean).map(p => decodeURIComponent(p).toLowerCase());
     if (pathParts.length >= 1) {
         // Start with the top level
         let currentLevel = navMain.querySelectorAll(':scope > ul > li');
@@ -40,8 +43,10 @@ document.addEventListener('DOMContentLoaded', () => {
             
             // Find matching li at current level
             currentLi = Array.from(currentLevel).find(li => {
-                const a = li.querySelector('a');
-                return a && a.textContent.trim().toLowerCase() === targetLabel;
+                const a = li.querySelector('.menu-item-row a');
+                if (!a) return false;
+                const linkText = a.textContent.trim().toLowerCase();
+                return linkText === targetLabel;
             });
             
             if (currentLi) {
@@ -53,7 +58,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     currentLi.classList.add('expanded');
                     const nextUl = currentLi.querySelector('ul');
                     if (nextUl) {
-                        currentLevel = nextUl.querySelectorAll('li');
+                        currentLevel = nextUl.querySelectorAll(':scope > li');
                     } else {
                         break; // No deeper level available
                     }

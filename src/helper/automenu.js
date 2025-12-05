@@ -1,5 +1,52 @@
 import dirTree from "directory-tree";
-import { extname, basename } from "path";
+import { extname, basename, join, dirname } from "path";
+import { existsSync } from "fs";
+
+// Icon extensions to check for custom icons
+const ICON_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.ico'];
+
+// Default icons (using emoji for simplicity, can be replaced with SVG)
+const FOLDER_ICON = '📁';
+const DOCUMENT_ICON = '📄';
+const HOME_ICON = '🏠';
+
+function findCustomIcon(dirPath, source) {
+  for (const ext of ICON_EXTENSIONS) {
+    const iconPath = join(dirPath, `icon${ext}`);
+    if (existsSync(iconPath)) {
+      // Return the web-accessible path
+      return iconPath.replace(source, '/');
+    }
+  }
+  return null;
+}
+
+function getIcon(item, source, isHome = false) {
+  if (isHome) {
+    return `<span class="menu-icon">${HOME_ICON}</span>`;
+  }
+  
+  if (item.children) {
+    // It's a folder - check for custom icon
+    const customIcon = findCustomIcon(item.path, source);
+    if (customIcon) {
+      return `<span class="menu-icon"><img src="${customIcon}" alt="" /></span>`;
+    }
+    return `<span class="menu-icon">${FOLDER_ICON}</span>`;
+  }
+  
+  // It's a file - check for custom icon in parent directory with matching name
+  const dir = dirname(item.path);
+  const base = basename(item.path, extname(item.path));
+  for (const ext of ICON_EXTENSIONS) {
+    const iconPath = join(dir, `${base}-icon${ext}`);
+    if (existsSync(iconPath)) {
+      return `<span class="menu-icon"><img src="${iconPath.replace(source, '/')}" alt="" /></span>`;
+    }
+  }
+  
+  return `<span class="menu-icon">${DOCUMENT_ICON}</span>`;
+}
 
 export async function getAutomenu(source) {
   const tree = dirTree(source);
@@ -15,6 +62,7 @@ export async function getAutomenu(source) {
     path: "/",
     name: "Home",
     type: "file",
+    isHome: true,
   });
 
   const topLevelItems = tree.children.sort(childSorter);
@@ -22,48 +70,50 @@ export async function getAutomenu(source) {
     .map((item) => renderMenuItem({ ...item, source }))
     .join("");
 
-  return `<ul>${topLevelHtml}</ul>`;
+  // Render home item separately with home icon
+  const homeHtml = `
+<li class="menu-item">
+  <div class="menu-item-row">
+    <span class="menu-no-twisty"></span>
+    <span class="menu-icon">${HOME_ICON}</span>
+    <a href="/" class="menu-label">Home</a>
+  </div>
+</li>`;
+
+  return `<ul>${homeHtml}${topLevelHtml}</ul>`;
 }
 
 function renderMenuItem({ path, name, children, source }) {
   const ext = extname(path);
   const href = path.replace(source, "").replace(ext, "");
   const label = basename(path, ext);
-  //   const childMenuItems = Array.isArray(children)
-  //     ? children
-  //         .map((child) => renderMenuItem({ ...child, source }))
-  //         .sort(menuItemSorter)
-  //     : null;
+  const hasChildren = !!children;
+  const icon = getIcon({ path, children }, source);
+  
+  // Twisty arrow for expandable items
+  const twisty = hasChildren 
+    ? `<span class="expand-arrow">▶</span>`
+    : `<span class="menu-no-twisty"></span>`;
+  
+  const childrenHtml = children
+    ? `<ul>${children
+        .sort(childSorter)
+        .map((child) => renderMenuItem({ ...child, source }))
+        .join("")}</ul>`
+    : "";
+
+  const hasChildrenClass = hasChildren ? ' has-children' : '';
   const html = `
-<li data-has-children="${!!children}">
-  <a href="/${href}">${label}</a>
-  ${
-    children
-      ? `<ul>
-    ${children
-      .sort(childSorter)
-      .map((child) => renderMenuItem({ ...child, source }))
-      .join("")}
-  </ul>`
-      : ""
-  }
+<li class="menu-item${hasChildrenClass}">
+  <div class="menu-item-row">
+    ${twisty}
+    ${icon}
+    <a href="/${href}" class="menu-label">${label}</a>
+  </div>
+  ${childrenHtml}
 </li>`;
+
   return html;
-
-  return {
-    href,
-    label,
-    childMenuItems,
-  };
-
-  /**
-   * example output:
-   * {
-   *   href:'Foo/Bar',
-   *   label:'Bar',
-   *   childMenuItems: [thisObject]
-   * }
-   */
 }
 
 function childSorter(a, b) {
