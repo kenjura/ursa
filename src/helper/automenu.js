@@ -10,6 +10,19 @@ const FOLDER_ICON = '📁';
 const DOCUMENT_ICON = '📄';
 const HOME_ICON = '🏠';
 
+// Index file extensions to check for folder links
+const INDEX_EXTENSIONS = ['.md', '.txt', '.yml', '.yaml'];
+
+function hasIndexFile(dirPath) {
+  for (const ext of INDEX_EXTENSIONS) {
+    const indexPath = join(dirPath, `index${ext}`);
+    if (existsSync(indexPath)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function findCustomIcon(dirPath, source) {
   for (const ext of ICON_EXTENSIONS) {
     const iconPath = join(dirPath, `icon${ext}`);
@@ -85,10 +98,26 @@ export async function getAutomenu(source) {
 
 function renderMenuItem({ path, name, children, source }) {
   const ext = extname(path);
-  const href = path.replace(source, "").replace(ext, "");
   const label = basename(path, ext);
   const hasChildren = !!children;
   const icon = getIcon({ path, children }, source);
+  
+  // Determine the href based on whether it's a folder or file
+  let labelHtml;
+  if (hasChildren) {
+    // It's a folder - check if it has an index file
+    if (hasIndexFile(path)) {
+      const folderPath = path.replace(source, "");
+      labelHtml = `<a href="/${folderPath}/index.html" class="menu-label">${label}</a>`;
+    } else {
+      // No index file - render as non-clickable text
+      labelHtml = `<span class="menu-label">${label}</span>`;
+    }
+  } else {
+    // It's a file - link to the HTML version
+    const href = path.replace(source, "").replace(ext, "");
+    labelHtml = `<a href="/${href}" class="menu-label">${label}</a>`;
+  }
   
   // Twisty arrow for expandable items
   const twisty = hasChildren 
@@ -108,7 +137,7 @@ function renderMenuItem({ path, name, children, source }) {
   <div class="menu-item-row">
     ${twisty}
     ${icon}
-    <a href="/${href}" class="menu-label">${label}</a>
+    ${labelHtml}
   </div>
   ${childrenHtml}
 </li>`;
