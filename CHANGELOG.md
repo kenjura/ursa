@@ -1,4 +1,7 @@
-
+# 0.26.0
+2025-12-06
+- Fixed global nav styles in desktop
+- Updated main nav style to match TOC
 
 # 0.25.0
 
