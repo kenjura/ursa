@@ -2,6 +2,58 @@ document.addEventListener('DOMContentLoaded', () => {
     const navMain = document.querySelector('nav#nav-main');
     if (!navMain) return;
 
+    // Helper to check if we're on mobile
+    const isMobile = () => window.matchMedia('(max-width: 800px)').matches;
+
+    // Hamburger menu button toggle
+    const menuButton = document.querySelector('button.menu-button');
+    if (menuButton) {
+        const updateButtonIcon = (isOpen) => {
+            menuButton.textContent = isOpen ? '✕' : '☰';
+            menuButton.setAttribute('aria-expanded', isOpen);
+            menuButton.setAttribute('aria-label', isOpen ? 'Close menu' : 'Open menu');
+        };
+
+        menuButton.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            
+            if (isMobile()) {
+                // Mobile: toggle active class (shows/hides overlay)
+                navMain.classList.toggle('active');
+                const isExpanded = navMain.classList.contains('active');
+                updateButtonIcon(isExpanded);
+            } else {
+                // Desktop: toggle collapsed class (slides in/out)
+                navMain.classList.toggle('collapsed');
+                const isExpanded = !navMain.classList.contains('collapsed');
+                menuButton.setAttribute('aria-expanded', isExpanded);
+            }
+        });
+
+        // Close menu when clicking outside on mobile
+        document.addEventListener('click', (e) => {
+            if (isMobile() && 
+                navMain.classList.contains('active') && 
+                !navMain.contains(e.target) && 
+                !menuButton.contains(e.target)) {
+                navMain.classList.remove('active');
+                updateButtonIcon(false);
+            }
+        });
+
+        // Close menu when pressing Escape
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                if (isMobile() && navMain.classList.contains('active')) {
+                    navMain.classList.remove('active');
+                    updateButtonIcon(false);
+                    menuButton.focus();
+                }
+            }
+        });
+    }
+
     // Set up expand/collapse for items with children
     const expandArrows = navMain.querySelectorAll('.expand-arrow');
     expandArrows.forEach(arrow => {
