@@ -1,3 +1,9 @@
+# 0.28.0
+2025-12-07
+
+- Added broken link detection and styles
+- Fixed hole in "serve" logic that didn't regenerate style.css
+
 # 0.27.0
 2025-12-07
 

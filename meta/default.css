@@ -33,6 +33,13 @@ body {
   color: var(--text-color);
 }
 
+/* Inactive/broken links */
+a.inactive {
+  filter: brightness(0.5);
+  cursor: not-allowed;
+  text-decoration: line-through;
+}
+
 h1 {
   max-width: var(--article-width);
   overflow: hidden ;

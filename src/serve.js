@@ -46,14 +46,28 @@ export async function serve({
   });
 
   // Source changes use incremental mode (only regenerate changed files)
+  // Exception: CSS changes require full rebuild since they're embedded in all pages
   watch(sourceDir, { recursive: true, filter: /\.(js|json|css|html|md|txt|yml|yaml)$/ }, async (evt, name) => {
     console.log(`Source files changed! Event: ${evt}, File: ${name}`);
-    console.log("Incremental rebuild...");
-    try {
-      await generate({ _source: sourceDir, _meta: metaDir, _output: outputDir, _whitelist, _incremental: true });
-      console.log("Regeneration complete.");
-    } catch (error) {
-      console.error("Error during regeneration:", error.message);
+    
+    // CSS files affect all pages (embedded styles), so trigger full rebuild
+    const isCssChange = name && name.endsWith('.css');
+    if (isCssChange) {
+      console.log("CSS change detected - full rebuild required...");
+      try {
+        await generate({ _source: sourceDir, _meta: metaDir, _output: outputDir, _whitelist, _incremental: false });
+        console.log("Regeneration complete.");
+      } catch (error) {
+        console.error("Error during regeneration:", error.message);
+      }
+    } else {
+      console.log("Incremental rebuild...");
+      try {
+        await generate({ _source: sourceDir, _meta: metaDir, _output: outputDir, _whitelist, _incremental: true });
+        console.log("Regeneration complete.");
+      } catch (error) {
+        console.error("Error during regeneration:", error.message);
+      }
     }
   });
 

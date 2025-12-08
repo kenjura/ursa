@@ -15,6 +15,10 @@ import {
   needsRegeneration,
   updateHash,
 } from "../helper/contentHash.js";
+import {
+  buildValidPaths,
+  markInactiveLinks,
+} from "../helper/linkValidator.js";
 
 // Helper function to build search index from processed files
 function buildSearchIndex(jsonCache, source, output) {
@@ -122,6 +126,10 @@ export async function generate({
     allSourceFilenames,
     (filename) => isDirectory(filename)
   );
+
+  // Build set of valid internal paths for link validation
+  const validPaths = buildValidPaths(allSourceFilenamesThatAreArticles, source);
+  console.log(`Built ${validPaths.size} valid paths for link validation`);
 
   // Track errors for error report
   const errors = [];
@@ -242,6 +250,9 @@ export async function generate({
           .replace("${body}", body)
           .replace("${embeddedStyle}", embeddedStyle)
           .replace("${searchIndex}", JSON.stringify(searchIndex));
+
+        // Mark broken internal links as inactive
+        finalHtml = markInactiveLinks(finalHtml, validPaths);
 
         const outputFilename = file
           .replace(source, output)
