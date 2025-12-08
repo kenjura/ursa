@@ -1,3 +1,8 @@
+# 0.27.0
+2025-12-07
+
+- Capitalizing nav-main labels
+
 # 0.26.0
 2025-12-06
 - Fixed global nav styles in desktop
