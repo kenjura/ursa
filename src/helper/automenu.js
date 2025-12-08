@@ -61,8 +61,70 @@ function getIcon(item, source, isHome = false) {
   return `<span class="menu-icon">${DOCUMENT_ICON}</span>`;
 }
 
+/**
+ * Resolve an href to a valid .html file path, checking against validPaths.
+ * Returns { href, inactive, debug } where inactive is true if the link doesn't resolve to a valid path.
+ * 
+ * Logic:
+ * - "/" -> "/index.html"
+ * - Any link lacking an extension:
+ *   - Try adding ".html" - if path exists, use it
+ *   - Try adding "/index.html" - if path exists, use it
+ *   - Otherwise, mark as inactive
+ * - Links with extensions are checked directly
+ */
+function resolveHref(rawHref, validPaths) {
+  const debugTries = [];
+  
+  if (!rawHref) {
+    return { href: null, inactive: false, debug: 'null href' };
+  }
+  
+  // Normalize for checking (lowercase)
+  const normalize = (path) => path.toLowerCase();
+  
+  // Root link
+  if (rawHref === '/') {
+    const indexPath = '/index.html';
+    const exists = validPaths.has(normalize(indexPath));
+    debugTries.push(`${indexPath} → ${exists ? '✓' : '✗'}`);
+    if (exists) {
+      return { href: '/index.html', inactive: false, debug: debugTries.join(' | ') };
+    }
+    return { href: '/', inactive: true, debug: debugTries.join(' | ') };
+  }
+  
+  // Check if the link already has an extension
+  const ext = extname(rawHref);
+  if (ext) {
+    // Has extension - check if path exists
+    const exists = validPaths.has(normalize(rawHref));
+    debugTries.push(`${rawHref} → ${exists ? '✓' : '✗'}`);
+    return { href: rawHref, inactive: !exists, debug: debugTries.join(' | ') };
+  }
+  
+  // No extension - try .html first
+  const htmlPath = rawHref + '.html';
+  const htmlExists = validPaths.has(normalize(htmlPath));
+  debugTries.push(`${htmlPath} → ${htmlExists ? '✓' : '✗'}`);
+  if (htmlExists) {
+    return { href: htmlPath, inactive: false, debug: debugTries.join(' | ') };
+  }
+  
+  // Try /index.html
+  const indexPath = rawHref + '/index.html';
+  const indexExists = validPaths.has(normalize(indexPath));
+  debugTries.push(`${indexPath} → ${indexExists ? '✓' : '✗'}`);
+  if (indexExists) {
+    return { href: indexPath, inactive: false, debug: debugTries.join(' | ') };
+  }
+  
+  // Neither exists - mark as inactive, keep original href
+  return { href: rawHref, inactive: true, debug: debugTries.join(' | ') };
+}
+
 // Build a flat tree structure with path info for JS navigation
-function buildMenuData(tree, source, parentPath = '') {
+function buildMenuData(tree, source, validPaths, parentPath = '') {
   const items = [];
   
   for (const item of tree.children || []) {
@@ -72,25 +134,30 @@ function buildMenuData(tree, source, parentPath = '') {
     const relativePath = item.path.replace(source, '');
     const folderPath = parentPath ? `${parentPath}/${label}` : label;
     
-    let href = null;
+    let rawHref = null;
     if (hasChildren) {
       if (hasIndexFile(item.path)) {
-        href = `/${relativePath}/index.html`;
+        rawHref = `/${relativePath}/index.html`;
       }
     } else {
-      href = `/${relativePath.replace(ext, '')}`;
+      rawHref = `/${relativePath.replace(ext, '')}`;
     }
+    
+    // Resolve the href and check if target exists
+    const { href, inactive, debug } = resolveHref(rawHref, validPaths);
     
     const menuItem = {
       label,
       path: folderPath,
       href,
+      inactive,
+      debug,
       hasChildren,
       icon: getIcon(item, source),
     };
     
     if (hasChildren) {
-      menuItem.children = buildMenuData(item, source, folderPath);
+      menuItem.children = buildMenuData(item, source, validPaths, folderPath);
     }
     
     items.push(menuItem);
@@ -105,13 +172,14 @@ function buildMenuData(tree, source, parentPath = '') {
   });
 }
 
-export async function getAutomenu(source) {
+export async function getAutomenu(source, validPaths) {
   const tree = dirTree(source);
-  const menuData = buildMenuData(tree, source);
+  const menuData = buildMenuData(tree, source, validPaths);
   
-  // Add home item
+  // Add home item with resolved href
+  const homeResolved = resolveHref('/', validPaths);
   const fullMenuData = [
-    { label: 'Home', path: '', href: '/', hasChildren: false, icon: `<span class="menu-icon">${HOME_ICON}</span>` },
+    { label: 'Home', path: '', href: homeResolved.href, inactive: homeResolved.inactive, debug: homeResolved.debug, hasChildren: false, icon: `<span class="menu-icon">${HOME_ICON}</span>` },
     ...menuData
   ];
   
@@ -136,9 +204,11 @@ function renderMenuLevel(items, level) {
   return items.map(item => {
     const hasChildrenClass = item.hasChildren ? ' has-children' : '';
     const hasChildrenIndicator = item.hasChildren ? '<span class="menu-more">⋯</span>' : '';
+    const inactiveClass = item.inactive ? ' inactive' : '';
+    const debugText = item.debug ? ` [DEBUG: ${item.debug}]` : '';
     
     const labelHtml = item.href
-      ? `<a href="${item.href}" class="menu-label">${item.label}</a>`
+      ? `<a href="${item.href}" class="menu-label${inactiveClass}">${item.label}${debugText}</a>`
       : `<span class="menu-label">${item.label}</span>`;
     
     return `

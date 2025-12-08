@@ -100,7 +100,21 @@ export async function generate({
   const templates = await getTemplates(meta); // todo: error if no default template
   // console.log({ templates });
 
-  const menu = await getMenu(allSourceFilenames, source);
+  // read all articles, process them, copy them to build
+  const articleExtensions = /\.(md|txt|yml)/;
+  const allSourceFilenamesThatAreArticles = allSourceFilenames.filter(
+    (filename) => filename.match(articleExtensions)
+  );
+  const allSourceFilenamesThatAreDirectories = await filterAsync(
+    allSourceFilenames,
+    (filename) => isDirectory(filename)
+  );
+
+  // Build set of valid internal paths for link validation (must be before menu)
+  const validPaths = buildValidPaths(allSourceFilenamesThatAreArticles, source);
+  console.log(`Built ${validPaths.size} valid paths for link validation`);
+
+  const menu = await getMenu(allSourceFilenames, source, validPaths);
 
   // Load content hash cache for incremental builds
   let hashCache = new Map();
@@ -116,20 +130,6 @@ export async function generate({
   const pub = join(output, "public");
   await mkdir(pub, { recursive: true });
   await copyDir(meta, pub);
-
-  // read all articles, process them, copy them to build
-  const articleExtensions = /\.(md|txt|yml)/;
-  const allSourceFilenamesThatAreArticles = allSourceFilenames.filter(
-    (filename) => filename.match(articleExtensions)
-  );
-  const allSourceFilenamesThatAreDirectories = await filterAsync(
-    allSourceFilenames,
-    (filename) => isDirectory(filename)
-  );
-
-  // Build set of valid internal paths for link validation
-  const validPaths = buildValidPaths(allSourceFilenamesThatAreArticles, source);
-  console.log(`Built ${validPaths.size} valid paths for link validation`);
 
   // Track errors for error report
   const errors = [];
@@ -211,6 +211,9 @@ export async function generate({
         const base = basename(file, ext);
         const dir = addTrailingSlash(dirname(file)).replace(source, "");
         
+        // Calculate the document's URL path (e.g., "/character/index.html")
+        const docUrlPath = '/' + dir + base + '.html';
+        
         // Generate title from filename (in title case)
         const title = toTitleCase(base);
 
@@ -251,8 +254,9 @@ export async function generate({
           .replace("${embeddedStyle}", embeddedStyle)
           .replace("${searchIndex}", JSON.stringify(searchIndex));
 
-        // Mark broken internal links as inactive
-        finalHtml = markInactiveLinks(finalHtml, validPaths);
+        // Resolve links and mark broken internal links as inactive (debug mode on)
+        // Pass docUrlPath so relative links can be resolved correctly
+        finalHtml = markInactiveLinks(finalHtml, validPaths, docUrlPath, false);
 
         const outputFilename = file
           .replace(source, output)
@@ -458,10 +462,10 @@ async function getTemplates(meta) {
   return templates;
 }
 
-async function getMenu(allSourceFilenames, source) {
+async function getMenu(allSourceFilenames, source, validPaths) {
   // todo: handle various incarnations of menu filename
 
-  const rawMenu = await getAutomenu(source);
+  const rawMenu = await getAutomenu(source, validPaths);
   const menuBody = renderFile({ fileContents: rawMenu, type: ".md" });
   return menuBody;
 

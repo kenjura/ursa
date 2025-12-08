@@ -1,3 +1,8 @@
+# 0.30
+2025-12-07
+
+- Fixed broken link detection to correctly identify broken internal links
+
 # 0.29.0
 2025-12-07
 
