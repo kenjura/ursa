@@ -182,8 +182,45 @@ nav#nav-main {
     background: rgba(128, 128, 128, 0.5);
   }
 
-  /* Root ul - no indent */
-  > ul {
+  /* Breadcrumb navigation header */
+  .menu-breadcrumb {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0.5rem 1rem;
+    margin: 0 8px 0.5rem 8px;
+    border-bottom: 1px solid rgba(128, 128, 128, 0.2);
+  }
+
+  .menu-breadcrumb button {
+    background: none;
+    border: none;
+    color: var(--text-color);
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 1rem;
+    opacity: 0.7;
+    transition: all 0.2s ease;
+  }
+
+  .menu-breadcrumb button:hover {
+    opacity: 1;
+    background: rgba(128, 128, 128, 0.2);
+  }
+
+  .menu-current-path {
+    flex: 1;
+    font-weight: 500;
+    opacity: 0.9;
+    text-transform: capitalize;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* Root ul */
+  ul.menu-level {
     list-style: none;
     margin: 0;
     padding: 0;
@@ -200,54 +237,20 @@ nav#nav-main {
     padding: 0;
   }
 
-  /* Menu item row container */
+  /* Menu item row container - cleaner style like reference */
   .menu-item-row {
     display: flex;
     align-items: center;
-    padding: 0.25rem 0.5rem 0.25rem 8px;
-    margin: 1px 8px;
-    border-radius: 0;
-    border-left: 2px solid transparent;
+    padding: 0.5rem 0.75rem;
+    margin: 2px 8px;
+    border-radius: 6px;
     cursor: pointer;
-    transition: all 0.2s ease;
-    gap: 4px;
+    transition: all 0.15s ease;
+    gap: 10px;
   }
 
   .menu-item-row:hover {
-    background-color: transparent;
-    border-left-color: var(--text-color);
-  }
-
-  /* Twisty/expand arrow */
-  .expand-arrow {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 20px;
-    height: 20px;
-    border-radius: 4px;
-    flex-shrink: 0;
-    transition: transform 0.15s ease, background-color 0.15s ease;
-    opacity: 0.4;
-    font-size: 10px;
-    color: var(--text-color);
-    cursor: pointer;
-  }
-
-  .menu-item-row:hover .expand-arrow {
-    opacity: 0.6;
-  }
-
-  .expand-arrow:hover {
-    background-color: rgba(128, 128, 128, 0.2);
-    opacity: 1 !important;
-  }
-
-  /* No twisty placeholder for leaf items */
-  .menu-no-twisty {
-    width: 20px;
-    height: 20px;
-    flex-shrink: 0;
+    background-color: rgba(128, 128, 128, 0.1);
   }
 
   /* Icon container */
@@ -259,7 +262,7 @@ nav#nav-main {
     height: 20px;
     flex-shrink: 0;
     font-size: 16px;
-    opacity: 0.8;
+    opacity: 0.7;
   }
 
   .menu-icon img {
@@ -274,7 +277,7 @@ nav#nav-main {
     flex: 1;
     text-decoration: none;
     color: var(--text-color);
-    opacity: 0.7;
+    opacity: 0.85;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -283,14 +286,48 @@ nav#nav-main {
     text-transform: capitalize;
   }
 
-  .menu-label:hover {
+  .menu-item-row:hover .menu-label {
     opacity: 1;
+  }
+
+  /* More indicator for items with children */
+  .menu-more {
+    opacity: 0.4;
+    font-size: 14px;
+    padding: 0 4px;
+    cursor: pointer;
+    transition: opacity 0.15s ease;
+  }
+
+  .menu-item-row:hover .menu-more {
+    opacity: 0.7;
+  }
+
+  .menu-more:hover {
+    opacity: 1 !important;
+  }
+
+  /* Caret indicator for level-1 expandable items */
+  .menu-caret {
+    opacity: 0.4;
+    font-size: 12px;
+    padding: 0 4px;
+    cursor: pointer;
+    transition: opacity 0.15s ease;
+    font-weight: bold;
+  }
+
+  .menu-item-row:hover .menu-caret {
+    opacity: 0.7;
+  }
+
+  .menu-caret:hover {
+    opacity: 1 !important;
   }
 
   /* Current/active item */
   .current-menu-item > .menu-item-row {
-    border-left-color: aqua;
-    background-color: rgba(0, 255, 255, 0.1);
+    background-color: rgba(0, 255, 255, 0.15);
   }
 
   .current-menu-item > .menu-item-row .menu-label {
@@ -298,53 +335,36 @@ nav#nav-main {
     font-weight: 500;
   }
 
-  /* Nested levels - indentation */
-  li > ul {
-    max-height: 0;
-    overflow: hidden;
-    transition: max-height 0.2s ease;
+  /* Level 1 items - main folder entries */
+  .menu-item.level-1 > .menu-item-row {
+    font-size: 0.9rem;
   }
 
-  /* Level 1 items (children of root) */
-  > ul > li > ul > li > .menu-item-row {
-    padding-left: 1rem;
+  .menu-item.level-1.has-children > .menu-item-row {
+    margin-top: 0.25rem;
+  }
+
+  /* Sublevel container - always visible for 2-level nav */
+  .menu-sublevel {
+    margin-left: 0;
+    padding-left: 0;
+  }
+
+  /* Level 2 items - nested under folders */
+  .menu-item.level-2 > .menu-item-row {
+    padding-left: 2.5rem;
     font-size: 0.85rem;
   }
 
-  /* Level 2 items */
-  > ul > li > ul > li > ul > li > .menu-item-row {
-    padding-left: 1.5rem;
-    font-size: 0.8rem;
+  .menu-item.level-2 > .menu-item-row .menu-icon {
+    display: none;
   }
 
-  /* Level 3 items */
-  > ul > li > ul > li > ul > li > ul > li > .menu-item-row {
-    padding-left: 2rem;
-    font-size: 0.8rem;
-  }
-
-  /* Expanded state */
-  li.expanded > .menu-item-row .expand-arrow {
-    transform: rotate(90deg);
-    opacity: 0.6;
-  }
-
-  li.expanded > ul {
-    max-height: 100vh;
-  }
-
-  /* Section headers (folders at top level) */
-  > ul > li.has-children > .menu-item-row {
+  /* Separator between sections */
+  .menu-item.level-1.has-children + .menu-item.level-1:not(.has-children) {
     margin-top: 0.5rem;
-  }
-
-  > ul > li.has-children > .menu-item-row .menu-label {
-    font-weight: 500;
-    opacity: 0.7;
-  }
-
-  > ul > li.has-children > .menu-item-row:hover .menu-label {
-    opacity: 1;
+    padding-top: 0.5rem;
+    border-top: 1px solid rgba(128, 128, 128, 0.15);
   }
 }
 

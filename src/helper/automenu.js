@@ -61,88 +61,95 @@ function getIcon(item, source, isHome = false) {
   return `<span class="menu-icon">${DOCUMENT_ICON}</span>`;
 }
 
-export async function getAutomenu(source) {
-  const tree = dirTree(source);
-  const menuItems = [];
-
-  /** order of menu items:
-   *  - Home
-   *  - Top-level folders A-Z
-   *  - Top-level files A-Z
-   **/
-
-  menuItems.push({
-    path: "/",
-    name: "Home",
-    type: "file",
-    isHome: true,
-  });
-
-  const topLevelItems = tree.children.sort(childSorter);
-  const topLevelHtml = topLevelItems
-    .map((item) => renderMenuItem({ ...item, source }))
-    .join("");
-
-  // Render home item separately with home icon
-  const homeHtml = `
-<li class="menu-item">
-  <div class="menu-item-row">
-    <span class="menu-no-twisty"></span>
-    <span class="menu-icon">${HOME_ICON}</span>
-    <a href="/" class="menu-label">Home</a>
-  </div>
-</li>`;
-
-  return `<ul>${homeHtml}${topLevelHtml}</ul>`;
-}
-
-function renderMenuItem({ path, name, children, source }) {
-  const ext = extname(path);
-  const label = basename(path, ext);
-  const hasChildren = !!children;
-  const icon = getIcon({ path, children }, source);
+// Build a flat tree structure with path info for JS navigation
+function buildMenuData(tree, source, parentPath = '') {
+  const items = [];
   
-  // Determine the href based on whether it's a folder or file
-  let labelHtml;
-  if (hasChildren) {
-    // It's a folder - check if it has an index file
-    if (hasIndexFile(path)) {
-      const folderPath = path.replace(source, "");
-      labelHtml = `<a href="/${folderPath}/index.html" class="menu-label">${label}</a>`;
+  for (const item of tree.children || []) {
+    const ext = extname(item.path);
+    const label = basename(item.path, ext);
+    const hasChildren = !!item.children;
+    const relativePath = item.path.replace(source, '');
+    const folderPath = parentPath ? `${parentPath}/${label}` : label;
+    
+    let href = null;
+    if (hasChildren) {
+      if (hasIndexFile(item.path)) {
+        href = `/${relativePath}/index.html`;
+      }
     } else {
-      // No index file - render as non-clickable text
-      labelHtml = `<span class="menu-label">${label}</span>`;
+      href = `/${relativePath.replace(ext, '')}`;
     }
-  } else {
-    // It's a file - link to the HTML version
-    const href = path.replace(source, "").replace(ext, "");
-    labelHtml = `<a href="/${href}" class="menu-label">${label}</a>`;
+    
+    const menuItem = {
+      label,
+      path: folderPath,
+      href,
+      hasChildren,
+      icon: getIcon(item, source),
+    };
+    
+    if (hasChildren) {
+      menuItem.children = buildMenuData(item, source, folderPath);
+    }
+    
+    items.push(menuItem);
   }
   
-  // Twisty arrow for expandable items
-  const twisty = hasChildren 
-    ? `<span class="expand-arrow">▶</span>`
-    : `<span class="menu-no-twisty"></span>`;
+  return items.sort((a, b) => {
+    if (a.hasChildren && !b.hasChildren) return -1;
+    if (b.hasChildren && !a.hasChildren) return 1;
+    if (a.label > b.label) return 1;
+    if (a.label < b.label) return -1;
+    return 0;
+  });
+}
+
+export async function getAutomenu(source) {
+  const tree = dirTree(source);
+  const menuData = buildMenuData(tree, source);
   
-  const childrenHtml = children
-    ? `<ul>${children
-        .sort(childSorter)
-        .map((child) => renderMenuItem({ ...child, source }))
-        .join("")}</ul>`
-    : "";
+  // Add home item
+  const fullMenuData = [
+    { label: 'Home', path: '', href: '/', hasChildren: false, icon: `<span class="menu-icon">${HOME_ICON}</span>` },
+    ...menuData
+  ];
+  
+  // Embed the menu data as JSON for JavaScript to use
+  const menuDataScript = `<script type="application/json" id="menu-data">${JSON.stringify(fullMenuData)}</script>`;
+  
+  // Render the breadcrumb header (hidden by default, shown when navigating)
+  const breadcrumbHtml = `
+<div class="menu-breadcrumb" style="display: none;">
+  <button class="menu-back" title="Go back">←</button>
+  <button class="menu-home" title="Go to root">🏠</button>
+  <span class="menu-current-path"></span>
+</div>`;
 
-  const hasChildrenClass = hasChildren ? ' has-children' : '';
-  const html = `
-<li class="menu-item${hasChildrenClass}">
+  // Render the initial menu (root level)
+  const menuHtml = renderMenuLevel(fullMenuData, 0);
+  
+  return `${menuDataScript}${breadcrumbHtml}<ul class="menu-level" data-level="0">${menuHtml}</ul>`;
+}
+
+function renderMenuLevel(items, level) {
+  return items.map(item => {
+    const hasChildrenClass = item.hasChildren ? ' has-children' : '';
+    const hasChildrenIndicator = item.hasChildren ? '<span class="menu-more">⋯</span>' : '';
+    
+    const labelHtml = item.href
+      ? `<a href="${item.href}" class="menu-label">${item.label}</a>`
+      : `<span class="menu-label">${item.label}</span>`;
+    
+    return `
+<li class="menu-item${hasChildrenClass}" data-path="${item.path}">
   <div class="menu-item-row">
-    ${twisty}
-    ${icon}
+    ${item.icon}
     ${labelHtml}
+    ${hasChildrenIndicator}
   </div>
-  ${childrenHtml}
 </li>`;
-
-  return html;
+  }).join('');
 }
 
 function childSorter(a, b) {

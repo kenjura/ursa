@@ -2,8 +2,294 @@ document.addEventListener('DOMContentLoaded', () => {
     const navMain = document.querySelector('nav#nav-main');
     if (!navMain) return;
 
+    // Load menu data from embedded JSON
+    const menuDataScript = document.getElementById('menu-data');
+    if (!menuDataScript) return;
+    
+    let menuData;
+    try {
+        menuData = JSON.parse(menuDataScript.textContent);
+    } catch (e) {
+        console.error('Failed to parse menu data:', e);
+        return;
+    }
+
+    // State
+    let currentPath = []; // Array of path segments representing current directory
+    let expandedLevel1 = new Set(); // Track which level-1 items are expanded
+
+    // DOM elements
+    const breadcrumb = navMain.querySelector('.menu-breadcrumb');
+    const backButton = navMain.querySelector('.menu-back');
+    const homeButton = navMain.querySelector('.menu-home');
+    const currentPathSpan = navMain.querySelector('.menu-current-path');
+    const menuContainer = navMain.querySelector('.menu-level');
+
     // Helper to check if we're on mobile
     const isMobile = () => window.matchMedia('(max-width: 800px)').matches;
+
+    // Get items at a specific path
+    function getItemsAtPath(path) {
+        let items = menuData;
+        for (const segment of path) {
+            const folder = items.find(item => item.path === (path.slice(0, path.indexOf(segment) + 1).join('/') || segment));
+            if (folder && folder.children) {
+                items = folder.children;
+            } else {
+                return [];
+            }
+        }
+        return items;
+    }
+
+    // Find item by path
+    function findItemByPath(pathString) {
+        const segments = pathString.split('/').filter(Boolean);
+        let items = menuData;
+        let item = null;
+        
+        for (let i = 0; i < segments.length; i++) {
+            const targetPath = segments.slice(0, i + 1).join('/');
+            item = items.find(it => it.path === targetPath);
+            if (!item) return null;
+            if (item.children && i < segments.length - 1) {
+                items = item.children;
+            }
+        }
+        return item;
+    }
+
+    // Check if current page is within an item's tree
+    function isCurrentPageInTree(item) {
+        if (isCurrentPage(item)) return true;
+        if (item.children) {
+            for (const child of item.children) {
+                if (isCurrentPageInTree(child)) return true;
+            }
+        }
+        return false;
+    }
+
+    // Find the current page item within an item's children (level 2)
+    function findCurrentPageChild(item) {
+        if (!item.children) return null;
+        for (const child of item.children) {
+            if (isCurrentPage(child)) return child;
+            // Also check grandchildren in case current page is deeper
+            if (isCurrentPageInTree(child)) return child;
+        }
+        return null;
+    }
+
+    // Track which level-1 item contains the current page (for special collapse behavior)
+    let currentPageParentPath = null;
+
+    // Render menu at current path
+    function renderMenu() {
+        // Get items for current level (level 1)
+        let level1Items;
+        if (currentPath.length === 0) {
+            level1Items = menuData;
+        } else {
+            const currentPathString = currentPath.join('/');
+            const currentFolder = findItemByPath(currentPathString);
+            level1Items = currentFolder?.children || [];
+        }
+
+        // Find which level-1 item contains the current page
+        currentPageParentPath = null;
+        for (const item of level1Items) {
+            if (item.hasChildren && isCurrentPageInTree(item)) {
+                currentPageParentPath = item.path;
+                break;
+            }
+        }
+
+        // Build HTML for level 1 and level 2
+        let html = '';
+        for (const item of level1Items) {
+            const isActive = isCurrentPage(item);
+            const activeClass = isActive ? ' current-menu-item' : '';
+            const hasChildrenClass = item.hasChildren ? ' has-children' : '';
+            
+            // Level-1 items with children get a caret, not triple-dot
+            // Expanded if: manually expanded, or current page is in this tree
+            const isExpanded = expandedLevel1.has(item.path) || isCurrentPageInTree(item);
+            const expandedClass = isExpanded ? ' expanded' : '';
+            const caretIndicator = item.hasChildren 
+                ? `<span class="menu-caret">${isExpanded ? '▼' : '▶'}</span>` 
+                : '';
+            
+            const labelHtml = item.href
+                ? `<a href="${item.href}" class="menu-label">${item.label}</a>`
+                : `<span class="menu-label">${item.label}</span>`;
+
+            html += `
+<li class="menu-item level-1${hasChildrenClass}${activeClass}${expandedClass}" data-path="${item.path}">
+  <div class="menu-item-row">
+    ${item.icon}
+    ${labelHtml}
+    ${caretIndicator}
+  </div>`;
+
+            // Determine which children to render
+            let childrenToRender = [];
+            if (item.children && item.children.length > 0) {
+                if (isExpanded) {
+                    // Fully expanded - show all children
+                    childrenToRender = item.children;
+                } else if (item.path === currentPageParentPath) {
+                    // Collapsed but contains current page - show only current page
+                    const currentChild = findCurrentPageChild(item);
+                    if (currentChild) {
+                        childrenToRender = [currentChild];
+                    }
+                }
+            }
+
+            if (childrenToRender.length > 0) {
+                html += '<ul class="menu-sublevel">';
+                for (const child of childrenToRender) {
+                    const childActive = isCurrentPage(child);
+                    const childActiveClass = childActive ? ' current-menu-item' : '';
+                    const childHasChildren = child.hasChildren ? ' has-children' : '';
+                    // Level-2 items with children get triple-dot
+                    const childMoreIndicator = child.hasChildren ? '<span class="menu-more" title="Has sub-items">⋮</span>' : '';
+                    
+                    const childLabelHtml = child.href
+                        ? `<a href="${child.href}" class="menu-label">${child.label}</a>`
+                        : `<span class="menu-label">${child.label}</span>`;
+
+                    html += `
+  <li class="menu-item level-2${childHasChildren}${childActiveClass}" data-path="${child.path}">
+    <div class="menu-item-row">
+      ${child.icon}
+      ${childLabelHtml}
+      ${childMoreIndicator}
+    </div>
+  </li>`;
+                }
+                html += '</ul>';
+            }
+
+            html += '</li>';
+        }
+
+        menuContainer.innerHTML = html;
+
+        // Update breadcrumb
+        if (currentPath.length > 0) {
+            breadcrumb.style.display = 'flex';
+            currentPathSpan.textContent = currentPath[currentPath.length - 1];
+        } else {
+            breadcrumb.style.display = 'none';
+        }
+
+        // Attach click handlers
+        attachClickHandlers();
+    }
+
+    // Check if an item matches the current page
+    function isCurrentPage(item) {
+        if (!item.href) return false;
+        const currentHref = window.location.pathname;
+        // Normalize paths for comparison
+        const normalizedItemHref = item.href.replace(/\/index\.html$/, '').replace(/\.html$/, '');
+        const normalizedCurrentHref = currentHref.replace(/\/index\.html$/, '').replace(/\.html$/, '');
+        return normalizedItemHref === normalizedCurrentHref;
+    }
+
+    // Navigate to a folder
+    function navigateToFolder(pathString) {
+        currentPath = pathString.split('/').filter(Boolean);
+        renderMenu();
+    }
+
+    // Go back one level
+    function goBack() {
+        if (currentPath.length > 0) {
+            currentPath.pop();
+            renderMenu();
+        }
+    }
+
+    // Go to root
+    function goToRoot() {
+        currentPath = [];
+        renderMenu();
+    }
+
+    // Attach click handlers to menu items
+    function attachClickHandlers() {
+        const menuItems = menuContainer.querySelectorAll('.menu-item');
+        menuItems.forEach(li => {
+            const row = li.querySelector('.menu-item-row');
+            const caret = li.querySelector('.menu-caret');
+            const moreBtn = li.querySelector('.menu-more');
+            const link = li.querySelector('a.menu-label');
+            const isLevel1 = li.classList.contains('level-1');
+            const isLevel2 = li.classList.contains('level-2');
+            
+            if (li.classList.contains('has-children')) {
+                if (isLevel1) {
+                    // Level-1: clicking caret or row (not link) toggles expand/collapse
+                    const toggleExpand = (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        const path = li.dataset.path;
+                        const hasLink = !!link;
+                        
+                        if (expandedLevel1.has(path)) {
+                            // Collapsing this item
+                            expandedLevel1.delete(path);
+                        } else {
+                            // Expanding this item
+                            // If this item has no link (non-navigable folder), collapse others
+                            if (!hasLink) {
+                                expandedLevel1.clear();
+                            }
+                            expandedLevel1.add(path);
+                        }
+                        renderMenu();
+                    };
+                    
+                    if (caret) {
+                        caret.addEventListener('click', toggleExpand);
+                    }
+                    
+                    row.addEventListener('click', (e) => {
+                        if (!e.target.closest('a')) {
+                            toggleExpand(e);
+                        }
+                    });
+                } else if (isLevel2) {
+                    // Level-2 with children: clicking ⋮ or row navigates into folder
+                    if (moreBtn) {
+                        moreBtn.addEventListener('click', (e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            navigateToFolder(li.dataset.path);
+                        });
+                    }
+                    
+                    row.addEventListener('click', (e) => {
+                        if (!e.target.closest('a')) {
+                            e.preventDefault();
+                            navigateToFolder(li.dataset.path);
+                        }
+                    });
+                }
+            }
+        });
+    }
+
+    // Breadcrumb navigation
+    if (backButton) {
+        backButton.addEventListener('click', goBack);
+    }
+    if (homeButton) {
+        homeButton.addEventListener('click', goToRoot);
+    }
 
     // Hamburger menu button toggle
     const menuButton = document.querySelector('button.menu-button');
@@ -19,19 +305,16 @@ document.addEventListener('DOMContentLoaded', () => {
             e.stopPropagation();
             
             if (isMobile()) {
-                // Mobile: toggle active class (shows/hides overlay)
                 navMain.classList.toggle('active');
                 const isExpanded = navMain.classList.contains('active');
                 updateButtonIcon(isExpanded);
             } else {
-                // Desktop: toggle collapsed class (slides in/out)
                 navMain.classList.toggle('collapsed');
                 const isExpanded = !navMain.classList.contains('collapsed');
                 menuButton.setAttribute('aria-expanded', isExpanded);
             }
         });
 
-        // Close menu when clicking outside on mobile
         document.addEventListener('click', (e) => {
             if (isMobile() && 
                 navMain.classList.contains('active') && 
@@ -42,7 +325,6 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
 
-        // Close menu when pressing Escape
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape') {
                 if (isMobile() && navMain.classList.contains('active')) {
@@ -54,70 +336,36 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Set up expand/collapse for items with children
-    const expandArrows = navMain.querySelectorAll('.expand-arrow');
-    expandArrows.forEach(arrow => {
-        arrow.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            const li = arrow.closest('li');
-            if (li) {
-                li.classList.toggle('expanded');
-            }
-        });
-    });
-
-    // Also allow clicking the menu-item-row to expand (but not the link itself)
-    const menuItemRows = navMain.querySelectorAll('.menu-item-row');
-    menuItemRows.forEach(row => {
-        row.addEventListener('click', (e) => {
-            // Only toggle if clicking the row itself, icon, or expand arrow area (not the link)
-            const clickedLink = e.target.closest('a');
-            if (!clickedLink) {
-                const li = row.closest('li');
-                if (li && li.classList.contains('has-children')) {
-                    li.classList.toggle('expanded');
-                }
-            }
-        });
-    });
-
-    // Auto-expand and highlight based on current URL path
-    const pathParts = window.location.pathname.split('/').filter(Boolean).map(p => decodeURIComponent(p).toLowerCase());
-    if (pathParts.length >= 1) {
-        // Start with the top level
-        let currentLevel = navMain.querySelectorAll(':scope > ul > li');
-        let currentLi = null;
+    // Initialize: find current page and set appropriate path
+    function initializeFromCurrentPage() {
+        const currentHref = window.location.pathname;
+        const pathParts = currentHref.split('/').filter(Boolean);
         
-        // Walk through each path part
-        for (let i = 0; i < pathParts.length; i++) {
-            const targetLabel = pathParts[i];
+        // Try to find the deepest matching folder
+        if (pathParts.length > 1) {
+            // Navigate to parent folder of current page
+            const parentPath = pathParts.slice(0, -1);
             
-            // Find matching li at current level
-            currentLi = Array.from(currentLevel).find(li => {
-                const a = li.querySelector('.menu-item-row a');
-                if (!a) return false;
-                const linkText = a.textContent.trim().toLowerCase();
-                return linkText === targetLabel;
-            });
-            
-            if (currentLi) {
-                // If this is the last path part, highlight it
-                if (i === pathParts.length - 1) {
-                    currentLi.classList.add('current-menu-item');
-                } else {
-                    // If not the last part, expand it and move to next level
-                    currentLi.classList.add('expanded');
-                    const nextUl = currentLi.querySelector('ul');
-                    if (nextUl) {
-                        currentLevel = nextUl.querySelectorAll(':scope > li');
-                    } else {
-                        break; // No deeper level available
-                    }
+            // Check if this path exists in menu data
+            let testPath = [];
+            for (const part of parentPath) {
+                testPath.push(part);
+                const item = findItemByPath(testPath.join('/'));
+                if (!item || !item.hasChildren) {
+                    // Path doesn't exist or isn't a folder, stop here
+                    testPath.pop();
+                    break;
                 }
-            } else {
-                break; // Path part not found
+            }
+            
+            // If we found a valid folder path that's more than 1 level deep, navigate there
+            if (testPath.length > 1) {
+                currentPath = testPath.slice(0, -1); // Go to grandparent so current folder is visible
             }
         }
+        
+        renderMenu();
     }
+
+    initializeFromCurrentPage();
 });

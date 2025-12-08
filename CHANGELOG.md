@@ -1,3 +1,8 @@
+# 0.29.0
+2025-12-07
+
+- New nav-main style, two-levels only (but supports any depth), looks way better
+
 # 0.28.0
 2025-12-07
 
