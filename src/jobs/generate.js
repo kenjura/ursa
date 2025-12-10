@@ -269,8 +269,10 @@ export async function generate({
         // json
 
         const jsonOutputFilename = outputFilename.replace(".html", ".json");
+        const url = '/' + outputFilename.replace(output, '');
         const jsonObject = {
           name: base,
+          url,
           contents: rawBody,
           // bodyLessMeta: bodyLessMeta,
           bodyHtml: body,

@@ -1,3 +1,9 @@
+# 0.31
+2025-12-09
+
+- Added URL property to JSON directory indices
+- Ensured directory indices are recursive
+
 # 0.30
 2025-12-07
 
