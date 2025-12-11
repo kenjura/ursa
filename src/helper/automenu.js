@@ -137,10 +137,13 @@ function buildMenuData(tree, source, validPaths, parentPath = '') {
     let rawHref = null;
     if (hasChildren) {
       if (hasIndexFile(item.path)) {
-        rawHref = `/${relativePath}/index.html`;
+        // Construct proper path - relativePath already starts with /
+        const cleanPath = relativePath.startsWith('/') ? relativePath : '/' + relativePath;
+        rawHref = `${cleanPath}/index.html`.replace(/\/\//g, '/');
       }
     } else {
-      rawHref = `/${relativePath.replace(ext, '')}`;
+      const cleanPath = relativePath.startsWith('/') ? relativePath : '/' + relativePath;
+      rawHref = cleanPath.replace(ext, '');
     }
     
     // Resolve the href and check if target exists
@@ -173,7 +176,9 @@ function buildMenuData(tree, source, validPaths, parentPath = '') {
 }
 
 export async function getAutomenu(source, validPaths) {
-  const tree = dirTree(source);
+  const tree = dirTree(source, {
+    exclude: /[\/\\]\.|node_modules/,  // Exclude hidden folders (starting with .) and node_modules
+  });
   const menuData = buildMenuData(tree, source, validPaths);
   
   // Add home item with resolved href
@@ -205,10 +210,9 @@ function renderMenuLevel(items, level) {
     const hasChildrenClass = item.hasChildren ? ' has-children' : '';
     const hasChildrenIndicator = item.hasChildren ? '<span class="menu-more">⋯</span>' : '';
     const inactiveClass = item.inactive ? ' inactive' : '';
-    const debugText = item.debug ? ` [DEBUG: ${item.debug}]` : '';
     
     const labelHtml = item.href
-      ? `<a href="${item.href}" class="menu-label${inactiveClass}">${item.label}${debugText}</a>`
+      ? `<a href="${item.href}" class="menu-label${inactiveClass}">${item.label}</a>`
       : `<span class="menu-label">${item.label}</span>`;
     
     return `

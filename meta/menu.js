@@ -257,6 +257,22 @@ document.addEventListener('DOMContentLoaded', () => {
                         caret.addEventListener('click', toggleExpand);
                     }
                     
+                    // If the link points to the current page, clicking it should toggle instead of navigate
+                    if (link) {
+                        link.addEventListener('click', (e) => {
+                            const linkHref = link.getAttribute('href');
+                            const currentHref = window.location.pathname;
+                            const normalizedLinkHref = linkHref.replace(/\/index\.html$/, '').replace(/\.html$/, '');
+                            const normalizedCurrentHref = currentHref.replace(/\/index\.html$/, '').replace(/\.html$/, '');
+                            
+                            if (normalizedLinkHref === normalizedCurrentHref) {
+                                // Already on this page - toggle instead of navigate
+                                toggleExpand(e);
+                            }
+                            // Otherwise, let the default navigation happen
+                        });
+                    }
+                    
                     row.addEventListener('click', (e) => {
                         if (!e.target.closest('a')) {
                             toggleExpand(e);
