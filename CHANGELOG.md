@@ -1,3 +1,10 @@
+# 0.32
+2025-12-10
+
+- Using .ursa folder in source directory for content hash cache
+- Added --clean flag to ignore cache and regenerate all files
+- Set up npm config for public package publishing
+
 # 0.31
 2025-12-09
 

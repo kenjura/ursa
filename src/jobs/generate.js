@@ -70,9 +70,10 @@ export async function generate({
   _meta = join(process.cwd(), "meta"),
   _output = join(process.cwd(), "build"),
   _whitelist = null,
-  _incremental = false,  // When true, only regenerate changed files
+  _incremental = false,  // Legacy flag, now ignored (always incremental)
+  _clean = false,  // When true, ignore cache and regenerate all files
 } = {}) {
-  console.log({ _source, _meta, _output, _whitelist, _incremental });
+  console.log({ _source, _meta, _output, _whitelist, _clean });
   const source = resolve(_source) + "/";
   const meta = resolve(_meta);
   const output = resolve(_output) + "/";
@@ -116,14 +117,13 @@ export async function generate({
 
   const menu = await getMenu(allSourceFilenames, source, validPaths);
 
-  // Load content hash cache for incremental builds
+  // Load content hash cache from .ursa folder in source directory
   let hashCache = new Map();
-  if (_incremental) {
-    hashCache = await loadHashCache(output);
-    console.log(`Incremental mode: loaded ${hashCache.size} cached hashes`);
+  if (!_clean) {
+    hashCache = await loadHashCache(source);
+    console.log(`Loaded ${hashCache.size} cached content hashes from .ursa folder`);
   } else {
-    // Full rebuild: clean build directory
-    await emptyDir(output);
+    console.log(`Clean build: ignoring cached hashes`);
   }
 
   // create public folder
@@ -190,8 +190,8 @@ export async function generate({
       try {
         const rawBody = await readFile(file, "utf8");
         
-        // In incremental mode, skip files that haven't changed
-        if (_incremental && !needsRegeneration(file, rawBody, hashCache)) {
+        // Skip files that haven't changed (unless --clean flag is set)
+        if (!_clean && !needsRegeneration(file, rawBody, hashCache)) {
           skippedCount++;
           return; // Skip this file
         }
@@ -300,10 +300,8 @@ export async function generate({
     })
   );
 
-  // Log incremental mode stats
-  if (_incremental) {
-    console.log(`Incremental build: ${regeneratedCount} regenerated, ${skippedCount} unchanged`);
-  }
+  // Log build stats
+  console.log(`Build: ${regeneratedCount} regenerated, ${skippedCount} unchanged`);
 
   console.log(jsonCache.keys());
   
@@ -397,9 +395,9 @@ export async function generate({
     })
   );
 
-  // Save the hash cache for next incremental build
-  if (_incremental || hashCache.size > 0) {
-    await saveHashCache(output, hashCache);
+  // Save the hash cache to .ursa folder in source directory
+  if (hashCache.size > 0) {
+    await saveHashCache(source, hashCache);
   }
 
   // Write error report if there were any errors

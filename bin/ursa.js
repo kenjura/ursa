@@ -37,6 +37,12 @@ yargs(hideBin(process.argv))
           alias: 'w',
           describe: 'Path to whitelist file containing patterns for files to include',
           type: 'string'
+        })
+        .option('clean', {
+          alias: 'c',
+          describe: 'Ignore cached hashes and regenerate all files',
+          type: 'boolean',
+          default: false
         });
     },
     async (argv) => {
@@ -44,10 +50,14 @@ yargs(hideBin(process.argv))
       const meta = argv.meta ? resolve(argv.meta) : PACKAGE_META;
       const output = resolve(argv.output);
       const whitelist = argv.whitelist ? resolve(argv.whitelist) : null;
+      const clean = argv.clean;
       
       console.log(`Generating site from ${source} to ${output} using meta from ${meta}`);
       if (whitelist) {
         console.log(`Using whitelist: ${whitelist}`);
+      }
+      if (clean) {
+        console.log(`Clean build: ignoring cached hashes`);
       }
       
       try {
@@ -55,7 +65,8 @@ yargs(hideBin(process.argv))
           _source: source,
           _meta: meta,
           _output: output,
-          _whitelist: whitelist
+          _whitelist: whitelist,
+          _clean: clean
         });
         console.log('Site generation completed successfully!');
       } catch (error) {
@@ -95,6 +106,12 @@ yargs(hideBin(process.argv))
           alias: 'w',
           describe: 'Path to whitelist file containing patterns for files to include',
           type: 'string'
+        })
+        .option('clean', {
+          alias: 'c',
+          describe: 'Ignore cached hashes and regenerate all files',
+          type: 'boolean',
+          default: false
         });
     },
     async (argv) => {
@@ -103,6 +120,7 @@ yargs(hideBin(process.argv))
       const output = resolve(argv.output);
       const port = argv.port;
       const whitelist = argv.whitelist ? resolve(argv.whitelist) : null;
+      const clean = argv.clean;
       
       console.log(`Starting development server...`);
       console.log(`Source: ${source}`);
@@ -120,7 +138,8 @@ yargs(hideBin(process.argv))
           _meta: meta,
           _output: output,
           port: port,
-          _whitelist: whitelist
+          _whitelist: whitelist,
+          _clean: clean
         });
       } catch (error) {
         console.error('Error starting development server:', error.message);

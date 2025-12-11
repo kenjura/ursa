@@ -3,6 +3,16 @@ import { readFile, writeFile, mkdir } from 'fs/promises';
 import { existsSync } from 'fs';
 import { dirname, join } from 'path';
 
+const URSA_DIR = '.ursa';
+const HASH_CACHE_FILE = 'content-hashes.json';
+
+/**
+ * Get the path to the .ursa directory for a given source directory
+ */
+export function getUrsaDir(sourceDir) {
+  return join(sourceDir, URSA_DIR);
+}
+
 /**
  * Generate a short hash of content
  */
@@ -11,10 +21,10 @@ export function hashContent(content) {
 }
 
 /**
- * Load the hash cache from disk
+ * Load the hash cache from disk (.ursa folder in source directory)
  */
-export async function loadHashCache(outputDir) {
-  const cachePath = join(outputDir, '.content-hashes.json');
+export async function loadHashCache(sourceDir) {
+  const cachePath = join(getUrsaDir(sourceDir), HASH_CACHE_FILE);
   try {
     if (existsSync(cachePath)) {
       const data = await readFile(cachePath, 'utf8');
@@ -27,14 +37,16 @@ export async function loadHashCache(outputDir) {
 }
 
 /**
- * Save the hash cache to disk
+ * Save the hash cache to disk (.ursa folder in source directory)
  */
-export async function saveHashCache(outputDir, hashMap) {
-  const cachePath = join(outputDir, '.content-hashes.json');
+export async function saveHashCache(sourceDir, hashMap) {
+  const ursaDir = getUrsaDir(sourceDir);
+  const cachePath = join(ursaDir, HASH_CACHE_FILE);
   try {
-    await mkdir(dirname(cachePath), { recursive: true });
+    await mkdir(ursaDir, { recursive: true });
     const obj = Object.fromEntries(hashMap);
     await writeFile(cachePath, JSON.stringify(obj, null, 2));
+    console.log(`Saved ${hashMap.size} hashes to ${cachePath}`);
   } catch (e) {
     console.warn('Could not save hash cache:', e.message);
   }

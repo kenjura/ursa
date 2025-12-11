@@ -14,17 +14,18 @@ export async function serve({
   _meta,
   _output,
   port = 8080,
-  _whitelist = null
+  _whitelist = null,
+  _clean = false
 } = {}) {
   const sourceDir = resolve(_source);
   const metaDir = resolve(_meta);
   const outputDir = resolve(_output);
 
-  console.log({ source: sourceDir, meta: metaDir, output: outputDir, port, whitelist: _whitelist });
+  console.log({ source: sourceDir, meta: metaDir, output: outputDir, port, whitelist: _whitelist, clean: _clean });
 
-  // Initial generation
+  // Initial generation (use _clean flag only for initial generation)
   console.log("Generating initial site...");
-  await generate({ _source: sourceDir, _meta: metaDir, _output: outputDir, _whitelist });
+  await generate({ _source: sourceDir, _meta: metaDir, _output: outputDir, _whitelist, _clean });
   console.log("Initial generation complete. Starting server...");
 
   // Start file server
@@ -38,7 +39,7 @@ export async function serve({
     console.log(`Meta files changed! Event: ${evt}, File: ${name}`);
     console.log("Full rebuild required (meta files affect all pages)...");
     try {
-      await generate({ _source: sourceDir, _meta: metaDir, _output: outputDir, _whitelist, _incremental: false });
+      await generate({ _source: sourceDir, _meta: metaDir, _output: outputDir, _whitelist, _clean: true });
       console.log("Regeneration complete.");
     } catch (error) {
       console.error("Error during regeneration:", error.message);
@@ -55,7 +56,7 @@ export async function serve({
     if (isCssChange) {
       console.log("CSS change detected - full rebuild required...");
       try {
-        await generate({ _source: sourceDir, _meta: metaDir, _output: outputDir, _whitelist, _incremental: false });
+        await generate({ _source: sourceDir, _meta: metaDir, _output: outputDir, _whitelist, _clean: true });
         console.log("Regeneration complete.");
       } catch (error) {
         console.error("Error during regeneration:", error.message);
@@ -63,7 +64,7 @@ export async function serve({
     } else {
       console.log("Incremental rebuild...");
       try {
-        await generate({ _source: sourceDir, _meta: metaDir, _output: outputDir, _whitelist, _incremental: true });
+        await generate({ _source: sourceDir, _meta: metaDir, _output: outputDir, _whitelist });
         console.log("Regeneration complete.");
       } catch (error) {
         console.error("Error during regeneration:", error.message);
