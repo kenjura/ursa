@@ -1,6 +1,7 @@
 import dirTree from "directory-tree";
 import { extname, basename, join, dirname } from "path";
 import { existsSync } from "fs";
+import { getFolderConfig, isFolderHidden, getRootConfig } from "./folderConfig.js";
 
 // Icon extensions to check for custom icons
 const ICON_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.ico'];
@@ -127,12 +128,30 @@ function resolveHref(rawHref, validPaths) {
 function buildMenuData(tree, source, validPaths, parentPath = '') {
   const items = [];
   
+  // Files to hide from menu by default
+  const hiddenFiles = ['config.json', 'style.css'];
+  
   for (const item of tree.children || []) {
     const ext = extname(item.path);
-    const label = basename(item.path, ext);
+    const baseName = basename(item.path, ext);
+    const fileName = basename(item.path);
     const hasChildren = !!item.children;
     const relativePath = item.path.replace(source, '');
-    const folderPath = parentPath ? `${parentPath}/${label}` : label;
+    const folderPath = parentPath ? `${parentPath}/${baseName}` : baseName;
+    
+    // Skip hidden files (config.json, style.css, etc.)
+    if (!hasChildren && hiddenFiles.includes(fileName)) {
+      continue;
+    }
+    
+    // Check if this folder is hidden via config.json
+    if (hasChildren && isFolderHidden(item.path, source)) {
+      continue; // Skip hidden folders
+    }
+    
+    // Get folder config for custom label and icon
+    const folderConfig = hasChildren ? getFolderConfig(item.path) : null;
+    const label = folderConfig?.label || baseName;
     
     let rawHref = null;
     if (hasChildren) {
@@ -149,6 +168,12 @@ function buildMenuData(tree, source, validPaths, parentPath = '') {
     // Resolve the href and check if target exists
     const { href, inactive, debug } = resolveHref(rawHref, validPaths);
     
+    // Determine icon - custom from config, or custom icon file, or default
+    let icon = getIcon(item, source);
+    if (folderConfig?.icon) {
+      icon = `<span class="menu-icon"><img src="${folderConfig.icon}" alt="${label}" /></span>`;
+    }
+    
     const menuItem = {
       label,
       path: folderPath,
@@ -156,7 +181,7 @@ function buildMenuData(tree, source, validPaths, parentPath = '') {
       inactive,
       debug,
       hasChildren,
-      icon: getIcon(item, source),
+      icon,
     };
     
     if (hasChildren) {
@@ -181,6 +206,10 @@ export async function getAutomenu(source, validPaths) {
   });
   const menuData = buildMenuData(tree, source, validPaths);
   
+  // Get root config for openMenuItems setting
+  const rootConfig = getRootConfig(source);
+  const openMenuItems = rootConfig?.openMenuItems || [];
+  
   // Add home item with resolved href
   const homeResolved = resolveHref('/', validPaths);
   const fullMenuData = [
@@ -190,6 +219,9 @@ export async function getAutomenu(source, validPaths) {
   
   // Embed the menu data as JSON for JavaScript to use
   const menuDataScript = `<script type="application/json" id="menu-data">${JSON.stringify(fullMenuData)}</script>`;
+  
+  // Embed the openMenuItems config as separate JSON
+  const menuConfigScript = `<script type="application/json" id="menu-config">${JSON.stringify({ openMenuItems })}</script>`;
   
   // Render the breadcrumb header (hidden by default, shown when navigating)
   const breadcrumbHtml = `
@@ -202,7 +234,7 @@ export async function getAutomenu(source, validPaths) {
   // Render the initial menu (root level)
   const menuHtml = renderMenuLevel(fullMenuData, 0);
   
-  return `${menuDataScript}${breadcrumbHtml}<ul class="menu-level" data-level="0">${menuHtml}</ul>`;
+  return `${menuDataScript}${menuConfigScript}${breadcrumbHtml}<ul class="menu-level" data-level="0">${menuHtml}</ul>`;
 }
 
 function renderMenuLevel(items, level) {

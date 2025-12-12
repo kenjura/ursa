@@ -4,6 +4,7 @@ import { copyFile, mkdir, readdir, readFile, stat } from "fs/promises";
 import { getAutomenu } from "../helper/automenu.js";
 import { filterAsync } from "../helper/filterAsync.js";
 import { isDirectory } from "../helper/isDirectory.js";
+import { isFolderHidden, clearConfigCache } from "../helper/folderConfig.js";
 import {
   extractMetadata,
   extractRawMetadata,
@@ -101,16 +102,25 @@ export async function generate({
   const templates = await getTemplates(meta); // todo: error if no default template
   // console.log({ templates });
 
+  // Clear config cache at start of generation to pick up any changes
+  clearConfigCache();
+
+  // Helper to check if a path is inside a config-hidden folder
+  const isInHiddenFolder = (filePath) => {
+    const dir = dirname(filePath);
+    return isFolderHidden(dir, source);
+  };
+
   // read all articles, process them, copy them to build
   const articleExtensions = /\.(md|txt|yml)/;
   const hiddenOrSystemDirs = /[\/\\]\.(?!\.)|[\/\\]node_modules[\/\\]/;  // Matches hidden folders (starting with .) or node_modules
   const allSourceFilenamesThatAreArticles = allSourceFilenames.filter(
-    (filename) => filename.match(articleExtensions) && !filename.match(hiddenOrSystemDirs)
+    (filename) => filename.match(articleExtensions) && !filename.match(hiddenOrSystemDirs) && !isInHiddenFolder(filename)
   );
   const allSourceFilenamesThatAreDirectories = (await filterAsync(
     allSourceFilenames,
     (filename) => isDirectory(filename)
-  )).filter((filename) => !filename.match(hiddenOrSystemDirs));
+  )).filter((filename) => !filename.match(hiddenOrSystemDirs) && !isFolderHidden(filename, source));
 
   // Build set of valid internal paths for link validation (must be before menu)
   const validPaths = buildValidPaths(allSourceFilenamesThatAreArticles, source);
@@ -363,7 +373,7 @@ export async function generate({
   );
 
   // copy all static files (i.e. images)
-  const imageExtensions = /\.(jpg|png|gif|webp)/; // todo: handle-extensionless images...ugh
+  const imageExtensions = /\.(jpg|jpeg|png|gif|webp|svg|ico)/; // static asset extensions
   const allSourceFilenamesThatAreImages = allSourceFilenames.filter(
     (filename) => filename.match(imageExtensions)
   );

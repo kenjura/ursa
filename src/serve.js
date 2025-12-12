@@ -48,7 +48,15 @@ export async function serve({
 
   // Source changes use incremental mode (only regenerate changed files)
   // Exception: CSS changes require full rebuild since they're embedded in all pages
-  watch(sourceDir, { recursive: true, filter: /\.(js|json|css|html|md|txt|yml|yaml)$/ }, async (evt, name) => {
+  watch(sourceDir, { 
+    recursive: true, 
+    filter: (f, skip) => {
+      // Skip .ursa folder (contains hash cache that gets updated during generation)
+      if (/[\/\\]\.ursa[\/\\]?/.test(f)) return skip;
+      // Only watch relevant file types
+      return /\.(js|json|css|html|md|txt|yml|yaml)$/.test(f);
+    }
+  }, async (evt, name) => {
     console.log(`Source files changed! Event: ${evt}, File: ${name}`);
     
     // CSS files affect all pages (embedded styles), so trigger full rebuild

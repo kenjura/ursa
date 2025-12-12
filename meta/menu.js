@@ -14,6 +14,17 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
     }
 
+    // Load menu config from embedded JSON (contains openMenuItems)
+    const menuConfigScript = document.getElementById('menu-config');
+    let menuConfig = { openMenuItems: [] };
+    if (menuConfigScript) {
+        try {
+            menuConfig = JSON.parse(menuConfigScript.textContent);
+        } catch (e) {
+            console.error('Failed to parse menu config:', e);
+        }
+    }
+
     // State
     let currentPath = []; // Array of path segments representing current directory
     let expandedLevel1 = new Set(); // Track which level-1 items are expanded
@@ -356,6 +367,21 @@ document.addEventListener('DOMContentLoaded', () => {
     function initializeFromCurrentPage() {
         const currentHref = window.location.pathname;
         const pathParts = currentHref.split('/').filter(Boolean);
+        
+        // Check if we're on the home/root page
+        const isHomePage = currentHref === '/' || 
+                          currentHref === '/index' || 
+                          currentHref === '/index.html' ||
+                          pathParts.length === 0 ||
+                          (pathParts.length === 1 && pathParts[0].match(/^index(\.html)?$/));
+        
+        // If on home page and we have openMenuItems config, expand those items
+        if (isHomePage && menuConfig.openMenuItems && menuConfig.openMenuItems.length > 0) {
+            for (const itemPath of menuConfig.openMenuItems) {
+                // Add to expanded set - itemPath should be the folder name like "character"
+                expandedLevel1.add(itemPath);
+            }
+        }
         
         // Try to find the deepest matching folder
         if (pathParts.length > 1) {

@@ -1,3 +1,9 @@
+# 0.34.0
+2025-12-11
+
+- Added config.json with folder-specific settings for label, icon, and visibility
+- Root-level config.json can specify open menu items
+
 # 0.33
 2025-12-10
 
