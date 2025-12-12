@@ -1,3 +1,8 @@
+# 0.35.0
+2025-12-11
+
+- Fixed issue where directory indices were empty
+
 # 0.34.0
 2025-12-11
 

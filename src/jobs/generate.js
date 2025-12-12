@@ -200,17 +200,42 @@ export async function generate({
     allSourceFilenamesThatAreArticles.map(async (file) => {
       try {
         const rawBody = await readFile(file, "utf8");
+        const type = parse(file).ext;
+        const ext = extname(file);
+        const base = basename(file, ext);
+        const dir = addTrailingSlash(dirname(file)).replace(source, "");
+        
+        // Calculate output paths for this file
+        const outputFilename = file
+          .replace(source, output)
+          .replace(parse(file).ext, ".html");
+        const url = '/' + outputFilename.replace(output, '');
         
         // Skip files that haven't changed (unless --clean flag is set)
         if (!_clean && !needsRegeneration(file, rawBody, hashCache)) {
           skippedCount++;
-          return; // Skip this file
+          // Still need to populate jsonCache for directory indices
+          const meta = extractMetadata(rawBody);
+          const body = renderFile({
+            fileContents: rawBody,
+            type,
+            dirname: dir,
+            basename: base,
+          });
+          jsonCache.set(file, {
+            name: base,
+            url,
+            contents: rawBody,
+            bodyHtml: body,
+            metadata: meta,
+            transformedMetadata: '',
+          });
+          return; // Skip regenerating this file
         }
         
         console.log(`processing article ${file}`);
         regeneratedCount++;
 
-        const type = parse(file).ext;
         const meta = extractMetadata(rawBody);
         const rawMeta = extractRawMetadata(rawBody);
         const bodyLessMeta = rawMeta ? rawBody.replace(rawMeta, "") : rawBody;
@@ -218,9 +243,6 @@ export async function generate({
           dirname(file),
           meta
         );
-        const ext = extname(file);
-        const base = basename(file, ext);
-        const dir = addTrailingSlash(dirname(file)).replace(source, "");
         
         // Calculate the document's URL path (e.g., "/character/index.html")
         const docUrlPath = '/' + dir + base + '.html';
@@ -269,10 +291,6 @@ export async function generate({
         // Pass docUrlPath so relative links can be resolved correctly
         finalHtml = markInactiveLinks(finalHtml, validPaths, docUrlPath, false);
 
-        const outputFilename = file
-          .replace(source, output)
-          .replace(parse(file).ext, ".html");
-
         console.log(`writing article to ${outputFilename}`);
 
         await outputFile(outputFilename, finalHtml);
@@ -280,7 +298,6 @@ export async function generate({
         // json
 
         const jsonOutputFilename = outputFilename.replace(".html", ".json");
-        const url = '/' + outputFilename.replace(output, '');
         const jsonObject = {
           name: base,
           url,
