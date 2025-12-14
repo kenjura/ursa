@@ -1,3 +1,8 @@
+# 0.36.0
+2025-12-13
+
+- Links to a valid .md file in source will now render as a link to the corresponding .html file (and show as an active link)
+
 # 0.35.0
 2025-12-11
 

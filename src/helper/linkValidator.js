@@ -157,7 +157,24 @@ function resolveHref(href, validPaths, currentDocPath = null) {
   // Check if the href already has an extension
   const ext = extname(hrefWithoutHash);
   if (ext) {
-    // Has extension but doesn't exist
+    // Special handling for .md links - convert to .html if valid
+    if (ext.toLowerCase() === '.md') {
+      // Remove .md and check if .html version exists
+      const pathWithoutMd = normalized.slice(0, -3); // Remove '.md'
+      const htmlPath = pathWithoutMd + '.html';
+      debugTries.push(`${normalized} (.md → .html) ${htmlPath} → ${validPaths.has(htmlPath) ? '✓' : '✗'}`);
+      if (validPaths.has(htmlPath)) {
+        // Convert .md to .html in the resolved href
+        const resolvedHref = absoluteHref.slice(0, -3) + '.html' + hash;
+        return { resolvedHref, inactive: false, debug: debugTries.join(' | ') };
+      }
+      // Also check without extension (in case valid paths don't have .html suffix)
+      if (validPaths.has(pathWithoutMd)) {
+        const resolvedHref = absoluteHref.slice(0, -3) + '.html' + hash;
+        return { resolvedHref, inactive: false, debug: debugTries.join(' | ') };
+      }
+    }
+    // Has extension but doesn't exist (or is not .md)
     debugTries.push(`${normalized} → ✗`);
     return { resolvedHref: absoluteHref + hash, inactive: true, debug: debugTries.join(' | ') };
   }
