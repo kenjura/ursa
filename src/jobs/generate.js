@@ -567,25 +567,42 @@ async function getFooter(source, _source) {
     console.error(`Error reading footer.md: ${e.message}`);
   }
   
-  // Try to read package.json from doc repo
+  // Try to read package.json from doc repo (check both source dir and parent)
   let docPackage = null;
-  const packagePath = join(resolve(_source), 'package.json');
-  try {
-    if (existsSync(packagePath)) {
-      const packageJson = await readFile(packagePath, 'utf8');
-      docPackage = JSON.parse(packageJson);
+  const sourceDir = resolve(_source);
+  const packagePaths = [
+    join(sourceDir, 'package.json'),           // In source dir itself
+    join(sourceDir, '..', 'package.json'),     // One level up (if docs is a subfolder)
+  ];
+  
+  for (const packagePath of packagePaths) {
+    try {
+      if (existsSync(packagePath)) {
+        const packageJson = await readFile(packagePath, 'utf8');
+        docPackage = JSON.parse(packageJson);
+        console.log(`Found doc package.json at ${packagePath}`);
+        break;
+      }
+    } catch (e) {
+      // Continue to next path
     }
-  } catch (e) {
-    console.error(`Error reading doc package.json: ${e.message}`);
   }
   
   // Get ursa version from ursa's own package.json
+  // Use import.meta.url to find the package.json relative to this file
   let ursaVersion = 'unknown';
   try {
-    const ursaPackagePath = new URL('../../../package.json', import.meta.url).pathname;
-    const ursaPackageJson = await readFile(ursaPackagePath, 'utf8');
-    const ursaPackage = JSON.parse(ursaPackageJson);
-    ursaVersion = ursaPackage.version;
+    // From src/jobs/generate.js, go up to package root
+    const currentFileUrl = new URL(import.meta.url);
+    const currentDir = dirname(currentFileUrl.pathname);
+    const ursaPackagePath = resolve(currentDir, '..', '..', 'package.json');
+    
+    if (existsSync(ursaPackagePath)) {
+      const ursaPackageJson = await readFile(ursaPackagePath, 'utf8');
+      const ursaPackage = JSON.parse(ursaPackageJson);
+      ursaVersion = ursaPackage.version;
+      console.log(`Found ursa package.json at ${ursaPackagePath}, version: ${ursaVersion}`);
+    }
   } catch (e) {
     console.error(`Error reading ursa package.json: ${e.message}`);
   }
