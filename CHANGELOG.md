@@ -1,3 +1,8 @@
+# 0.38.0
+2025-12-13
+
+- Updated Github Actions workflow to use OIDC for authentication
+
 # 0.37.0
 2025-12-13
 
