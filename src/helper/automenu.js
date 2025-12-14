@@ -129,7 +129,7 @@ function buildMenuData(tree, source, validPaths, parentPath = '') {
   const items = [];
   
   // Files to hide from menu by default
-  const hiddenFiles = ['config.json', 'style.css'];
+  const hiddenFiles = ['config.json', 'style.css', 'footer.md'];
   
   for (const item of tree.children || []) {
     const ext = extname(item.path);
