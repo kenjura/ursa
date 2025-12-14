@@ -1,3 +1,8 @@
+# 0.37.0
+2025-12-13
+
+- Added Github Actions workflow for CI/CD (npm publish)
+
 # 0.36.0
 2025-12-13
 
