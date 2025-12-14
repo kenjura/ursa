@@ -1,3 +1,10 @@
+# 0.39.0
+2025-12-13
+
+- Updated to node 24.5 to satisfy npm Trusted Publishing
+- Refactored Github Actions
+- Added CONTRIBUTING.md
+
 # 0.38.0
 2025-12-13
 
