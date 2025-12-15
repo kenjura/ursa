@@ -1,3 +1,10 @@
+# 0.43.0
+2025-12-14
+
+- Added buildId and .ursa.json
+- Added full datetime to footer
+- Added commit hash to footer as comment
+
 # 0.42.0
 2025-12-14
 
