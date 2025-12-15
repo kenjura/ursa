@@ -14,6 +14,13 @@ const HOME_ICON = '🏠';
 // Index file extensions to check for folder links
 const INDEX_EXTENSIONS = ['.md', '.txt', '.yml', '.yaml'];
 
+// Convert filename to display name (e.g., "foo-bar" -> "Foo Bar")
+function toDisplayName(filename) {
+  return filename
+    .replace(/[-_]/g, ' ')  // Replace dashes and underscores with spaces
+    .replace(/\b\w/g, c => c.toUpperCase());  // Capitalize first letter of each word
+}
+
 function hasIndexFile(dirPath) {
   for (const ext of INDEX_EXTENSIONS) {
     const indexPath = join(dirPath, `index${ext}`);
@@ -151,7 +158,7 @@ function buildMenuData(tree, source, validPaths, parentPath = '') {
     
     // Get folder config for custom label and icon
     const folderConfig = hasChildren ? getFolderConfig(item.path) : null;
-    const label = folderConfig?.label || baseName;
+    const label = folderConfig?.label || toDisplayName(baseName);
     
     let rawHref = null;
     if (hasChildren) {

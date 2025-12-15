@@ -1,3 +1,8 @@
+# 0.42.0
+2025-12-14
+
+- Automenu will now remove dashes from file names
+
 # 0.41.0
 2025-12-13
 
