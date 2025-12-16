@@ -21,6 +21,7 @@ import {
   markInactiveLinks,
 } from "../helper/linkValidator.js";
 import { getAndIncrementBuildId } from "../helper/ursaConfig.js";
+import { extractSections } from "../helper/sectionExtractor.js";
 
 // Helper function to build search index from processed files
 function buildSearchIndex(jsonCache, source, output) {
@@ -230,12 +231,16 @@ export async function generate({
             dirname: dir,
             basename: base,
           });
+          // Extract sections for markdown files
+          const sections = type === '.md' ? extractSections(rawBody) : [];
+          
           jsonCache.set(file, {
             name: base,
             url,
             contents: rawBody,
             bodyHtml: body,
             metadata: meta,
+            sections,
             transformedMetadata: '',
           });
           return; // Skip regenerating this file
@@ -307,6 +312,10 @@ export async function generate({
         // json
 
         const jsonOutputFilename = outputFilename.replace(".html", ".json");
+        
+        // Extract sections for markdown files
+        const sections = type === '.md' ? extractSections(rawBody) : [];
+        
         const jsonObject = {
           name: base,
           url,
@@ -314,6 +323,7 @@ export async function generate({
           // bodyLessMeta: bodyLessMeta,
           bodyHtml: body,
           metadata: meta,
+          sections,
           transformedMetadata,
           // html: finalHtml,
         };

@@ -1,3 +1,8 @@
+# 0.44.0
+2025-12-16
+
+- Added 'sections' metadata property with hierarchical section structure
+
 # 0.43.0
 2025-12-14
 
