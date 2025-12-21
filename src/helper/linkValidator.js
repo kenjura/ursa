@@ -1,12 +1,13 @@
 import { extname, dirname, join, normalize, posix } from "path";
 
 /**
- * Build a set of valid internal paths from the list of source files
+ * Build a set of valid internal paths from the list of source files and directories
  * @param {string[]} sourceFiles - Array of source file paths
  * @param {string} source - Source directory path
+ * @param {string[]} [directories] - Optional array of directory paths (for auto-index support)
  * @returns {Set<string>} Set of valid internal paths (without extension, lowercased)
  */
-export function buildValidPaths(sourceFiles, source) {
+export function buildValidPaths(sourceFiles, source, directories = []) {
   const validPaths = new Set();
   
   for (const file of sourceFiles) {
@@ -17,6 +18,13 @@ export function buildValidPaths(sourceFiles, source) {
     // Normalize: ensure leading slash, lowercase for comparison
     if (!relativePath.startsWith("/")) {
       relativePath = "/" + relativePath;
+    }
+    
+    // Decode URI components for paths with special characters (spaces, etc.)
+    try {
+      relativePath = decodeURIComponent(relativePath);
+    } catch (e) {
+      // Ignore decode errors
     }
     
     // Add both with and without trailing slash for directories
@@ -30,6 +38,33 @@ export function buildValidPaths(sourceFiles, source) {
       validPaths.add((dirPath + "/").toLowerCase());
       validPaths.add((dirPath + "/index.html").toLowerCase());
     }
+  }
+  
+  // Add all directories as valid paths (they get auto-generated index.html)
+  for (const dir of directories) {
+    let relativePath = dir.replace(source, "");
+    
+    // Normalize: ensure leading slash
+    if (!relativePath.startsWith("/")) {
+      relativePath = "/" + relativePath;
+    }
+    
+    // Remove trailing slash for consistency
+    if (relativePath.endsWith("/")) {
+      relativePath = relativePath.slice(0, -1);
+    }
+    
+    // Decode URI components
+    try {
+      relativePath = decodeURIComponent(relativePath);
+    } catch (e) {
+      // Ignore decode errors
+    }
+    
+    // Add directory paths - all folders now have index.html (auto-generated if needed)
+    validPaths.add(relativePath.toLowerCase());
+    validPaths.add((relativePath + "/").toLowerCase());
+    validPaths.add((relativePath + "/index.html").toLowerCase());
   }
   
   // Add root

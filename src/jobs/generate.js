@@ -6,6 +6,36 @@ import { copyFile, mkdir, readdir, readFile, stat } from "fs/promises";
 const BATCH_SIZE = parseInt(process.env.URSA_BATCH_SIZE || '50', 10);
 
 /**
+ * Cache for watch mode - stores expensive data that doesn't change often
+ * This allows single-file regeneration to skip re-building menu, templates, etc.
+ */
+const watchModeCache = {
+  templates: null,
+  menu: null,
+  footer: null,
+  validPaths: null,
+  source: null,
+  meta: null,
+  output: null,
+  hashCache: null,
+  lastFullBuild: 0,
+  isInitialized: false,
+};
+
+/**
+ * Clear the watch mode cache (call when templates/meta/config change)
+ */
+export function clearWatchCache() {
+  watchModeCache.templates = null;
+  watchModeCache.menu = null;
+  watchModeCache.footer = null;
+  watchModeCache.validPaths = null;
+  watchModeCache.hashCache = null;
+  watchModeCache.isInitialized = false;
+  console.log('Watch cache cleared');
+}
+
+/**
  * Progress reporter that updates lines in place (like pnpm)
  */
 class ProgressReporter {
@@ -270,7 +300,8 @@ export async function generate({
   )).filter((filename) => !filename.match(hiddenOrSystemDirs) && !isFolderHidden(filename, source));
 
   // Build set of valid internal paths for link validation (must be before menu)
-  const validPaths = buildValidPaths(allSourceFilenamesThatAreArticles, source);
+  // Pass directories to ensure folder links are valid (auto-index generates index.html for all folders)
+  const validPaths = buildValidPaths(allSourceFilenamesThatAreArticles, source, allSourceFilenamesThatAreDirectories);
   progress.log(`Built ${validPaths.size} valid paths for link validation`);
 
   const menu = await getMenu(allSourceFilenames, source, validPaths);
@@ -304,6 +335,9 @@ export async function generate({
   // Directory index cache: only stores minimal data needed for directory indices
   // Uses WeakRef-style approach - store only what's needed, clear as we go
   const dirIndexCache = new Map();
+  
+  // Track CSS files that have been copied to avoid duplicates
+  const copiedCssFiles = new Set();
 
   // Track files that were regenerated (for incremental mode stats)
   let regeneratedCount = 0;
@@ -380,12 +414,24 @@ export async function generate({
         basename: base,
       });
 
-      // Find nearest style.css or _style.css up the tree
-      let embeddedStyle = "";
+      // Find nearest style.css or _style.css up the tree and copy to output
+      let styleLink = "";
       try {
-        const css = await findStyleCss(resolve(_source, dir));
-        if (css) {
-          embeddedStyle = css;
+        const cssPath = await findStyleCss(resolve(_source, dir));
+        if (cssPath) {
+          // Calculate output path for the CSS file (mirrors source structure)
+          const cssOutputPath = cssPath.replace(source, output);
+          const cssUrlPath = '/' + cssPath.replace(source, '');
+          
+          // Copy CSS file if not already copied
+          if (!copiedCssFiles.has(cssPath)) {
+            const cssContent = await readFile(cssPath, 'utf8');
+            await outputFile(cssOutputPath, cssContent);
+            copiedCssFiles.add(cssPath);
+          }
+          
+          // Generate link tag
+          styleLink = `<link rel="stylesheet" href="${cssUrlPath}" />`;
         }
       } catch (e) {
         // ignore
@@ -409,7 +455,7 @@ export async function generate({
         "${meta}": JSON.stringify(fileMeta),
         "${transformedMetadata}": transformedMetadata,
         "${body}": body,
-        "${embeddedStyle}": embeddedStyle,
+        "${styleLink}": styleLink,
         "${searchIndex}": "[]", // Placeholder - search index written separately as JSON file
         "${footer}": footer
       };
@@ -520,7 +566,7 @@ export async function generate({
           "${title}": "Index",
           "${meta}": "{}",
           "${transformedMetadata}": "",
-          "${embeddedStyle}": "",
+          "${styleLink}": "",
           "${footer}": footer
         };
         for (const [key, value] of Object.entries(replacements)) {
@@ -584,6 +630,19 @@ export async function generate({
   if (hashCache.size > 0) {
     await saveHashCache(source, hashCache);
   }
+
+  // Populate watch mode cache for fast single-file regeneration
+  watchModeCache.templates = templates;
+  watchModeCache.menu = menu;
+  watchModeCache.footer = footer;
+  watchModeCache.validPaths = validPaths;
+  watchModeCache.source = source;
+  watchModeCache.meta = meta;
+  watchModeCache.output = output;
+  watchModeCache.hashCache = hashCache;
+  watchModeCache.lastFullBuild = Date.now();
+  watchModeCache.isInitialized = true;
+  progress.log(`Watch cache initialized for fast single-file regeneration`);
 
   // Write error report if there were any errors
   if (errors.length > 0) {
@@ -743,7 +802,7 @@ async function generateAutoIndices(output, directories, source, templates, menu,
           "${title}": folderDisplayName,
           "${meta}": "{}",
           "${transformedMetadata}": "",
-          "${embeddedStyle}": "",
+          "${styleLink}": "",
           "${footer}": footer
         };
         for (const [key, value] of Object.entries(replacements)) {
@@ -763,6 +822,157 @@ async function generateAutoIndices(output, directories, source, templates, menu,
     progress.done('Auto-index', `${generatedCount} generated, ${renamedCount} promoted`);
   } else {
     progress.log(`Auto-index: All folders already have index.html`);
+  }
+}
+
+/**
+ * Regenerate a single file without scanning the entire source directory.
+ * This is much faster for watch mode - only regenerate what changed.
+ * 
+ * @param {string} changedFile - Absolute path to the file that changed
+ * @param {Object} options - Same options as generate()
+ * @returns {Promise<{success: boolean, message: string}>}
+ */
+export async function regenerateSingleFile(changedFile, {
+  _source,
+  _meta,
+  _output,
+} = {}) {
+  const startTime = Date.now();
+  const source = resolve(_source) + "/";
+  const meta = resolve(_meta);
+  const output = resolve(_output) + "/";
+  
+  // Check if this is an article file we can regenerate
+  const articleExtensions = /\.(md|txt|yml)$/;
+  if (!changedFile.match(articleExtensions)) {
+    return { success: false, message: `Not an article file: ${changedFile}` };
+  }
+  
+  // Check if cache is initialized
+  if (!watchModeCache.isInitialized) {
+    return { success: false, message: 'Cache not initialized - need full build first' };
+  }
+  
+  // Verify paths match cached paths
+  if (watchModeCache.source !== source || watchModeCache.output !== output) {
+    return { success: false, message: 'Paths changed - need full rebuild' };
+  }
+  
+  try {
+    const { templates, menu, footer, validPaths, hashCache } = watchModeCache;
+    
+    const rawBody = await readFile(changedFile, "utf8");
+    const type = parse(changedFile).ext;
+    const ext = extname(changedFile);
+    const base = basename(changedFile, ext);
+    const dir = addTrailingSlash(dirname(changedFile)).replace(source, "");
+    
+    // Calculate output paths
+    const outputFilename = changedFile
+      .replace(source, output)
+      .replace(parse(changedFile).ext, ".html");
+    const url = '/' + outputFilename.replace(output, '');
+    
+    // Title from filename
+    const title = toTitleCase(base);
+    
+    // Extract metadata
+    const fileMeta = extractMetadata(rawBody);
+    const transformedMetadata = await getTransformedMetadata(
+      dirname(changedFile),
+      fileMeta
+    );
+    
+    // Calculate the document's URL path
+    const docUrlPath = '/' + dir + base + '.html';
+    
+    // Render body
+    const body = renderFile({
+      fileContents: rawBody,
+      type,
+      dirname: dir,
+      basename: base,
+    });
+    
+    // Find CSS and copy to output
+    let styleLink = "";
+    try {
+      const cssPath = await findStyleCss(resolve(_source, dir));
+      if (cssPath) {
+        // Calculate output path for the CSS file
+        const cssOutputPath = cssPath.replace(source, output);
+        const cssUrlPath = '/' + cssPath.replace(source, '');
+        
+        // Copy CSS file (always copy in single-file mode to ensure it's up to date)
+        const cssContent = await readFile(cssPath, 'utf8');
+        await outputFile(cssOutputPath, cssContent);
+        
+        // Generate link tag
+        styleLink = `<link rel="stylesheet" href="${cssUrlPath}" />`;
+      }
+    } catch (e) {
+      // ignore
+    }
+    
+    // Get template
+    const requestedTemplateName = fileMeta && fileMeta.template;
+    const template =
+      templates[requestedTemplateName] || templates[DEFAULT_TEMPLATE_NAME];
+    
+    if (!template) {
+      return { success: false, message: `Template not found: ${requestedTemplateName || DEFAULT_TEMPLATE_NAME}` };
+    }
+    
+    // Build final HTML
+    let finalHtml = template;
+    const replacements = {
+      "${title}": title,
+      "${menu}": menu,
+      "${meta}": JSON.stringify(fileMeta),
+      "${transformedMetadata}": transformedMetadata,
+      "${body}": body,
+      "${styleLink}": styleLink,
+      "${searchIndex}": "[]",
+      "${footer}": footer
+    };
+    for (const [key, value] of Object.entries(replacements)) {
+      finalHtml = finalHtml.replace(key, value);
+    }
+    
+    // Mark broken links
+    finalHtml = markInactiveLinks(finalHtml, validPaths, docUrlPath, false);
+    
+    await outputFile(outputFilename, finalHtml);
+    
+    // JSON output
+    const jsonOutputFilename = outputFilename.replace(".html", ".json");
+    const sections = type === '.md' ? extractSections(rawBody) : [];
+    const jsonObject = {
+      name: base,
+      url,
+      contents: rawBody,
+      bodyHtml: body,
+      metadata: fileMeta,
+      sections,
+      transformedMetadata,
+    };
+    const json = JSON.stringify(jsonObject);
+    await outputFile(jsonOutputFilename, json);
+    
+    // XML output
+    const xmlOutputFilename = outputFilename.replace(".html", ".xml");
+    const xml = `<article>${o2x(jsonObject)}</article>`;
+    await outputFile(xmlOutputFilename, xml);
+    
+    // Update hash cache
+    updateHash(changedFile, rawBody, hashCache);
+    
+    const elapsed = Date.now() - startTime;
+    const shortFile = changedFile.replace(source, '');
+    return { success: true, message: `Regenerated ${shortFile} in ${elapsed}ms` };
+  } catch (e) {
+    return { success: false, message: `Error: ${e.message}` };
   }
 }
 

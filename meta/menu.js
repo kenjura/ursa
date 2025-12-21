@@ -28,6 +28,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // State
     let currentPath = []; // Array of path segments representing current directory
     let expandedLevel1 = new Set(); // Track which level-1 items are expanded
+    let collapsedLevel1 = new Set(); // Track which level-1 items are explicitly collapsed (overrides auto-expand for current page)
 
     // DOM elements
     const breadcrumb = navMain.querySelector('.menu-breadcrumb');
@@ -124,8 +125,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const hasChildrenClass = item.hasChildren ? ' has-children' : '';
             
             // Level-1 items with children get a caret, not triple-dot
-            // Expanded if: manually expanded, or current page is in this tree
-            const isExpanded = expandedLevel1.has(item.path) || isCurrentPageInTree(item);
+            // Expanded if: manually expanded, or (current page is in this tree AND not explicitly collapsed)
+            const isExpanded = expandedLevel1.has(item.path) || (isCurrentPageInTree(item) && !collapsedLevel1.has(item.path));
             const expandedClass = isExpanded ? ' expanded' : '';
             const caretIndicator = item.hasChildren 
                 ? `<span class="menu-caret">${isExpanded ? '▼' : '▶'}</span>` 
@@ -204,9 +205,9 @@ document.addEventListener('DOMContentLoaded', () => {
     function isCurrentPage(item) {
         if (!item.href) return false;
         const currentHref = window.location.pathname;
-        // Normalize paths for comparison
-        const normalizedItemHref = item.href.replace(/\/index\.html$/, '').replace(/\.html$/, '');
-        const normalizedCurrentHref = currentHref.replace(/\/index\.html$/, '').replace(/\.html$/, '');
+        // Normalize paths for comparison - decode URI components to handle spaces and special chars
+        const normalizedItemHref = decodeURIComponent(item.href).replace(/\/index\.html$/, '').replace(/\.html$/, '');
+        const normalizedCurrentHref = decodeURIComponent(currentHref).replace(/\/index\.html$/, '').replace(/\.html$/, '');
         return normalizedItemHref === normalizedCurrentHref;
     }
 
@@ -249,10 +250,18 @@ document.addEventListener('DOMContentLoaded', () => {
                         e.stopPropagation();
                         const path = li.dataset.path;
                         const hasLink = !!link;
+                        const containsCurrentPage = li.dataset.path === currentPageParentPath;
                         
-                        if (expandedLevel1.has(path)) {
+                        // Check current expanded state (same logic as renderMenu)
+                        const isCurrentlyExpanded = expandedLevel1.has(path) || (containsCurrentPage && !collapsedLevel1.has(path));
+                        
+                        if (isCurrentlyExpanded) {
                             // Collapsing this item
                             expandedLevel1.delete(path);
+                            // If it contains current page, mark as explicitly collapsed
+                            if (containsCurrentPage) {
+                                collapsedLevel1.add(path);
+                            }
                         } else {
                             // Expanding this item
                             // If this item has no link (non-navigable folder), collapse others
@@ -260,6 +269,8 @@ document.addEventListener('DOMContentLoaded', () => {
                                 expandedLevel1.clear();
                             }
                             expandedLevel1.add(path);
+                            // Remove from explicit collapsed set
+                            collapsedLevel1.delete(path);
                         }
                         renderMenu();
                     };

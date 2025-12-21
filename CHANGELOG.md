@@ -1,3 +1,16 @@
+
+
+# 0.48.0
+2025-12-20
+
+- **External CSS**: CSS files are now externally linked via `<link>` tags instead of being embedded in each HTML page. This significantly reduces HTML file sizes and improves browser caching.
+- **Fast CSS Updates**: CSS file changes in watch mode now just copy the file to output (~1ms) instead of triggering a full rebuild
+- **Fast Single-File Regeneration**: Article changes in watch mode use a new fast-path that regenerates only the changed file (~50-100ms) instead of scanning all source files
+- **Clickable Folder Links**: All folders in the navigation menu are now clickable links (auto-index ensures every folder has an index.html)
+- **Menu Collapse Fix**: Fixed issue where clicking the caret on a folder containing the current page wouldn't collapse it
+- **URL Encoding Fix**: Fixed menu not highlighting current page when URLs contain spaces or special characters
+- **Link Validation Fix**: Links to folders are no longer incorrectly marked as inactive (folders now included in valid paths since auto-index generates index.html for all)
+
 # 0.47.0
 2025-12-20
 

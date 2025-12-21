@@ -1,10 +1,37 @@
 import express from "express";
 import watch from "node-watch";
-import { generate } from "./jobs/generate.js";
+import { generate, regenerateSingleFile, clearWatchCache } from "./jobs/generate.js";
 import { join, resolve } from "path";
 import fs from "fs";
 import { promises } from "fs";
-const { readdir, mkdir } = promises;
+import { outputFile } from "fs-extra";
+const { readdir, mkdir, readFile } = promises;
+
+// Debounce timer and lock for preventing concurrent regenerations
+let debounceTimer = null;
+let isRegenerating = false;
+const DEBOUNCE_MS = 100; // Wait 100ms after last change before regenerating
+
+/**
+ * Copy a single CSS file to the output directory
+ * @param {string} cssPath - Absolute path to the CSS file
+ * @param {string} sourceDir - Source directory root
+ * @param {string} outputDir - Output directory root
+ */
+async function copyCssFile(cssPath, sourceDir, outputDir) {
+  const startTime = Date.now();
+  const relativePath = cssPath.replace(sourceDir, '');
+  const outputPath = join(outputDir, relativePath);
+  
+  try {
+    const content = await readFile(cssPath, 'utf8');
+    await outputFile(outputPath, content);
+    const elapsed = Date.now() - startTime;
+    return { success: true, message: `Copied ${relativePath} in ${elapsed}ms` };
+  } catch (e) {
+    return { success: false, message: `Error copying CSS: ${e.message}` };
+  }
+}
 
 /**
  * Configurable serve function for CLI and library use
@@ -32,13 +59,14 @@ export async function serve({
   console.log("⏳ Generating site in background...\n");
 
   // Initial generation (use _clean flag only for initial generation)
+  // This also initializes the watch cache for fast single-file updates
   generate({ _source: sourceDir, _meta: metaDir, _output: outputDir, _whitelist, _exclude, _clean })
-    .then(() => console.log("\n✅ Initial generation complete.\n"))
+    .then(() => console.log("\n✅ Initial generation complete. Fast single-file regeneration enabled.\n"))
     .catch((error) => console.error("Error during initial generation:", error.message));
 
   // Watch for changes
   console.log("👀 Watching for changes in:");
-  console.log("   Source:", sourceDir, "(incremental)");
+  console.log("   Source:", sourceDir, "(fast single-file mode)");
   console.log("   Meta:", metaDir, "(full rebuild)");
   console.log("\nPress Ctrl+C to stop the server\n");
   
@@ -46,6 +74,7 @@ export async function serve({
   watch(metaDir, { recursive: true, filter: /\.(js|json|css|html|md|txt|yml|yaml)$/ }, async (evt, name) => {
     console.log(`Meta files changed! Event: ${evt}, File: ${name}`);
     console.log("Full rebuild required (meta files affect all pages)...");
+    clearWatchCache(); // Clear cache since templates/CSS may have changed
     try {
       await generate({ _source: sourceDir, _meta: metaDir, _output: outputDir, _whitelist, _exclude, _clean: true });
       console.log("Regeneration complete.");
@@ -54,8 +83,8 @@ export async function serve({
     }
   });
 
-  // Source changes use incremental mode (only regenerate changed files)
-  // Exception: CSS changes require full rebuild since they're embedded in all pages
+  // Source changes: try fast single-file regeneration first
+  // Falls back to full rebuild for CSS, config, or if cache isn't ready
   watch(sourceDir, { 
     recursive: true, 
     filter: (f, skip) => {
@@ -65,26 +94,93 @@ export async function serve({
       return /\.(js|json|css|html|md|txt|yml|yaml)$/.test(f);
     }
   }, async (evt, name) => {
-    console.log(`Source files changed! Event: ${evt}, File: ${name}`);
+    // Skip if we're already regenerating
+    if (isRegenerating) {
+      console.log(`⏳ Skipping ${name} (regeneration in progress)`);
+      return;
+    }
     
-    // CSS files affect all pages (embedded styles), so trigger full rebuild
+    // CSS files: just copy the file (no longer embedded in HTML)
     const isCssChange = name && name.endsWith('.css');
+    // Menu/config changes need full rebuild
+    const isMenuChange = name && (name.includes('_menu') || name.includes('menu.'));
+    const isConfigChange = name && (name.includes('_config') || name.includes('.ursa'));
+    
     if (isCssChange) {
-      console.log("CSS change detected - full rebuild required...");
+      console.log(`\n🎨 CSS change detected: ${name}`);
+      isRegenerating = true;
+      try {
+        const result = await copyCssFile(name, sourceDir + '/', outputDir + '/');
+        if (result.success) {
+          console.log(`✅ ${result.message}`);
+        } else {
+          console.log(`⚠️ ${result.message}`);
+        }
+      } catch (error) {
+        console.error("Error copying CSS:", error.message);
+      } finally {
+        isRegenerating = false;
+      }
+      return;
+    }
+    
+    if (isMenuChange || isConfigChange) {
+      console.log(`\n📦 ${isMenuChange ? 'Menu' : 'Config'} change detected: ${name}`);
+      console.log("Full rebuild required...");
+      clearWatchCache();
+      isRegenerating = true;
       try {
         await generate({ _source: sourceDir, _meta: metaDir, _output: outputDir, _whitelist, _exclude, _clean: true });
         console.log("Regeneration complete.");
       } catch (error) {
         console.error("Error during regeneration:", error.message);
+      } finally {
+        isRegenerating = false;
       }
-    } else {
-      console.log("Incremental rebuild...");
+      return;
+    }
+    
+    // Try fast single-file regeneration for article files
+    const isArticle = name && /\.(md|txt|yml)$/.test(name);
+    if (isArticle) {
+      console.log(`\n⚡ Fast regeneration: ${name}`);
+      isRegenerating = true;
       try {
+        const result = await regenerateSingleFile(name, {
+          _source: sourceDir,
+          _meta: metaDir,
+          _output: outputDir
+        });
+        
+        if (result.success) {
+          console.log(`✅ ${result.message}`);
+          return;
+        }
+        
+        // Fall back to full rebuild if single-file failed
+        console.log(`⚠️ ${result.message}`);
+        console.log("Falling back to full rebuild...");
         await generate({ _source: sourceDir, _meta: metaDir, _output: outputDir, _whitelist, _exclude });
         console.log("Regeneration complete.");
       } catch (error) {
         console.error("Error during regeneration:", error.message);
+      } finally {
+        isRegenerating = false;
       }
+      return;
+    }
+    
+    // Non-article files - incremental build
+    console.log(`\n📄 Non-article change: ${name}`);
+    console.log("Running incremental rebuild...");
+    isRegenerating = true;
+    try {
+      await generate({ _source: sourceDir, _meta: metaDir, _output: outputDir, _whitelist, _exclude });
+      console.log("Regeneration complete.");
+    } catch (error) {
+      console.error("Error during regeneration:", error.message);
+    } finally {
+      isRegenerating = false;
     }
   });
 }

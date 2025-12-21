@@ -161,19 +161,26 @@ function buildMenuData(tree, source, validPaths, parentPath = '') {
     const label = folderConfig?.label || toDisplayName(baseName);
     
     let rawHref = null;
+    let href = null;
+    let inactive = false;
+    let debug = '';
+    
     if (hasChildren) {
-      if (hasIndexFile(item.path)) {
-        // Construct proper path - relativePath already starts with /
-        const cleanPath = relativePath.startsWith('/') ? relativePath : '/' + relativePath;
-        rawHref = `${cleanPath}/index.html`.replace(/\/\//g, '/');
-      }
+      // All folders now have index pages (either existing or auto-generated)
+      const cleanPath = relativePath.startsWith('/') ? relativePath : '/' + relativePath;
+      rawHref = `${cleanPath}/index.html`.replace(/\/\//g, '/');
+      href = rawHref;
+      inactive = false; // Always active - auto-index ensures all folders have index.html
+      debug = 'folder (auto-index enabled)';
     } else {
       const cleanPath = relativePath.startsWith('/') ? relativePath : '/' + relativePath;
       rawHref = cleanPath.replace(ext, '');
+      // Resolve the href and check if target exists
+      const resolved = resolveHref(rawHref, validPaths);
+      href = resolved.href;
+      inactive = resolved.inactive;
+      debug = resolved.debug;
     }
-    
-    // Resolve the href and check if target exists
-    const { href, inactive, debug } = resolveHref(rawHref, validPaths);
     
     // Determine icon - custom from config, or custom icon file, or default
     let icon = getIcon(item, source);
