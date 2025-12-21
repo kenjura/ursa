@@ -94,6 +94,26 @@ important-document
 classes/wizard
 ```
 
+### Large Workloads
+
+For sites with many documents (hundreds or thousands), you may need to increase Node.js memory limits:
+
+```bash
+# Increase heap size to 8GB for large sites
+node --max-old-space-size=8192 $(which ursa) serve content
+
+# Or use the npm scripts
+npm run serve:large content
+npm run generate:large content
+
+# You can also set environment variables to tune batch processing
+URSA_BATCH_SIZE=25 ursa serve content  # Process fewer files at once (default: 50)
+```
+
+**Environment Variables for Performance Tuning:**
+- `URSA_BATCH_SIZE` - Number of files to process concurrently (default: 50). Lower values use less memory but are slower.
+- `NODE_OPTIONS="--max-old-space-size=8192"` - Increase Node.js heap size for very large sites.
+
 ## Library Usage
 
 ### ES Modules (recommended)

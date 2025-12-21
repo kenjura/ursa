@@ -1,3 +1,10 @@
+# 0.45.0
+2025-12-20
+
+- Added --exclude flag to ignore specified files or directories during generation
+- Improved performance of the serve command with optimized file watching
+- Automatically generating index.html for directories without an index file
+
 # 0.44.0
 2025-12-16
 

@@ -4,7 +4,7 @@ import { generate } from "./jobs/generate.js";
 import { join, resolve } from "path";
 import fs from "fs";
 import { promises } from "fs";
-const { readdir } = promises;
+const { readdir, mkdir } = promises;
 
 /**
  * Configurable serve function for CLI and library use
@@ -15,31 +15,39 @@ export async function serve({
   _output,
   port = 8080,
   _whitelist = null,
-  _clean = false
+  _clean = false,
+  _exclude = null
 } = {}) {
   const sourceDir = resolve(_source);
   const metaDir = resolve(_meta);
   const outputDir = resolve(_output);
 
-  console.log({ source: sourceDir, meta: metaDir, output: outputDir, port, whitelist: _whitelist, clean: _clean });
+  console.log({ source: sourceDir, meta: metaDir, output: outputDir, port, whitelist: _whitelist, exclude: _exclude, clean: _clean });
+
+  // Ensure output directory exists and start server immediately
+  await mkdir(outputDir, { recursive: true });
+  serveFiles(outputDir, port);
+  console.log(`🚀 Development server running at http://localhost:${port}`);
+  console.log("📁 Serving files from:", outputDir);
+  console.log("⏳ Generating site in background...\n");
 
   // Initial generation (use _clean flag only for initial generation)
-  console.log("Generating initial site...");
-  await generate({ _source: sourceDir, _meta: metaDir, _output: outputDir, _whitelist, _clean });
-  console.log("Initial generation complete. Starting server...");
-
-  // Start file server
-  serveFiles(outputDir, port);
+  generate({ _source: sourceDir, _meta: metaDir, _output: outputDir, _whitelist, _exclude, _clean })
+    .then(() => console.log("\n✅ Initial generation complete.\n"))
+    .catch((error) => console.error("Error during initial generation:", error.message));
 
   // Watch for changes
-  console.log("Watching for file changes...");
+  console.log("👀 Watching for changes in:");
+  console.log("   Source:", sourceDir, "(incremental)");
+  console.log("   Meta:", metaDir, "(full rebuild)");
+  console.log("\nPress Ctrl+C to stop the server\n");
   
   // Meta changes trigger full rebuild (templates, CSS, etc. affect all pages)
   watch(metaDir, { recursive: true, filter: /\.(js|json|css|html|md|txt|yml|yaml)$/ }, async (evt, name) => {
     console.log(`Meta files changed! Event: ${evt}, File: ${name}`);
     console.log("Full rebuild required (meta files affect all pages)...");
     try {
-      await generate({ _source: sourceDir, _meta: metaDir, _output: outputDir, _whitelist, _clean: true });
+      await generate({ _source: sourceDir, _meta: metaDir, _output: outputDir, _whitelist, _exclude, _clean: true });
       console.log("Regeneration complete.");
     } catch (error) {
       console.error("Error during regeneration:", error.message);
@@ -64,7 +72,7 @@ export async function serve({
     if (isCssChange) {
       console.log("CSS change detected - full rebuild required...");
       try {
-        await generate({ _source: sourceDir, _meta: metaDir, _output: outputDir, _whitelist, _clean: true });
+        await generate({ _source: sourceDir, _meta: metaDir, _output: outputDir, _whitelist, _exclude, _clean: true });
         console.log("Regeneration complete.");
       } catch (error) {
         console.error("Error during regeneration:", error.message);
@@ -72,20 +80,13 @@ export async function serve({
     } else {
       console.log("Incremental rebuild...");
       try {
-        await generate({ _source: sourceDir, _meta: metaDir, _output: outputDir, _whitelist });
+        await generate({ _source: sourceDir, _meta: metaDir, _output: outputDir, _whitelist, _exclude });
         console.log("Regeneration complete.");
       } catch (error) {
         console.error("Error during regeneration:", error.message);
       }
     }
   });
-
-  console.log(`🚀 Development server running at http://localhost:${port}`);
-  console.log("📁 Serving files from:", outputDir);
-  console.log("👀 Watching for changes in:");
-  console.log("   Source:", sourceDir, "(incremental)");
-  console.log("   Meta:", metaDir, "(full rebuild)");
-  console.log("\nPress Ctrl+C to stop the server");
 }
 
 /**

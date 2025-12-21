@@ -2,7 +2,7 @@
   "name": "@kenjura/ursa",
   "author": "Andrew London <andrew@kenjura.com>",
   "type": "module",
-  "version": "0.44.0",
+  "version": "0.45.0",
   "description": "static site generator from MD/wikitext/YML",
   "main": "lib/index.js",
   "bin": {
@@ -11,6 +11,8 @@
   "scripts": {
     "serve": "nodemon --config nodemon.json  src/serve.js",
     "serve:debug": "nodemon --config nodemon.json  --inspect-brk src/serve.js",
+    "serve:large": "node --max-old-space-size=8192 bin/ursa.js serve",
+    "generate:large": "node --max-old-space-size=8192 bin/ursa.js generate",
     "cli:debug": "node --inspect bin/ursa.js",
     "cli:debug-brk": "node --inspect-brk bin/ursa.js",
     "start": "node src/index.js",
