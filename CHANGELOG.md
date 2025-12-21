@@ -1,3 +1,7 @@
+# 0.49.0
+2025-12-20
+
+- Fixed more instances of false inactive links, this time in wikitext files (.txt)
 
 
 # 0.48.0
@@ -10,6 +14,8 @@
 - **Menu Collapse Fix**: Fixed issue where clicking the caret on a folder containing the current page wouldn't collapse it
 - **URL Encoding Fix**: Fixed menu not highlighting current page when URLs contain spaces or special characters
 - **Link Validation Fix**: Links to folders are no longer incorrectly marked as inactive (folders now included in valid paths since auto-index generates index.html for all)
+- **WikiText Link Fix**: Fixed wikitext links (in .txt files) being incorrectly marked as inactive. Link validation is now handled centrally by the link validator after HTML generation.
+- **Folder/Index Link Fix**: Links to folders containing a `(foldername).md` file (instead of `index.md`) are now correctly recognized as valid
 
 # 0.47.0
 2025-12-20

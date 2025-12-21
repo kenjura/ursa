@@ -1,4 +1,4 @@
-import { extname, dirname, join, normalize, posix } from "path";
+import { extname, dirname, join, normalize, posix, basename } from "path";
 
 /**
  * Build a set of valid internal paths from the list of source files and directories
@@ -37,6 +37,19 @@ export function buildValidPaths(sourceFiles, source, directories = []) {
       validPaths.add(dirPath.toLowerCase());
       validPaths.add((dirPath + "/").toLowerCase());
       validPaths.add((dirPath + "/index.html").toLowerCase());
+    }
+    
+    // Handle (foldername).md files - they get promoted to index.html by auto-index
+    // e.g., /foo/bar/bar.md becomes /foo/bar/index.html (bar.html promoted to index.html)
+    const fileName = basename(relativePath); // e.g., "bar" from "/foo/bar/bar"
+    const parentDir = dirname(relativePath); // e.g., "/foo/bar" from "/foo/bar/bar"
+    const parentDirName = basename(parentDir); // e.g., "bar" from "/foo/bar"
+    
+    if (fileName === parentDirName) {
+      // This file has same name as its parent folder - it will be promoted to index.html
+      validPaths.add(parentDir.toLowerCase());
+      validPaths.add((parentDir + "/").toLowerCase());
+      validPaths.add((parentDir + "/index.html").toLowerCase());
     }
   }
   

@@ -10,8 +10,6 @@ export function wikiToHtml({ wikitext, articleName, args } = {}) {
   const linkbase = ("/" + db + "/").replace(/\/\//g, "/");
   const imageroot = ("/" + db + "/img/").replace(/\/\//g, "/");
 
-  const allArticles = args.allArticles || [];
-
   // console.log('wikitext=',wikitext);
   var html = String(wikitext);
   // instance.article = article;
@@ -226,31 +224,19 @@ export function wikiToHtml({ wikitext, articleName, args } = {}) {
     if (!anchor) anchor = "";
     else anchor = "#" + anchor;
 
-    var active = true;
-
-    active = !!allArticles.find((article) => article.match(articleName));
+    // Note: Link validation (active/inactive status) is now handled by linkValidator.js
+    // after HTML generation, so we don't set active/inactive class here.
 
     if (articleName.indexOf("/") >= 0) {
       // assume the link is fully formed
-      return `<a class="wikiLink${
-        active ? " active" : ""
-      } data-articleName="${articleName}" href="${articleName}">${
+      return `<a class="wikiLink" data-articleName="${articleName}" href="${articleName}">${
         displayName || articleName
       }</a>`;
     } else {
       var link = linkbase + articleName + anchor;
 
-      // not sure what this did, but I need a new handler for this case
-      // if (articleName.indexOf('/')>-1) {
-      // 	link = '/'+articleName+anchor;
-      // 	displayName = articleName.substr(articleName.indexOf('/')+1);
-      // 	console.log('link=',link);
-      // }
-
       return (
-        '<a class="wikiLink ' +
-        (active ? "active" : "inactive") +
-        '" data-articleName="' +
+        '<a class="wikiLink" data-articleName="' +
         articleName +
         '" href="' +
         link +
