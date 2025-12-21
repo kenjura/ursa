@@ -635,10 +635,15 @@ async function generateAutoIndices(output, directories, source, templates, menu,
   // Alternate index file names to look for (in priority order)
   const INDEX_ALTERNATES = ['_index.html', 'home.html', '_home.html'];
   
+  // Normalize paths (remove trailing slashes for consistent replacement)
+  const sourceNorm = source.replace(/\/+$/, '');
+  const outputNorm = output.replace(/\/+$/, '');
+  
   // Get all output directories (including root)
-  const outputDirs = new Set([output]);
+  const outputDirs = new Set([outputNorm]);
   for (const dir of directories) {
-    const outputDir = dir.replace(source, output);
+    // Handle both with and without trailing slash in source
+    const outputDir = dir.replace(sourceNorm, outputNorm);
     outputDirs.add(outputDir);
   }
   
@@ -673,7 +678,7 @@ async function generateAutoIndices(output, directories, source, templates, menu,
         const content = await readFile(foundAlternate, 'utf8');
         await outputFile(indexPath, content);
         renamedCount++;
-        progress.status('Auto-index', `Promoted ${basename(foundAlternate)} → index.html in ${dir.replace(output, '')}`);
+        progress.status('Auto-index', `Promoted ${basename(foundAlternate)} → index.html in ${dir.replace(outputNorm, '') || '/'}`);
       } catch (e) {
         progress.log(`Error promoting ${foundAlternate} to index.html: ${e.message}`);
       }
@@ -705,7 +710,7 @@ async function generateAutoIndices(output, directories, source, templates, menu,
           continue;
         }
         
-        const folderDisplayName = dir === output ? 'Home' : toTitleCase(folderName);
+        const folderDisplayName = dir === outputNorm ? 'Home' : toTitleCase(folderName);
         const indexHtml = `<h1>${folderDisplayName}</h1>\n<ul class="auto-index">\n${items.join('\n')}\n</ul>`;
         
         const template = templates["default-template"];
@@ -731,7 +736,7 @@ async function generateAutoIndices(output, directories, source, templates, menu,
         
         await outputFile(indexPath, finalHtml);
         generatedCount++;
-        progress.status('Auto-index', `Generated index.html for ${dir.replace(output, '') || '/'}`);
+        progress.status('Auto-index', `Generated index.html for ${dir.replace(outputNorm, '') || '/'}`);
       } catch (e) {
         progress.log(`Error generating auto-index for ${dir}: ${e.message}`);
       }

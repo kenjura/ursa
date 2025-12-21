@@ -1,3 +1,8 @@
+# 0.46.0
+2025-12-20
+
+- Normalized handling of trailing slashes in URLs
+
 # 0.45.0
 2025-12-20
 
