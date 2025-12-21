@@ -2,7 +2,7 @@
   "name": "@kenjura/ursa",
   "author": "Andrew London <andrew@kenjura.com>",
   "type": "module",
-  "version": "0.46.0",
+  "version": "0.47.0",
   "description": "static site generator from MD/wikitext/YML",
   "main": "lib/index.js",
   "bin": {

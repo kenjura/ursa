@@ -578,7 +578,7 @@ export async function generate({
 
   // Automatic index generation for folders without index.html
   progress.log(`Checking for missing index files...`);
-  await generateAutoIndices(output, allSourceFilenamesThatAreDirectories, source, templates, menu, footer);
+  await generateAutoIndices(output, allSourceFilenamesThatAreDirectories, source, templates, menu, footer, allSourceFilenamesThatAreArticles);
 
   // Save the hash cache to .ursa folder in source directory
   if (hashCache.size > 0) {
@@ -631,13 +631,24 @@ export async function generate({
  * @param {string} menu - Rendered menu HTML
  * @param {string} footer - Footer HTML
  */
-async function generateAutoIndices(output, directories, source, templates, menu, footer) {
+async function generateAutoIndices(output, directories, source, templates, menu, footer, generatedArticles) {
   // Alternate index file names to look for (in priority order)
   const INDEX_ALTERNATES = ['_index.html', 'home.html', '_home.html'];
   
   // Normalize paths (remove trailing slashes for consistent replacement)
   const sourceNorm = source.replace(/\/+$/, '');
   const outputNorm = output.replace(/\/+$/, '');
+  
+  // Build set of directories that already have an index.html from a source index.md/txt/yml
+  const dirsWithSourceIndex = new Set();
+  for (const articlePath of generatedArticles) {
+    const base = basename(articlePath, extname(articlePath));
+    if (base === 'index') {
+      const dir = dirname(articlePath);
+      const outputDir = dir.replace(sourceNorm, outputNorm);
+      dirsWithSourceIndex.add(outputDir);
+    }
+  }
   
   // Get all output directories (including root)
   const outputDirs = new Set([outputNorm]);
@@ -653,7 +664,12 @@ async function generateAutoIndices(output, directories, source, templates, menu,
   for (const dir of outputDirs) {
     const indexPath = join(dir, 'index.html');
     
-    // Skip if index.html already exists
+    // Skip if this directory had a source index.md/txt/yml that was already processed
+    if (dirsWithSourceIndex.has(dir)) {
+      continue;
+    }
+    
+    // Skip if index.html already exists (e.g., created by previous run)
     if (existsSync(indexPath)) {
       continue;
     }

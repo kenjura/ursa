@@ -1,3 +1,8 @@
+# 0.47.0
+2025-12-20
+
+- Improved handling of trailing slashes in URLs to ensure consistency across all links and resources
+
 # 0.46.0
 2025-12-20
 
