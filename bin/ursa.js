@@ -38,6 +38,11 @@ yargs(hideBin(process.argv))
           describe: 'Path to whitelist file containing patterns for files to include',
           type: 'string'
         })
+        .option('exclude', {
+          alias: 'x',
+          describe: 'Folders to exclude: comma-separated paths relative to source, or path to file with one folder per line',
+          type: 'string'
+        })
         .option('clean', {
           alias: 'c',
           describe: 'Ignore cached hashes and regenerate all files',
@@ -50,11 +55,15 @@ yargs(hideBin(process.argv))
       const meta = argv.meta ? resolve(argv.meta) : PACKAGE_META;
       const output = resolve(argv.output);
       const whitelist = argv.whitelist ? resolve(argv.whitelist) : null;
+      const exclude = argv.exclude || null;
       const clean = argv.clean;
       
       console.log(`Generating site from ${source} to ${output} using meta from ${meta}`);
       if (whitelist) {
         console.log(`Using whitelist: ${whitelist}`);
+      }
+      if (exclude) {
+        console.log(`Excluding: ${exclude}`);
       }
       if (clean) {
         console.log(`Clean build: ignoring cached hashes`);
@@ -66,6 +75,7 @@ yargs(hideBin(process.argv))
           _meta: meta,
           _output: output,
           _whitelist: whitelist,
+          _exclude: exclude,
           _clean: clean
         });
         console.log('Site generation completed successfully!');
@@ -107,6 +117,11 @@ yargs(hideBin(process.argv))
           describe: 'Path to whitelist file containing patterns for files to include',
           type: 'string'
         })
+        .option('exclude', {
+          alias: 'x',
+          describe: 'Folders to exclude: comma-separated paths relative to source, or path to file with one folder per line',
+          type: 'string'
+        })
         .option('clean', {
           alias: 'c',
           describe: 'Ignore cached hashes and regenerate all files',
@@ -120,6 +135,7 @@ yargs(hideBin(process.argv))
       const output = resolve(argv.output);
       const port = argv.port;
       const whitelist = argv.whitelist ? resolve(argv.whitelist) : null;
+      const exclude = argv.exclude || null;
       const clean = argv.clean;
       
       console.log(`Starting development server...`);
@@ -130,6 +146,9 @@ yargs(hideBin(process.argv))
       if (whitelist) {
         console.log(`Using whitelist: ${whitelist}`);
       }
+      if (exclude) {
+        console.log(`Excluding: ${exclude}`);
+      }
       
       try {
         const { serve } = await import('../src/serve.js');
@@ -139,6 +158,7 @@ yargs(hideBin(process.argv))
           _output: output,
           port: port,
           _whitelist: whitelist,
+          _exclude: exclude,
           _clean: clean
         });
       } catch (error) {

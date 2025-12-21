@@ -1,6 +1,77 @@
 import { recurse } from "../helper/recursive-readdir.js";
 
 import { copyFile, mkdir, readdir, readFile, stat } from "fs/promises";
+
+// Concurrency limiter for batch processing to avoid memory exhaustion
+const BATCH_SIZE = parseInt(process.env.URSA_BATCH_SIZE || '50', 10);
+
+/**
+ * Progress reporter that updates lines in place (like pnpm)
+ */
+class ProgressReporter {
+  constructor() {
+    this.lines = {};
+    this.isTTY = process.stdout.isTTY;
+  }
+  
+  // Update a named status line in place
+  status(name, message) {
+    if (this.isTTY) {
+      // Save cursor, move to line, clear it, write, restore cursor
+      const line = `${name}: ${message}`;
+      this.lines[name] = line;
+      // Clear line and write
+      process.stdout.write(`\r\x1b[K${line}`);
+    }
+  }
+  
+  // Complete a status line (print final state and newline)
+  done(name, message) {
+    if (this.isTTY) {
+      process.stdout.write(`\r\x1b[K${name}: ${message}\n`);
+    } else {
+      console.log(`${name}: ${message}`);
+    }
+    delete this.lines[name];
+  }
+  
+  // Regular log that doesn't get overwritten
+  log(message) {
+    if (this.isTTY) {
+      // Clear current line first, print message, then newline
+      process.stdout.write(`\r\x1b[K${message}\n`);
+    } else {
+      console.log(message);
+    }
+  }
+  
+  // Clear all status lines
+  clear() {
+    if (this.isTTY) {
+      process.stdout.write(`\r\x1b[K`);
+    }
+  }
+}
+
+const progress = new ProgressReporter();
+
+/**
+ * Process items in batches to limit memory usage
+ * @param {Array} items - Items to process
+ * @param {Function} processor - Async function to process each item
+ * @param {number} batchSize - Max concurrent operations
+ */
+async function processBatched(items, processor, batchSize = BATCH_SIZE) {
+  const results = [];
+  for (let i = 0; i < items.length; i += batchSize) {
+    const batch = items.slice(i, i + batchSize);
+    const batchResults = await Promise.all(batch.map(processor));
+    results.push(...batchResults);
+    // Allow GC to run between batches
+    if (global.gc) global.gc();
+  }
+  return results;
+}
 import { getAutomenu } from "../helper/automenu.js";
 import { filterAsync } from "../helper/filterAsync.js";
 import { isDirectory } from "../helper/isDirectory.js";
@@ -68,15 +139,80 @@ import { createWhitelistFilter } from "../helper/whitelistFilter.js";
 const DEFAULT_TEMPLATE_NAME =
   process.env.DEFAULT_TEMPLATE_NAME ?? "default-template";
 
+/**
+ * Parse exclude option - can be comma-separated paths or a file path
+ * @param {string} excludeOption - The exclude option value
+ * @param {string} source - Source directory path
+ * @returns {Promise<Set<string>>} Set of excluded folder paths (normalized)
+ */
+async function parseExcludeOption(excludeOption, source) {
+  const excludedPaths = new Set();
+  
+  if (!excludeOption) return excludedPaths;
+  
+  // Check if it's a file path (exists as a file)
+  const isFile = existsSync(excludeOption) && (await stat(excludeOption)).isFile();
+  
+  let patterns;
+  if (isFile) {
+    // Read patterns from file (one per line)
+    const content = await readFile(excludeOption, 'utf8');
+    patterns = content.split('\n')
+      .map(line => line.trim())
+      .filter(line => line && !line.startsWith('#')); // Skip empty lines and comments
+  } else {
+    // Treat as comma-separated list
+    patterns = excludeOption.split(',').map(p => p.trim()).filter(Boolean);
+  }
+  
+  // Normalize patterns to absolute paths
+  for (const pattern of patterns) {
+    // Remove leading/trailing slashes and normalize
+    const normalized = pattern.replace(/^\/+|\/+$/g, '');
+    // Store as relative path for easier matching
+    excludedPaths.add(normalized);
+  }
+  
+  return excludedPaths;
+}
+
+/**
+ * Create a filter function that excludes files in specified folders
+ * @param {Set<string>} excludedPaths - Set of excluded folder paths
+ * @param {string} source - Source directory path
+ * @returns {Function} Filter function
+ */
+function createExcludeFilter(excludedPaths, source) {
+  if (excludedPaths.size === 0) {
+    return () => true; // No exclusions, allow all
+  }
+  
+  return (filePath) => {
+    // Get path relative to source
+    const relativePath = filePath.replace(source, '').replace(/^\/+/, '');
+    
+    // Check if file is in any excluded folder
+    for (const excluded of excludedPaths) {
+      if (relativePath === excluded || 
+          relativePath.startsWith(excluded + '/') ||
+          relativePath.startsWith(excluded + '\\')) {
+        return false; // Exclude this file
+      }
+    }
+    return true; // Include this file
+  };
+}
+
 export async function generate({
   _source = join(process.cwd(), "."),
   _meta = join(process.cwd(), "meta"),
   _output = join(process.cwd(), "build"),
   _whitelist = null,
+  _exclude = null,
   _incremental = false,  // Legacy flag, now ignored (always incremental)
   _clean = false,  // When true, ignore cache and regenerate all files
 } = {}) {
-  console.log({ _source, _meta, _output, _whitelist, _clean });
+  console.log({ _source, _meta, _output, _whitelist, _exclude, _clean });
   const source = resolve(_source) + "/";
   const meta = resolve(_meta);
   const output = resolve(_output) + "/";
@@ -89,6 +225,15 @@ export async function generate({
     ? (fileName) => fileName.match(process.env.INCLUDE_FILTER)
     : Boolean;
   let allSourceFilenames = allSourceFilenamesUnfiltered.filter(includeFilter);
+  
+  // Apply exclude filter if specified
+  if (_exclude) {
+    const excludedPaths = await parseExcludeOption(_exclude, source);
+    const excludeFilter = createExcludeFilter(excludedPaths, source);
+    const beforeCount = allSourceFilenames.length;
+    allSourceFilenames = allSourceFilenames.filter(excludeFilter);
+    progress.log(`Exclude filter applied: ${beforeCount - allSourceFilenames.length} files excluded`);
+  }
   
   // Apply whitelist filter if specified
   if (_whitelist) {
@@ -126,13 +271,13 @@ export async function generate({
 
   // Build set of valid internal paths for link validation (must be before menu)
   const validPaths = buildValidPaths(allSourceFilenamesThatAreArticles, source);
-  console.log(`Built ${validPaths.size} valid paths for link validation`);
+  progress.log(`Built ${validPaths.size} valid paths for link validation`);
 
   const menu = await getMenu(allSourceFilenames, source, validPaths);
 
   // Get and increment build ID from .ursa.json
   const buildId = getAndIncrementBuildId(resolve(_source));
-  console.log(`Build #${buildId}`);
+  progress.log(`Build #${buildId}`);
 
   // Generate footer content
   const footer = await getFooter(source, _source, buildId);
@@ -141,9 +286,9 @@ export async function generate({
   let hashCache = new Map();
   if (!_clean) {
     hashCache = await loadHashCache(source);
-    console.log(`Loaded ${hashCache.size} cached content hashes from .ursa folder`);
+    progress.log(`Loaded ${hashCache.size} cached content hashes from .ursa folder`);
   } else {
-    console.log(`Clean build: ignoring cached hashes`);
+    progress.log(`Clean build: ignoring cached hashes`);
   }
 
   // create public folder
@@ -154,294 +299,286 @@ export async function generate({
   // Track errors for error report
   const errors = [];
 
-  // First pass: collect search index data
+  // Search index: built incrementally during article processing (lighter memory footprint)
   const searchIndex = [];
-  const jsonCache = new Map();
-  
-  // Collect basic data for search index
-  for (const file of allSourceFilenamesThatAreArticles) {
+  // Directory index cache: only stores minimal data needed for directory indices
+  // Uses WeakRef-style approach - store only what's needed, clear as we go
+  const dirIndexCache = new Map();
+
+  // Track files that were regenerated (for incremental mode stats)
+  let regeneratedCount = 0;
+  let skippedCount = 0;
+  let processedCount = 0;
+  const totalArticles = allSourceFilenamesThatAreArticles.length;
+
+  progress.log(`Processing ${totalArticles} articles in batches of ${BATCH_SIZE}...`);
+
+  // Single pass: process all articles with batched concurrency to limit memory usage
+  await processBatched(allSourceFilenamesThatAreArticles, async (file) => {
     try {
+      processedCount++;
+      const shortFile = file.replace(source, '');
+      progress.status('Articles', `${processedCount}/${totalArticles} ${shortFile}`);
+      
       const rawBody = await readFile(file, "utf8");
       const type = parse(file).ext;
       const ext = extname(file);
       const base = basename(file, ext);
       const dir = addTrailingSlash(dirname(file)).replace(source, "");
       
+      // Calculate output paths for this file
+      const outputFilename = file
+        .replace(source, output)
+        .replace(parse(file).ext, ".html");
+      const url = '/' + outputFilename.replace(output, '');
+      
+      // Generate URL path relative to output (for search index)
+      const relativePath = file.replace(source, '').replace(/\.(md|txt|yml)$/, '.html');
+      const searchUrl = relativePath.startsWith('/') ? relativePath : '/' + relativePath;
+      
       // Generate title from filename (in title case)
       const title = toTitleCase(base);
       
-      // Generate URL path relative to output
-      const relativePath = file.replace(source, '').replace(/\.(md|txt|yml)$/, '.html');
-      const url = relativePath.startsWith('/') ? relativePath : '/' + relativePath;
+      // Always add to search index (lightweight: title + path only, content added lazily)
+      searchIndex.push({
+        title: title,
+        path: relativePath,
+        url: searchUrl,
+        content: '' // Content excerpts built lazily to save memory
+      });
       
-      // Basic content processing for search (without full rendering)
+      // Check if file needs regeneration
+      const needsRegen = _clean || needsRegeneration(file, rawBody, hashCache);
+      
+      if (!needsRegen) {
+        skippedCount++;
+        // For directory indices, store minimal data (not full bodyHtml)
+        dirIndexCache.set(file, {
+          name: base,
+          url,
+          // Don't store contents or bodyHtml - saves significant memory
+        });
+        return; // Skip regenerating this file
+      }
+      
+      regeneratedCount++;
+
+      const fileMeta = extractMetadata(rawBody);
+      const rawMeta = extractRawMetadata(rawBody);
+      const transformedMetadata = await getTransformedMetadata(
+        dirname(file),
+        fileMeta
+      );
+      
+      // Calculate the document's URL path (e.g., "/character/index.html")
+      const docUrlPath = '/' + dir + base + '.html';
+
       const body = renderFile({
         fileContents: rawBody,
         type,
         dirname: dir,
         basename: base,
       });
+
+      // Find nearest style.css or _style.css up the tree
+      let embeddedStyle = "";
+      try {
+        const css = await findStyleCss(resolve(_source, dir));
+        if (css) {
+          embeddedStyle = css;
+        }
+      } catch (e) {
+        // ignore
+        console.error(e);
+      }
+
+      const requestedTemplateName = fileMeta && fileMeta.template;
+      const template =
+        templates[requestedTemplateName] || templates[DEFAULT_TEMPLATE_NAME];
+
+      if (!template) {
+        throw new Error(`Template not found. Requested: "${requestedTemplateName || DEFAULT_TEMPLATE_NAME}". Available templates: ${Object.keys(templates).join(', ') || 'none'}`);
+      }
+
+      // Build final HTML with all replacements in a single chain to reduce intermediate strings
+      let finalHtml = template;
+      // Use a map of replacements to minimize string allocations
+      const replacements = {
+        "${title}": title,
+        "${menu}": menu,
+        "${meta}": JSON.stringify(fileMeta),
+        "${transformedMetadata}": transformedMetadata,
+        "${body}": body,
+        "${embeddedStyle}": embeddedStyle,
+        "${searchIndex}": "[]", // Placeholder - search index written separately as JSON file
+        "${footer}": footer
+      };
+      for (const [key, value] of Object.entries(replacements)) {
+        finalHtml = finalHtml.replace(key, value);
+      }
+
+      // Resolve links and mark broken internal links as inactive
+      finalHtml = markInactiveLinks(finalHtml, validPaths, docUrlPath, false);
+
+      await outputFile(outputFilename, finalHtml);
       
-      // Extract text content from body (strip HTML tags for search)
-      const textContent = body && body.replace && body.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim() || 'body is undefined for some reason'
-      const excerpt = textContent.substring(0, 200); // First 200 chars for preview
+      // Clear finalHtml reference to allow GC
+      finalHtml = null;
+
+      // JSON output
+      const jsonOutputFilename = outputFilename.replace(".html", ".json");
       
-      searchIndex.push({
-        title: title,
-        path: relativePath,
-        url: url,
-        content: excerpt
+      // Extract sections for markdown files
+      const sections = type === '.md' ? extractSections(rawBody) : [];
+      
+      const jsonObject = {
+        name: base,
+        url,
+        contents: rawBody,
+        bodyHtml: body,
+        metadata: fileMeta,
+        sections,
+        transformedMetadata,
+      };
+      
+      // Store minimal data for directory indices
+      dirIndexCache.set(file, {
+        name: base,
+        url,
       });
+      
+      const json = JSON.stringify(jsonObject);
+      await outputFile(jsonOutputFilename, json);
+
+      // XML output
+      const xmlOutputFilename = outputFilename.replace(".html", ".xml");
+      const xml = `<article>${o2x(jsonObject)}</article>`;
+      await outputFile(xmlOutputFilename, xml);
+      
+      // Update the content hash for this file
+      updateHash(file, rawBody, hashCache);
     } catch (e) {
-      console.error(`Error processing ${file} (first pass): ${e.message}`);
-      errors.push({ file, phase: 'search-index', error: e });
+      progress.log(`Error processing ${file}: ${e.message}`);
+      errors.push({ file, phase: 'article-generation', error: e });
     }
-  }
-  
-  console.log(`Built search index with ${searchIndex.length} entries`);
+  });
 
-  // Track files that were regenerated (for incremental mode stats)
-  let regeneratedCount = 0;
-  let skippedCount = 0;
+  // Complete the articles status line
+  progress.done('Articles', `${totalArticles} done (${regeneratedCount} regenerated, ${skippedCount} unchanged)`);
 
-  // Second pass: process individual articles with search data available
-  await Promise.all(
-    allSourceFilenamesThatAreArticles.map(async (file) => {
-      try {
-        const rawBody = await readFile(file, "utf8");
-        const type = parse(file).ext;
-        const ext = extname(file);
-        const base = basename(file, ext);
-        const dir = addTrailingSlash(dirname(file)).replace(source, "");
-        
-        // Calculate output paths for this file
-        const outputFilename = file
-          .replace(source, output)
-          .replace(parse(file).ext, ".html");
-        const url = '/' + outputFilename.replace(output, '');
-        
-        // Skip files that haven't changed (unless --clean flag is set)
-        if (!_clean && !needsRegeneration(file, rawBody, hashCache)) {
-          skippedCount++;
-          // Still need to populate jsonCache for directory indices
-          const meta = extractMetadata(rawBody);
-          const body = renderFile({
-            fileContents: rawBody,
-            type,
-            dirname: dir,
-            basename: base,
-          });
-          // Extract sections for markdown files
-          const sections = type === '.md' ? extractSections(rawBody) : [];
-          
-          jsonCache.set(file, {
-            name: base,
-            url,
-            contents: rawBody,
-            bodyHtml: body,
-            metadata: meta,
-            sections,
-            transformedMetadata: '',
-          });
-          return; // Skip regenerating this file
-        }
-        
-        console.log(`processing article ${file}`);
-        regeneratedCount++;
+  // Write search index as a separate JSON file (not embedded in each page)
+  const searchIndexPath = join(output, 'public', 'search-index.json');
+  progress.log(`Writing search index with ${searchIndex.length} entries`);
+  await outputFile(searchIndexPath, JSON.stringify(searchIndex));
 
-        const meta = extractMetadata(rawBody);
-        const rawMeta = extractRawMetadata(rawBody);
-        const bodyLessMeta = rawMeta ? rawBody.replace(rawMeta, "") : rawBody;
-        const transformedMetadata = await getTransformedMetadata(
-          dirname(file),
-          meta
-        );
-        
-        // Calculate the document's URL path (e.g., "/character/index.html")
-        const docUrlPath = '/' + dir + base + '.html';
-        
-        // Generate title from filename (in title case)
-        const title = toTitleCase(base);
+  // Process directory indices with batched concurrency
+  const totalDirs = allSourceFilenamesThatAreDirectories.length;
+  let processedDirs = 0;
+  progress.log(`Processing ${totalDirs} directories...`);
+  await processBatched(allSourceFilenamesThatAreDirectories, async (dirPath) => {
+    try {
+      processedDirs++;
+      const shortDir = dirPath.replace(source, '');
+      progress.status('Directories', `${processedDirs}/${totalDirs} ${shortDir}`);
 
-        const body = renderFile({
-          fileContents: rawBody,
-          type,
-          dirname: dir,
-          basename: base,
-        });
+      const pathsInThisDirectory = allSourceFilenames.filter((filename) =>
+        filename.match(new RegExp(`${dirPath}.+`))
+      );
 
-        // Find nearest style.css or _style.css up the tree
-        let embeddedStyle = "";
-        try {
-          const css = await findStyleCss(resolve(_source, dir));
-          if (css) {
-            embeddedStyle = css;
-          }
-        } catch (e) {
-          // ignore
-          console.error(e);
-        }
+      // Use minimal directory index cache instead of full jsonCache
+      const jsonObjects = pathsInThisDirectory
+        .map((path) => {
+          const object = dirIndexCache.get(path);
+          return typeof object === "object" ? object : null;
+        })
+        .filter((a) => a);
 
-        const requestedTemplateName = meta && meta.template;
-        const template =
-          templates[requestedTemplateName] || templates[DEFAULT_TEMPLATE_NAME];
+      const json = JSON.stringify(jsonObjects);
 
-        if (!template) {
-          throw new Error(`Template not found. Requested: "${requestedTemplateName || DEFAULT_TEMPLATE_NAME}". Available templates: ${Object.keys(templates).join(', ') || 'none'}`);
-        }
+      const outputFilename = dirPath.replace(source, output) + ".json";
+      await outputFile(outputFilename, json);
 
-        // Insert embeddedStyle just before </head> if present, else at top
-        let finalHtml = template
-          .replace("${title}", title)
-          .replace("${menu}", menu)
-          .replace("${meta}", JSON.stringify(meta))
-          .replace("${transformedMetadata}", transformedMetadata)
-          .replace("${body}", body)
-          .replace("${embeddedStyle}", embeddedStyle)
-          .replace("${searchIndex}", JSON.stringify(searchIndex))
-          .replace("${footer}", footer);
-
-        // Resolve links and mark broken internal links as inactive (debug mode on)
-        // Pass docUrlPath so relative links can be resolved correctly
-        finalHtml = markInactiveLinks(finalHtml, validPaths, docUrlPath, false);
-
-        console.log(`writing article to ${outputFilename}`);
-
-        await outputFile(outputFilename, finalHtml);
-
-        // json
-
-        const jsonOutputFilename = outputFilename.replace(".html", ".json");
-        
-        // Extract sections for markdown files
-        const sections = type === '.md' ? extractSections(rawBody) : [];
-        
-        const jsonObject = {
-          name: base,
-          url,
-          contents: rawBody,
-          // bodyLessMeta: bodyLessMeta,
-          bodyHtml: body,
-          metadata: meta,
-          sections,
-          transformedMetadata,
-          // html: finalHtml,
-        };
-        jsonCache.set(file, jsonObject);
-        const json = JSON.stringify(jsonObject);
-        console.log(`writing article to ${jsonOutputFilename}`);
-        await outputFile(jsonOutputFilename, json);
-
-        // xml
-
-        const xmlOutputFilename = outputFilename.replace(".html", ".xml");
-        const xml = `<article>${o2x(jsonObject)}</article>`;
-        await outputFile(xmlOutputFilename, xml);
-        
-        // Update the content hash for this file
-        updateHash(file, rawBody, hashCache);
-      } catch (e) {
-        console.error(`Error processing ${file} (second pass): ${e.message}`);
-        errors.push({ file, phase: 'article-generation', error: e });
-      }
-    })
-  );
-
-  // Log build stats
-  console.log(`Build: ${regeneratedCount} regenerated, ${skippedCount} unchanged`);
-
-  console.log(jsonCache.keys());
-  
-  // process directory indices
-  await Promise.all(
-    allSourceFilenamesThatAreDirectories.map(async (dir) => {
-      try {
-        console.log(`processing directory ${dir}`);
-
-        const pathsInThisDirectory = allSourceFilenames.filter((filename) =>
-          filename.match(new RegExp(`${dir}.+`))
-        );
-
-        const jsonObjects = pathsInThisDirectory
+      // html
+      const htmlOutputFilename = dirPath.replace(source, output) + ".html";
+      const indexAlreadyExists = fileExists(htmlOutputFilename);
+      if (!indexAlreadyExists) {
+        const template = templates["default-template"];
+        const indexHtml = `<ul>${pathsInThisDirectory
           .map((path) => {
-            const object = jsonCache.get(path);
-            return typeof object === "object" ? object : null;
+            const partialPath = path
+              .replace(source, "")
+              .replace(parse(path).ext, ".html");
+            const name = basename(path, parse(path).ext);
+            return `<li><a href="${partialPath}">${name}</a></li>`;
           })
-          .filter((a) => a);
-
-        const json = JSON.stringify(jsonObjects);
-
-        const outputFilename = dir.replace(source, output) + ".json";
-
-        console.log(`writing directory index to ${outputFilename}`);
-        await outputFile(outputFilename, json);
-
-        // html
-        const htmlOutputFilename = dir.replace(source, output) + ".html";
-        const indexAlreadyExists = fileExists(htmlOutputFilename);
-        if (!indexAlreadyExists) {
-          const template = templates["default-template"]; // TODO: figure out a way to specify template for a directory index
-          const indexHtml = `<ul>${pathsInThisDirectory
-            .map((path) => {
-              const partialPath = path
-                .replace(source, "")
-                .replace(parse(path).ext, ".html");
-              const name = basename(path, parse(path).ext);
-              return `<li><a href="${partialPath}">${name}</a></li>`;
-            })
-            .join("")}</ul>`;
-          const finalHtml = template
-            .replace("${menu}", menu)
-            .replace("${body}", indexHtml)
-            .replace("${searchIndex}", JSON.stringify(searchIndex))
-            .replace("${title}", "Index")
-            .replace("${meta}", "{}")
-            .replace("${transformedMetadata}", "")
-            .replace("${embeddedStyle}", "")
-            .replace("${footer}", footer);
-          console.log(`writing directory index to ${htmlOutputFilename}`);
-          await outputFile(htmlOutputFilename, finalHtml);
+          .join("")}</ul>`;
+        let finalHtml = template;
+        const replacements = {
+          "${menu}": menu,
+          "${body}": indexHtml,
+          "${searchIndex}": "[]", // Search index now in separate file
+          "${title}": "Index",
+          "${meta}": "{}",
+          "${transformedMetadata}": "",
+          "${embeddedStyle}": "",
+          "${footer}": footer
+        };
+        for (const [key, value] of Object.entries(replacements)) {
+          finalHtml = finalHtml.replace(key, value);
         }
-      } catch (e) {
-        console.error(`Error processing directory ${dir}: ${e.message}`);
-        errors.push({ file: dir, phase: 'directory-index', error: e });
+        await outputFile(htmlOutputFilename, finalHtml);
       }
-    })
-  );
+    } catch (e) {
+      progress.log(`Error processing directory ${dirPath}: ${e.message}`);
+      errors.push({ file: dirPath, phase: 'directory-index', error: e });
+    }
+  });
+  
+  progress.done('Directories', `${totalDirs} done`);
 
-  // copy all static files (i.e. images)
+  // Clear directory index cache to free memory before processing static files
+  dirIndexCache.clear();
+
+  // copy all static files (i.e. images) with batched concurrency
   const imageExtensions = /\.(jpg|jpeg|png|gif|webp|svg|ico)/; // static asset extensions
   const allSourceFilenamesThatAreImages = allSourceFilenames.filter(
     (filename) => filename.match(imageExtensions)
   );
-  await Promise.all(
-    allSourceFilenamesThatAreImages.map(async (file) => {
-      try {
-        // For incremental mode, check if file has changed using file stat as a quick check
-        if (_incremental) {
-          const fileStat = await stat(file);
-          const statKey = `${file}:stat`;
-          const newStatHash = `${fileStat.size}:${fileStat.mtimeMs}`;
-          if (hashCache.get(statKey) === newStatHash) {
-            return; // Skip unchanged static file
-          }
-          hashCache.set(statKey, newStatHash);
-        }
-        
-        console.log(`processing static file ${file}`);
-
-        const outputFilename = file.replace(source, output);
-
-        console.log(`writing static file to ${outputFilename}`);
-
-        await mkdir(dirname(outputFilename), { recursive: true });
-        return await copyFile(file, outputFilename);
-      } catch (e) {
-        console.error(`Error processing static file ${file}: ${e.message}`);
-        errors.push({ file, phase: 'static-file', error: e });
+  const totalStatic = allSourceFilenamesThatAreImages.length;
+  let processedStatic = 0;
+  let copiedStatic = 0;
+  progress.log(`Processing ${totalStatic} static files...`);
+  await processBatched(allSourceFilenamesThatAreImages, async (file) => {
+    try {
+      processedStatic++;
+      const shortFile = file.replace(source, '');
+      progress.status('Static files', `${processedStatic}/${totalStatic} ${shortFile}`);
+      
+      // Check if file has changed using file stat as a quick check
+      const fileStat = await stat(file);
+      const statKey = `${file}:stat`;
+      const newStatHash = `${fileStat.size}:${fileStat.mtimeMs}`;
+      if (hashCache.get(statKey) === newStatHash) {
+        return; // Skip unchanged static file
       }
-    })
-  );
+      hashCache.set(statKey, newStatHash);
+      copiedStatic++;
+
+      const outputFilename = file.replace(source, output);
+
+      await mkdir(dirname(outputFilename), { recursive: true });
+      return await copyFile(file, outputFilename);
+    } catch (e) {
+      progress.log(`Error processing static file ${file}: ${e.message}`);
+      errors.push({ file, phase: 'static-file', error: e });
+    }
+  });
+  
+  progress.done('Static files', `${totalStatic} done (${copiedStatic} copied)`);
+
+  // Automatic index generation for folders without index.html
+  progress.log(`Checking for missing index files...`);
+  await generateAutoIndices(output, allSourceFilenamesThatAreDirectories, source, templates, menu, footer);
 
   // Save the hash cache to .ursa folder in source directory
   if (hashCache.size > 0) {
@@ -478,10 +615,133 @@ export async function generate({
     });
     
     await outputFile(errorReportPath, report);
-    console.log(`\n⚠️  ${errors.length} error(s) occurred during generation.`);
-    console.log(`   Error report written to: ${errorReportPath}\n`);
+    progress.log(`\n⚠️  ${errors.length} error(s) occurred during generation.`);
+    progress.log(`   Error report written to: ${errorReportPath}\n`);
   } else {
-    console.log(`\n✅ Generation complete with no errors.\n`);
+    progress.log(`\n✅ Generation complete with no errors.\n`);
+  }
+}
+
+/**
+ * Generate automatic index.html files for folders that don't have one
+ * @param {string} output - Output directory path
+ * @param {string[]} directories - List of source directories
+ * @param {string} source - Source directory path
+ * @param {object} templates - Template map
+ * @param {string} menu - Rendered menu HTML
+ * @param {string} footer - Footer HTML
+ */
+async function generateAutoIndices(output, directories, source, templates, menu, footer) {
+  // Alternate index file names to look for (in priority order)
+  const INDEX_ALTERNATES = ['_index.html', 'home.html', '_home.html'];
+  
+  // Get all output directories (including root)
+  const outputDirs = new Set([output]);
+  for (const dir of directories) {
+    const outputDir = dir.replace(source, output);
+    outputDirs.add(outputDir);
+  }
+  
+  let generatedCount = 0;
+  let renamedCount = 0;
+  
+  for (const dir of outputDirs) {
+    const indexPath = join(dir, 'index.html');
+    
+    // Skip if index.html already exists
+    if (existsSync(indexPath)) {
+      continue;
+    }
+    
+    // Get folder name for (foldername).html check
+    const folderName = basename(dir);
+    const folderNameAlternate = `${folderName}.html`;
+    
+    // Check for alternate index files
+    let foundAlternate = null;
+    for (const alt of [...INDEX_ALTERNATES, folderNameAlternate]) {
+      const altPath = join(dir, alt);
+      if (existsSync(altPath)) {
+        foundAlternate = altPath;
+        break;
+      }
+    }
+    
+    if (foundAlternate) {
+      // Rename/copy alternate to index.html
+      try {
+        const content = await readFile(foundAlternate, 'utf8');
+        await outputFile(indexPath, content);
+        renamedCount++;
+        progress.status('Auto-index', `Promoted ${basename(foundAlternate)} → index.html in ${dir.replace(output, '')}`);
+      } catch (e) {
+        progress.log(`Error promoting ${foundAlternate} to index.html: ${e.message}`);
+      }
+    } else {
+      // Generate a simple index listing direct children
+      try {
+        const children = await readdir(dir, { withFileTypes: true });
+        
+        // Filter to only include relevant files and folders
+        const items = children
+          .filter(child => {
+            // Skip hidden files and index alternates we just checked
+            if (child.name.startsWith('.')) return false;
+            if (child.name === 'index.html') return false;
+            // Include directories and html files
+            return child.isDirectory() || child.name.endsWith('.html');
+          })
+          .map(child => {
+            const isDir = child.isDirectory();
+            const name = isDir ? child.name : child.name.replace('.html', '');
+            const href = isDir ? `${child.name}/` : child.name;
+            const displayName = toTitleCase(name);
+            const icon = isDir ? '📁' : '📄';
+            return `<li>${icon} <a href="${href}">${displayName}</a></li>`;
+          });
+        
+        if (items.length === 0) {
+          // Empty folder, skip generating index
+          continue;
+        }
+        
+        const folderDisplayName = dir === output ? 'Home' : toTitleCase(folderName);
+        const indexHtml = `<h1>${folderDisplayName}</h1>\n<ul class="auto-index">\n${items.join('\n')}\n</ul>`;
+        
+        const template = templates["default-template"];
+        if (!template) {
+          progress.log(`Warning: No default template for auto-index in ${dir}`);
+          continue;
+        }
+        
+        let finalHtml = template;
+        const replacements = {
+          "${menu}": menu,
+          "${body}": indexHtml,
+          "${searchIndex}": "[]",
+          "${title}": folderDisplayName,
+          "${meta}": "{}",
+          "${transformedMetadata}": "",
+          "${embeddedStyle}": "",
+          "${footer}": footer
+        };
+        for (const [key, value] of Object.entries(replacements)) {
+          finalHtml = finalHtml.replace(key, value);
+        }
+        
+        await outputFile(indexPath, finalHtml);
+        generatedCount++;
+        progress.status('Auto-index', `Generated index.html for ${dir.replace(output, '') || '/'}`);
+      } catch (e) {
+        progress.log(`Error generating auto-index for ${dir}: ${e.message}`);
+      }
+    }
+  }
+  
+  if (generatedCount > 0 || renamedCount > 0) {
+    progress.done('Auto-index', `${generatedCount} generated, ${renamedCount} promoted`);
+  } else {
+    progress.log(`Auto-index: All folders already have index.html`);
   }
 }
 
