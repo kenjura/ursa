@@ -18,10 +18,29 @@ class GlobalSearch {
   }
   
   init() {
+    this.wrapSearchInput();
     this.createResultsContainer();
+    this.createClearButton();
     this.bindEvents();
     // Start loading the index immediately (but don't block)
     this.loadSearchIndex();
+  }
+  
+  wrapSearchInput() {
+    // Wrap the search input in a container for positioning the clear button
+    this.searchWrapper = document.createElement('div');
+    this.searchWrapper.className = 'search-wrapper';
+    this.searchInput.parentNode.insertBefore(this.searchWrapper, this.searchInput);
+    this.searchWrapper.appendChild(this.searchInput);
+  }
+  
+  createClearButton() {
+    this.clearButton = document.createElement('button');
+    this.clearButton.className = 'search-clear-button hidden';
+    this.clearButton.type = 'button';
+    this.clearButton.setAttribute('aria-label', 'Clear search');
+    this.clearButton.innerHTML = '×';
+    this.searchWrapper.appendChild(this.clearButton);
   }
   
   createResultsContainer() {
@@ -72,6 +91,13 @@ class GlobalSearch {
     // Input events
     this.searchInput.addEventListener('input', (e) => {
       this.handleSearch(e.target.value);
+      this.updateClearButtonVisibility();
+    });
+    
+    // Clear button click
+    this.clearButton.addEventListener('click', (e) => {
+      e.preventDefault();
+      this.clearSearch();
     });
     
     // Keyboard navigation
@@ -245,6 +271,21 @@ class GlobalSearch {
   hideResults() {
     this.searchResults.classList.add('hidden');
     this.currentSelection = -1;
+  }
+  
+  clearSearch() {
+    this.searchInput.value = '';
+    this.hideResults();
+    this.updateClearButtonVisibility();
+    this.searchInput.focus();
+  }
+  
+  updateClearButtonVisibility() {
+    if (this.searchInput.value.trim()) {
+      this.clearButton.classList.remove('hidden');
+    } else {
+      this.clearButton.classList.add('hidden');
+    }
   }
   
   handleKeydown(e) {
