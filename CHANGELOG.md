@@ -1,3 +1,12 @@
+# 0.53.0
+2025-01-01
+
+### Menu Size Optimization
+- **External Menu JSON**: Menu data is now stored in `/public/menu-data.json` instead of being embedded in every HTML file. This dramatically reduces HTML file sizes for sites with large folder structures (e.g., from 2-3MB per file down to ~50KB).
+- **Async Menu Loading**: Menu data is fetched asynchronously after page render, showing a "Loading menu..." indicator until ready.
+- **Debug Fields Removed**: Menu JSON no longer includes debug/inactive fields, reducing JSON size further.
+- **Gzip Compression**: Development server now uses gzip compression for all responses, significantly reducing transfer size for JSON and HTML files.
+
 # 0.52.0
 2025-12-21
 

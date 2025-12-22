@@ -1,4 +1,5 @@
 import express from "express";
+import compression from "compression";
 import watch from "node-watch";
 import { generate, regenerateSingleFile, clearWatchCache } from "./jobs/generate.js";
 import { join, resolve, dirname } from "path";
@@ -251,6 +252,15 @@ export async function serve({
  */
 function serveFiles(outputDir, port = 8080) {
   const app = express();
+
+  // Enable gzip compression for all responses
+  // This significantly reduces transfer size for JSON and HTML files
+  app.use(compression({
+    // Compress everything over 1KB
+    threshold: 1024,
+    // Use default compression level (good balance of speed vs size)
+    level: 6
+  }));
 
   app.use(
     express.static(outputDir, { extensions: ["html"], index: "index.html" })

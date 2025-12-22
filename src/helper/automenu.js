@@ -132,7 +132,8 @@ function resolveHref(rawHref, validPaths) {
 }
 
 // Build a flat tree structure with path info for JS navigation
-function buildMenuData(tree, source, validPaths, parentPath = '') {
+// Set includeDebug=false to exclude debug fields and reduce JSON size
+function buildMenuData(tree, source, validPaths, parentPath = '', includeDebug = true) {
   const items = [];
   
   // Files to hide from menu by default
@@ -192,14 +193,21 @@ function buildMenuData(tree, source, validPaths, parentPath = '') {
       label,
       path: folderPath,
       href,
-      inactive,
-      debug,
       hasChildren,
       icon,
     };
     
+    // Only include debug and inactive fields if requested (for smaller JSON)
+    if (includeDebug) {
+      menuItem.inactive = inactive;
+      menuItem.debug = debug;
+    } else if (inactive) {
+      // Only include inactive if true (to save space)
+      menuItem.inactive = true;
+    }
+    
     if (hasChildren) {
-      menuItem.children = buildMenuData(item, source, validPaths, folderPath);
+      menuItem.children = buildMenuData(item, source, validPaths, folderPath, includeDebug);
     }
     
     items.push(menuItem);
@@ -218,7 +226,9 @@ export async function getAutomenu(source, validPaths) {
   const tree = dirTree(source, {
     exclude: /[\/\\]\.|node_modules/,  // Exclude hidden folders (starting with .) and node_modules
   });
-  const menuData = buildMenuData(tree, source, validPaths);
+  
+  // Build menu data WITHOUT debug fields for smaller JSON
+  const menuData = buildMenuData(tree, source, validPaths, '', false);
   
   // Get root config for openMenuItems setting
   const rootConfig = getRootConfig(source);
@@ -227,14 +237,11 @@ export async function getAutomenu(source, validPaths) {
   // Add home item with resolved href
   const homeResolved = resolveHref('/', validPaths);
   const fullMenuData = [
-    { label: 'Home', path: '', href: homeResolved.href, inactive: homeResolved.inactive, debug: homeResolved.debug, hasChildren: false, icon: `<span class="menu-icon">${HOME_ICON}</span>` },
+    { label: 'Home', path: '', href: homeResolved.href, hasChildren: false, icon: `<span class="menu-icon">${HOME_ICON}</span>` },
     ...menuData
   ];
   
-  // Embed the menu data as JSON for JavaScript to use
-  const menuDataScript = `<script type="application/json" id="menu-data">${JSON.stringify(fullMenuData)}</script>`;
-  
-  // Embed the openMenuItems config as separate JSON
+  // Embed the openMenuItems config as JSON (small, safe to embed)
   const menuConfigScript = `<script type="application/json" id="menu-config">${JSON.stringify({ openMenuItems })}</script>`;
   
   // Render the breadcrumb header (hidden by default, shown when navigating)
@@ -245,10 +252,14 @@ export async function getAutomenu(source, validPaths) {
   <span class="menu-current-path"></span>
 </div>`;
 
-  // Render the initial menu (root level)
+  // Render the initial menu (root level only - children loaded from external JSON)
   const menuHtml = renderMenuLevel(fullMenuData, 0);
   
-  return `${menuDataScript}${menuConfigScript}${breadcrumbHtml}<ul class="menu-level" data-level="0">${menuHtml}</ul>`;
+  // Return both the HTML for embedding and the full menu data for the static JSON file
+  return {
+    html: `${menuConfigScript}${breadcrumbHtml}<ul class="menu-level" data-level="0">${menuHtml}</ul>`,
+    menuData: fullMenuData
+  };
 }
 
 function renderMenuLevel(items, level) {

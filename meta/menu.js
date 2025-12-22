@@ -2,19 +2,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const navMain = document.querySelector('nav#nav-main');
     if (!navMain) return;
 
-    // Load menu data from embedded JSON
-    const menuDataScript = document.getElementById('menu-data');
-    if (!menuDataScript) return;
+    // State - menu data will be loaded asynchronously
+    let menuData = null;
+    let menuDataLoaded = false;
+    let menuDataLoading = false;
     
-    let menuData;
-    try {
-        menuData = JSON.parse(menuDataScript.textContent);
-    } catch (e) {
-        console.error('Failed to parse menu data:', e);
-        return;
-    }
-
-    // Load menu config from embedded JSON (contains openMenuItems)
+    // Load menu config from embedded JSON (contains openMenuItems) - this is small, so it's embedded
     const menuConfigScript = document.getElementById('menu-config');
     let menuConfig = { openMenuItems: [] };
     if (menuConfigScript) {
@@ -39,9 +32,39 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Helper to check if we're on mobile
     const isMobile = () => window.matchMedia('(max-width: 800px)').matches;
+    
+    /**
+     * Load menu data from external JSON file
+     * This is done asynchronously to avoid blocking page render
+     */
+    async function loadMenuData() {
+        if (menuDataLoaded || menuDataLoading) return;
+        menuDataLoading = true;
+        
+        try {
+            const response = await fetch('/public/menu-data.json');
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+            menuData = await response.json();
+            menuDataLoaded = true;
+            
+            // Re-render menu now that we have full data
+            initializeFromCurrentPage();
+        } catch (error) {
+            console.error('Failed to load menu data:', error);
+            menuDataLoaded = true; // Mark as loaded to prevent retries
+        } finally {
+            menuDataLoading = false;
+        }
+    }
+    
+    // Start loading menu data immediately
+    loadMenuData();
 
     // Get items at a specific path
     function getItemsAtPath(path) {
+        if (!menuData) return [];
         let items = menuData;
         for (const segment of path) {
             const folder = items.find(item => item.path === (path.slice(0, path.indexOf(segment) + 1).join('/') || segment));
@@ -56,6 +79,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Find item by path
     function findItemByPath(pathString) {
+        if (!menuData) return null;
         const segments = pathString.split('/').filter(Boolean);
         let items = menuData;
         let item = null;
@@ -98,6 +122,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Render menu at current path
     function renderMenu() {
+        // Wait for menu data to load
+        if (!menuData) {
+            menuContainer.innerHTML = '<li class="menu-loading">Loading menu...</li>';
+            return;
+        }
+        
         // Get items for current level (level 1)
         let level1Items;
         if (currentPath.length === 0) {
@@ -421,5 +451,6 @@ document.addEventListener('DOMContentLoaded', () => {
         renderMenu();
     }
 
-    initializeFromCurrentPage();
+    // Initial render shows loading state, then loadMenuData() will call initializeFromCurrentPage() when ready
+    renderMenu();
 });

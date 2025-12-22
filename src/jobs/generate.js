@@ -323,7 +323,9 @@ export async function generate({
   const validPaths = buildValidPaths(allSourceFilenamesThatAreArticles, source, allSourceFilenamesThatAreDirectories);
   progress.log(`Built ${validPaths.size} valid paths for link validation`);
 
-  const menu = await getMenu(allSourceFilenames, source, validPaths);
+  const menuResult = await getMenu(allSourceFilenames, source, validPaths);
+  const menu = menuResult.html;
+  const menuData = menuResult.menuData;
 
   // Get and increment build ID from .ursa.json
   const buildId = getAndIncrementBuildId(resolve(_source));
@@ -548,6 +550,13 @@ export async function generate({
   const searchIndexPath = join(output, 'public', 'search-index.json');
   progress.log(`Writing search index with ${searchIndex.length} entries`);
   await outputFile(searchIndexPath, JSON.stringify(searchIndex));
+
+  // Write menu data as a separate JSON file (not embedded in each page)
+  // This dramatically reduces HTML file sizes for large sites
+  const menuDataPath = join(output, 'public', 'menu-data.json');
+  const menuDataJson = JSON.stringify(menuData);
+  progress.log(`Writing menu data (${(menuDataJson.length / 1024).toFixed(1)} KB)`);
+  await outputFile(menuDataPath, menuDataJson);
 
   // Process directory indices with batched concurrency
   const totalDirs = allSourceFilenamesThatAreDirectories.length;
@@ -1084,23 +1093,12 @@ async function getTemplates(meta) {
 async function getMenu(allSourceFilenames, source, validPaths) {
   // todo: handle various incarnations of menu filename
 
-  const rawMenu = await getAutomenu(source, validPaths);
-  const menuBody = renderFile({ fileContents: rawMenu, type: ".md" });
-  return menuBody;
-
-  // const allMenus = allSourceFilenames.filter((filename) =>
-  //   filename.match(/_?menu\.(html|yml|md|txt)/)
-  // );
-  // console.log({ allMenus });
-  // if (allMenus.length === 0) return "";
-
-  // // pick best menu...TODO: actually apply logic here
-  // const bestMenu = allMenus[0];
-  // const rawBody = await readFile(bestMenu, "utf8");
-  // const type = parse(bestMenu).ext;
-  // const menuBody = renderFile({ fileContents: rawBody, type });
-
-  // return menuBody;
+  const menuResult = await getAutomenu(source, validPaths);
+  const menuBody = renderFile({ fileContents: menuResult.html, type: ".md" });
+  return {
+    html: menuBody,
+    menuData: menuResult.menuData
+  };
 }
 
 async function getTransformedMetadata(dirname, metadata) {
