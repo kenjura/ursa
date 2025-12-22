@@ -1,3 +1,8 @@
+# 0.52.0
+2025-12-21
+
+- Fixed search results not displaying correctly when no matches are found
+
 # 0.51.0
 2025-12-21
 

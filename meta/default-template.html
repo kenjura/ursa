@@ -6,19 +6,6 @@
     <title>${title}</title>
     <link rel="stylesheet" href="/public/default.css" />
     ${styleLink}
-     <script>
-        // Search index loaded asynchronously from separate file to reduce page size
-        window.SEARCH_INDEX = ${searchIndex};
-        // Lazy load full search index if placeholder is empty
-        if (!window.SEARCH_INDEX || window.SEARCH_INDEX.length === 0) {
-          fetch('/public/search-index.json')
-            .then(r => r.json())
-            .then(data => { window.SEARCH_INDEX = data; })
-            .catch(() => { window.SEARCH_INDEX = []; });
-        }
-     </script>
-     <script src="/public/search.js"></script>
-     
 </head>
 
 <body data-template-id="default">
@@ -47,6 +34,7 @@
     <script src="/public/toc.js"></script>
     <script src="/public/toc-generator.js"></script>
     <script src="/public/menu.js"></script>
+    <script src="/public/search.js"></script>
     <script src="/public/sectionify.js"></script>
     <script src="/public/sticky.js"></script>
 </body>
