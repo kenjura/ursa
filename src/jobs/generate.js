@@ -32,6 +32,7 @@ export function clearWatchCache() {
   watchModeCache.validPaths = null;
   watchModeCache.hashCache = null;
   watchModeCache.isInitialized = false;
+  cssPathCache.clear(); // Also clear CSS path cache
   console.log('Watch cache cleared');
 }
 
@@ -169,6 +170,9 @@ import { createWhitelistFilter } from "../helper/whitelistFilter.js";
 const DEFAULT_TEMPLATE_NAME =
   process.env.DEFAULT_TEMPLATE_NAME ?? "default-template";
 
+// Cache for CSS path lookups to avoid repeated filesystem walks
+const cssPathCache = new Map();
+
 /**
  * Parse exclude option - can be comma-separated paths or a file path
  * @param {string} excludeOption - The exclude option value
@@ -247,6 +251,12 @@ export async function generate({
   const meta = resolve(_meta);
   const output = resolve(_output) + "/";
   console.log({ source, meta, output });
+
+  // Clear output directory when --clean is specified
+  if (_clean) {
+    progress.log(`Clean build: clearing output directory ${output}`);
+    await emptyDir(output);
+  }
 
   const allSourceFilenamesUnfiltered = await recurse(source, [() => false]);
   
@@ -415,9 +425,15 @@ export async function generate({
       });
 
       // Find nearest style.css or _style.css up the tree and copy to output
+      // Use cache to avoid repeated filesystem walks for same directory
       let styleLink = "";
       try {
-        const cssPath = await findStyleCss(resolve(_source, dir));
+        const dirKey = resolve(_source, dir);
+        let cssPath = cssPathCache.get(dirKey);
+        if (cssPath === undefined) {
+          cssPath = await findStyleCss(dirKey);
+          cssPathCache.set(dirKey, cssPath); // Cache null results too
+        }
         if (cssPath) {
           // Calculate output path for the CSS file (mirrors source structure)
           const cssOutputPath = cssPath.replace(source, output);
@@ -446,9 +462,8 @@ export async function generate({
         throw new Error(`Template not found. Requested: "${requestedTemplateName || DEFAULT_TEMPLATE_NAME}". Available templates: ${Object.keys(templates).join(', ') || 'none'}`);
       }
 
-      // Build final HTML with all replacements in a single chain to reduce intermediate strings
-      let finalHtml = template;
-      // Use a map of replacements to minimize string allocations
+      // Build final HTML with all replacements in a single regex pass
+      // This avoids creating 8 intermediate strings
       const replacements = {
         "${title}": title,
         "${menu}": menu,
@@ -459,9 +474,9 @@ export async function generate({
         "${searchIndex}": "[]", // Placeholder - search index written separately as JSON file
         "${footer}": footer
       };
-      for (const [key, value] of Object.entries(replacements)) {
-        finalHtml = finalHtml.replace(key, value);
-      }
+      // Single-pass replacement using regex alternation
+      const pattern = /\$\{(title|menu|meta|transformedMetadata|body|styleLink|searchIndex|footer)\}/g;
+      let finalHtml = template.replace(pattern, (match) => replacements[match] ?? match);
 
       // Resolve links and mark broken internal links as inactive
       finalHtml = markInactiveLinks(finalHtml, validPaths, docUrlPath, false);
@@ -624,7 +639,7 @@ export async function generate({
 
   // Automatic index generation for folders without index.html
   progress.log(`Checking for missing index files...`);
-  await generateAutoIndices(output, allSourceFilenamesThatAreDirectories, source, templates, menu, footer, allSourceFilenamesThatAreArticles);
+  await generateAutoIndices(output, allSourceFilenamesThatAreDirectories, source, templates, menu, footer, allSourceFilenamesThatAreArticles, copiedCssFiles);
 
   // Save the hash cache to .ursa folder in source directory
   if (hashCache.size > 0) {
@@ -689,8 +704,10 @@ export async function generate({
  * @param {object} templates - Template map
  * @param {string} menu - Rendered menu HTML
  * @param {string} footer - Footer HTML
+ * @param {string[]} generatedArticles - List of source article paths that were generated
+ * @param {Set<string>} copiedCssFiles - Set of CSS files already copied to output
  */
-async function generateAutoIndices(output, directories, source, templates, menu, footer, generatedArticles) {
+async function generateAutoIndices(output, directories, source, templates, menu, footer, generatedArticles, copiedCssFiles) {
   // Alternate index file names to look for (in priority order)
   const INDEX_ALTERNATES = ['_index.html', 'home.html', '_home.html'];
   
@@ -794,6 +811,31 @@ async function generateAutoIndices(output, directories, source, templates, menu,
           continue;
         }
         
+        // Find nearest style.css for this directory
+        let styleLink = "";
+        try {
+          // Map output dir back to source dir to find style.css
+          const sourceDir = dir.replace(outputNorm, sourceNorm);
+          const cssPath = await findStyleCss(sourceDir);
+          if (cssPath) {
+            // Calculate output path for the CSS file (mirrors source structure)
+            const cssOutputPath = cssPath.replace(sourceNorm, outputNorm);
+            const cssUrlPath = '/' + cssPath.replace(sourceNorm, '');
+            
+            // Copy CSS file if not already copied
+            if (!copiedCssFiles.has(cssPath)) {
+              const cssContent = await readFile(cssPath, 'utf8');
+              await outputFile(cssOutputPath, cssContent);
+              copiedCssFiles.add(cssPath);
+            }
+            
+            // Generate link tag
+            styleLink = `<link rel="stylesheet" href="${cssUrlPath}" />`;
+          }
+        } catch (e) {
+          // ignore CSS lookup errors
+        }
+        
         let finalHtml = template;
         const replacements = {
           "${menu}": menu,
@@ -802,7 +844,7 @@ async function generateAutoIndices(output, directories, source, templates, menu,
           "${title}": folderDisplayName,
           "${meta}": "{}",
           "${transformedMetadata}": "",
-          "${styleLink}": "",
+          "${styleLink}": styleLink,
           "${footer}": footer
         };
         for (const [key, value] of Object.entries(replacements)) {

@@ -65,6 +65,8 @@ Start a development server that:
 - `--output, -o` - Output directory for generated site (default: "output")
 - `--port, -p` - Port for development server (default: 8080, serve command only)
 - `--whitelist, -w` - Path to whitelist file containing patterns for files to include
+- `--exclude, -e` - Folders to exclude: comma-separated paths relative to source, or path to file with one folder per line
+- `--clean` - Clear output directory and ignore cache, forcing full regeneration
 
 ### Whitelist File Format
 
@@ -92,6 +94,34 @@ README.md
 # Partial path matches
 important-document
 classes/wizard
+```
+
+### Exclude Option
+
+The `--exclude` option allows you to skip certain folders during generation. This can be specified as:
+
+1. **Comma-separated paths** directly on the command line:
+```bash
+ursa content --exclude=archive,drafts,old-content
+ursa serve content --exclude=test,backup
+```
+
+2. **A file path** containing one folder per line:
+```bash
+ursa content --exclude=exclude-list.txt
+```
+
+The exclude file format is similar to the whitelist:
+
+```text
+# Comments start with # and are ignored
+# Empty lines are also ignored
+
+# Folders to exclude (relative to source)
+archive
+drafts
+old-content/v1
+test/fixtures
 ```
 
 ### Large Workloads

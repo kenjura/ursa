@@ -1,11 +1,11 @@
 import express from "express";
 import watch from "node-watch";
 import { generate, regenerateSingleFile, clearWatchCache } from "./jobs/generate.js";
-import { join, resolve } from "path";
+import { join, resolve, dirname } from "path";
 import fs from "fs";
 import { promises } from "fs";
 import { outputFile } from "fs-extra";
-const { readdir, mkdir, readFile } = promises;
+const { readdir, mkdir, readFile, copyFile } = promises;
 
 // Debounce timer and lock for preventing concurrent regenerations
 let debounceTimer = null;
@@ -30,6 +30,33 @@ async function copyCssFile(cssPath, sourceDir, outputDir) {
     return { success: true, message: `Copied ${relativePath} in ${elapsed}ms` };
   } catch (e) {
     return { success: false, message: `Error copying CSS: ${e.message}` };
+  }
+}
+
+// Static file extensions that should be copied (images, fonts, etc.)
+const STATIC_FILE_EXTENSIONS = /\.(jpg|jpeg|png|gif|webp|svg|ico|woff|woff2|ttf|eot|pdf|mp3|mp4|webm|ogg)$/i;
+
+/**
+ * Copy a single static file to the output directory
+ * @param {string} filePath - Absolute path to the static file
+ * @param {string} sourceDir - Source directory root
+ * @param {string} outputDir - Output directory root
+ */
+async function copyStaticFile(filePath, sourceDir, outputDir) {
+  const startTime = Date.now();
+  const relativePath = filePath.replace(sourceDir, '');
+  const outputPath = join(outputDir, relativePath);
+  
+  try {
+    // Ensure directory exists
+    await mkdir(dirname(outputPath), { recursive: true });
+    
+    // Copy the file
+    await copyFile(filePath, outputPath);
+    const elapsed = Date.now() - startTime;
+    return { success: true, message: `Copied ${relativePath} in ${elapsed}ms` };
+  } catch (e) {
+    return { success: false, message: `Error copying static file: ${e.message}` };
   }
 }
 
@@ -90,8 +117,8 @@ export async function serve({
     filter: (f, skip) => {
       // Skip .ursa folder (contains hash cache that gets updated during generation)
       if (/[\/\\]\.ursa[\/\\]?/.test(f)) return skip;
-      // Only watch relevant file types
-      return /\.(js|json|css|html|md|txt|yml|yaml)$/.test(f);
+      // Watch article files, config files, and static assets
+      return /\.(js|json|css|html|md|txt|yml|yaml|jpg|jpeg|png|gif|webp|svg|ico|woff|woff2|ttf|eot|pdf|mp3|mp4|webm|ogg)$/i.test(f);
     }
   }, async (evt, name) => {
     // Skip if we're already regenerating
@@ -118,6 +145,40 @@ export async function serve({
         }
       } catch (error) {
         console.error("Error copying CSS:", error.message);
+      } finally {
+        isRegenerating = false;
+      }
+      return;
+    }
+    
+    // Static files (images, fonts, etc.): just copy the file
+    const isStaticFile = name && STATIC_FILE_EXTENSIONS.test(name);
+    if (isStaticFile) {
+      console.log(`\n🖼️  Static file ${evt === 'remove' ? 'removed' : 'changed'}: ${name}`);
+      isRegenerating = true;
+      try {
+        if (evt === 'remove') {
+          // Delete the file from output
+          const relativePath = name.replace(sourceDir, '');
+          const outputPath = join(outputDir, relativePath);
+          try {
+            await promises.unlink(outputPath);
+            console.log(`✅ Removed ${relativePath}`);
+          } catch (e) {
+            if (e.code !== 'ENOENT') {
+              console.log(`⚠️ Error removing file: ${e.message}`);
+            }
+          }
+        } else {
+          const result = await copyStaticFile(name, sourceDir + '/', outputDir + '/');
+          if (result.success) {
+            console.log(`✅ ${result.message}`);
+          } else {
+            console.log(`⚠️ ${result.message}`);
+          }
+        }
+      } catch (error) {
+        console.error("Error handling static file:", error.message);
       } finally {
         isRegenerating = false;
       }

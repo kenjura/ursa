@@ -1,7 +1,24 @@
+# 0.50.0
+2025-12-21
+
+### Performance Optimizations
+- **CSS Path Caching**: Implemented caching for `findStyleCss()` lookups during generation. Reduces redundant filesystem walks for documents in the same directory tree.
+- **Template Replacement Optimization**: Changed from 8 sequential `string.replace()` calls to a single regex pass, reducing intermediate string allocations.
+- **Wikitext Regex Pre-compilation**: Pre-compiled ~40 regex patterns at module load time instead of compiling on every `wikiToHtml()` call.
+
+### New Features
+- **Static File Watch**: `ursa serve` now watches for new/changed static files (images, fonts, PDFs, etc.) and automatically copies them to output without requiring a full rebuild.
+
+### Bug Fixes
+- **Menu Folder Expansion**: Fixed issue where navigating to `/folder` wouldn't auto-expand the menu, but `/folder/index.html` would. Both now behave consistently by normalizing trailing slashes in URL comparison.
+
+
 # 0.49.0
 2025-12-20
 
 - Fixed more instances of false inactive links, this time in wikitext files (.txt)
+- **Auto-Index Style Fix**: Auto-generated index pages now correctly inherit `style.css` from parent folders, just like normal documents
+- **Clean Build Fix**: The `--clean` flag now properly clears the output directory before generation. Previously it only ignored the hash cache, which could leave stale files (like old auto-generated indexes) that would block new generation.
 
 
 # 0.48.0

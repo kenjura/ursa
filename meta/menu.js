@@ -206,8 +206,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!item.href) return false;
         const currentHref = window.location.pathname;
         // Normalize paths for comparison - decode URI components to handle spaces and special chars
-        const normalizedItemHref = decodeURIComponent(item.href).replace(/\/index\.html$/, '').replace(/\.html$/, '');
-        const normalizedCurrentHref = decodeURIComponent(currentHref).replace(/\/index\.html$/, '').replace(/\.html$/, '');
+        // Also strip trailing slashes and /index.html for consistent comparison
+        const normalizedItemHref = decodeURIComponent(item.href).replace(/\/index\.html$/, '').replace(/\.html$/, '').replace(/\/$/, '');
+        const normalizedCurrentHref = decodeURIComponent(currentHref).replace(/\/index\.html$/, '').replace(/\.html$/, '').replace(/\/$/, '');
         return normalizedItemHref === normalizedCurrentHref;
     }
 

@@ -2,6 +2,48 @@ import { getImageTag } from './WikiImage.js';
 
 let instance = {};
 
+// Pre-compiled regex patterns for better performance
+// These are created once at module load time instead of on every call
+const REGEX = {
+  menuStyle: /^_(menu|style)/,
+  hasH1: /^=([^=\n]+)=/,
+  noH1: /^__NOH1__/,
+  noH1Replace: /__NOH1__/g,
+  nowiki: /<nowiki>([\d\D]*?)<\/nowiki>/g,
+  codeBlock: /^ ([^\n]*)$/gm,
+  htmlTag: /<\/?[A-Za-z][^>]*>/g,
+  h3: /^===([^=\n]+)===/gm,
+  h2: /^==([^=\n]+)==/gm,
+  h1: /^=([^=\n]+)=/gm,
+  numberedList: /(\n|^)#([\d\D]*?)(\n(?!#)|$)/g,
+  bulletList: /(\n|^)\*([\d\D]*?)(\n(?!\*)|$)/g,
+  ddDt: /^;([^:\n]*)\n?(?::(.*))?/gm,
+  dd: /^:(.*)/m,
+  hr: /---/g,
+  boldItalic: /'''''([^']+)'''''/g,
+  bold: /'''([^']+)'''/g,
+  italic: /''([^']+)''/g,
+  embiggen3: /\+\+\+([^\+]+)\+\+\+/g,
+  embiggen2: /\+\+([^\+]+)\+\+/g,
+  table: /\{\|([\d\D]*?)\|\}/g,
+  indent3: /^\.\.\.(.*)$/gm,
+  indent2: /^\.\.(.*)$/gm,
+  indent1: /^\.(.*)$/gm,
+  wikiLink1: /\[\[([^\[\]\|#]*)(?:(\|[^\]\|#]*)+)?(?:#([^\]\|#]*))?\]\]/g,
+  wikiLink2: /\[\[([^\[\]\|#\n]*)((\|[^\]\|#\n]*)+)?(?:#([^\]\|#\n]*))?\]\]/g,
+  externalLink: /\[([^\]\n ]*)(?: ([^\]\n]+))?\]/g,
+  paragraph: /^[^\$\n].*$/gm,
+  emptyP: /<p><\/p>/g,
+  superscript: /\^([^\^]*)\^/g,
+  nowikiRestore: /\$NOWIKI_(\d*)\$/g,
+  codeRestore: /\$CODE_(\d*)\$/g,
+  codeJoin: /<\/code>\s*<code>/g,
+  htmlRestore: /\$HTML_(\d*)\$/g,
+  sectionH1: /(?:<h1>)([^\|<]*)(?:\|([^<\|]*))?(?:\|([^<]*))?(?:<\/h1>)([\d\D]*?)(?=<h1|$)/g,
+  sectionH2: /(?:<h2>)([^\|<]*)(?:\|([^<\|]*))?(?:\|([^<]*))?(?:<\/h2>)([\d\D]*?)(?=<h2|<\!--SECTION-END|$)/g,
+  tocHeader: /(?:<h(\d)>)([^<]*)(?:<\/h\1>)/g,
+};
+
 export function wikiToHtml({ wikitext, articleName, args } = {}) {
   if (!args) args = { db: "noDB", noSection: true, noTOC: true };
   if (!wikitext) return "nothing to render";
@@ -18,93 +60,77 @@ export function wikiToHtml({ wikitext, articleName, args } = {}) {
   // 1 - add title if none present
   if (
     !args.noH1 &&
-    !articleName.match(/^_(menu|style)/) &&
-    !html.match(/^=([^=\n]+)=/) &&
-    !html.match(/^__NOH1__/)
+    !articleName.match(REGEX.menuStyle) &&
+    !html.match(REGEX.hasH1) &&
+    !html.match(REGEX.noH1)
   )
     html = "=" + articleName.replace(/^_/, "") + "=\n" + html;
-  html = html.replace(/__NOH1__/g, "");
+  html = html.replace(REGEX.noH1Replace, "");
 
   // basic formatting ------------------------------------------
   // nowiki
-  html = html.replace(/<nowiki>([\d\D]*?)<\/nowiki>/g, processNoWiki);
-  html = html.replace(/^ ([^\n]*)$/gm, processCodeBlock);
-  html = html.replace(/<\/?[A-Za-z][^>]*>/g, processHTML);
+  html = html.replace(REGEX.nowiki, processNoWiki);
+  html = html.replace(REGEX.codeBlock, processCodeBlock);
+  html = html.replace(REGEX.htmlTag, processHTML);
   //html = html.replace( /{(?!\|)([^\|]+\|)?([^}]*)}/g , processJSON );
   // headers
-  html = html.replace(/^===([^=\n]+)===/gm, "<h3>$1</h3>");
-  html = html.replace(/^==([^=\n]+)==/gm, "<h2>$1</h2>");
-  html = html.replace(/^=([^=\n]+)=/gm, "<h1>$1</h1>");
+  html = html.replace(REGEX.h3, "<h3>$1</h3>");
+  html = html.replace(REGEX.h2, "<h2>$1</h2>");
+  html = html.replace(REGEX.h1, "<h1>$1</h1>");
 
   // bullets
-  html = html.replace(/(\n|^)#([\d\D]*?)(\n(?!#)|$)/g, processNumberedLists);
-  html = html.replace(/(\n|^)\*([\d\D]*?)(\n(?!\*)|$)/g, processBullets);
+  html = html.replace(REGEX.numberedList, processNumberedLists);
+  html = html.replace(REGEX.bulletList, processBullets);
 
   // dd/dt
-  html = html.replace(
-    /^;([^:\n]*)\n?(?::(.*))?/gm,
-    "<dl><dt>$1</dt><dd>$2</dd></dl>"
-  );
-  html = html.replace(/^:(.*)/m, "<dd>$1</dd>\n");
+  html = html.replace(REGEX.ddDt, "<dl><dt>$1</dt><dd>$2</dd></dl>");
+  html = html.replace(REGEX.dd, "<dd>$1</dd>\n");
   // hr
-  html = html.replace(/---/g, "<hr>");
+  html = html.replace(REGEX.hr, "<hr>");
   // inline
-  html = html.replace(/'''''([^']+)'''''/g, "<b><i>$1</i></b>");
-  html = html.replace(/'''([^']+)'''/g, "<b>$1</b>");
-  html = html.replace(/''([^']+)''/g, "<i>$1</i>");
+  html = html.replace(REGEX.boldItalic, "<b><i>$1</i></b>");
+  html = html.replace(REGEX.bold, "<b>$1</b>");
+  html = html.replace(REGEX.italic, "<i>$1</i>");
   // html = html.replace( /''(.*?)''/g , '<i>$1</i>' );
   // strikethrough
   // html = html.replace( /--(.*?)--/g , '<strike>$1</strike>' );
   // embiggen
-  html = html.replace(
-    /\+\+\+([^\+]+)\+\+\+/g,
-    '<span style="font-size: 200%;">$1</span>'
-  );
-  html = html.replace(
-    /\+\+([^\+]+)\+\+/g,
-    '<span style="font-size: 150%;">$1</span>'
-  );
+  html = html.replace(REGEX.embiggen3, '<span style="font-size: 200%;">$1</span>');
+  html = html.replace(REGEX.embiggen2, '<span style="font-size: 150%;">$1</span>');
   // tables
-  html = html.replace(/\{\|([\d\D]*?)\|\}/g, processTable);
+  html = html.replace(REGEX.table, processTable);
   // div/indent
-  html = html.replace(/^\.\.\.(.*)$/gm, '<div class="indent2">$1</div>');
-  html = html.replace(/^\.\.(.*)$/gm, '<div class="indent1">$1</div>');
-  html = html.replace(/^\.(.*)$/gm, "<div>$1</div>");
+  html = html.replace(REGEX.indent3, '<div class="indent2">$1</div>');
+  html = html.replace(REGEX.indent2, '<div class="indent1">$1</div>');
+  html = html.replace(REGEX.indent1, "<div>$1</div>");
   // links
-  html = html.replace(
-    /\[\[([^\[\]\|#]*)(?:(\|[^\]\|#]*)+)?(?:#([^\]\|#]*))?\]\]/g,
-    processLink
-  );
-  html = html.replace(
-    /\[\[([^\[\]\|#\n]*)((\|[^\]\|#\n]*)+)?(?:#([^\]\|#\n]*))?\]\]/g,
-    processLink
-  );
-  html = html.replace(/\[([^\]\n ]*)(?: ([^\]\n]+))?\]/g, processExternalLink);
+  html = html.replace(REGEX.wikiLink1, processLink);
+  html = html.replace(REGEX.wikiLink2, processLink);
+  html = html.replace(REGEX.externalLink, processExternalLink);
 
   // code
   // html = html.replace( /^ (.*)$/mg , '<code>$1</code>' );
   // paragraphs
   html = html.trim();
   // html = html.replace( /^.*$/gm , processParagraphs );
-  html = html.replace(/^[^\$\n].*$/gm, processParagraphs);
-  html = html.replace(/<p><\/p>/g, "");
+  html = html.replace(REGEX.paragraph, processParagraphs);
+  html = html.replace(REGEX.emptyP, "");
   // beautify HTML
   //html = beautifyHTML(html);
 
   // superscript
-  html = html.replace(/\^([^\^]*)\^/g, "<sup>$1</sup>");
+  html = html.replace(REGEX.superscript, "<sup>$1</sup>");
 
   // restore nowiki blocks
-  html = html.replace(/\$NOWIKI_(\d*)\$/g, processNoWikiRestore);
-  html = html.replace(/\$CODE_(\d*)\$/g, processCodeBlockRestore);
-  html = html.replace(/<\/code>\s*<code>/g, "\n");
-  html = html.replace(/\$HTML_(\d*)\$/g, processHTMLRestore);
+  html = html.replace(REGEX.nowikiRestore, processNoWikiRestore);
+  html = html.replace(REGEX.codeRestore, processCodeBlockRestore);
+  html = html.replace(REGEX.codeJoin, "\n");
+  html = html.replace(REGEX.htmlRestore, processHTMLRestore);
   //html = html.replace( /\$JSON_(\d*)\$/g , processJSONRestore );
 
   // WORKING CODE for sectioning h1 and h2
   if (!args.noSection) {
-    var find =
-      /(?:<h1>)([^\|<]*)(?:\|([^<\|]*))?(?:\|([^<]*))?(?:<\/h1>)([\d\D]*?)(?=<h1|$)/g;
+    var find = REGEX.sectionH1;
     var replace =
       '\
 			<div class="sectionOuter sectionOuter1 $2" style="$3">\
@@ -132,9 +158,8 @@ export function wikiToHtml({ wikitext, articleName, args } = {}) {
       return em.replace(find, replace);
     });
 
-    var find =
-      /(?:<h2>)([^\|<]*)(?:\|([^<\|]*))?(?:\|([^<]*))?(?:<\/h2>)([\d\D]*?)(?=<h2|<\!--SECTION-END|$)/g;
-    var replace =
+    find = REGEX.sectionH2;
+    replace =
       '\
 	    		<div class="sectionOuter2 $2">\
 	    			<h2>$1</h2>\
@@ -149,7 +174,7 @@ export function wikiToHtml({ wikitext, articleName, args } = {}) {
 
   // adding IDs to headers for TOC seeks
   if (!args.noTOC) {
-    var find = /(?:<h(\d)>)([^<]*)(?:<\/h\1>)/g;
+    var find = REGEX.tocHeader;
     var replace = '<h$1 id="$2">$2</h$1>';
     html = html.replace(find, function (em, g1, g2) {
       var id = g2.replace(/\s/g, "_");
