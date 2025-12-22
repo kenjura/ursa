@@ -309,6 +309,15 @@ export async function generate({
     (filename) => isDirectory(filename)
   )).filter((filename) => !filename.match(hiddenOrSystemDirs) && !isFolderHidden(filename, source));
 
+  // Build set of existing HTML files in source directory (these should not be overwritten)
+  const htmlExtensions = /\.html$/;
+  const existingHtmlFiles = new Set(
+    allSourceFilenames
+      .filter(f => f.match(htmlExtensions) && !f.match(hiddenOrSystemDirs))
+      .map(f => f.replace(source, '')) // Store relative paths for easy lookup
+  );
+  progress.log(`Found ${existingHtmlFiles.size} existing HTML files in source`);
+
   // Build set of valid internal paths for link validation (must be before menu)
   // Pass directories to ensure folder links are valid (auto-index generates index.html for all folders)
   const validPaths = buildValidPaths(allSourceFilenamesThatAreArticles, source, allSourceFilenamesThatAreDirectories);
@@ -391,6 +400,14 @@ export async function generate({
         content: '' // Content excerpts built lazily to save memory
       });
       
+      // Check if a corresponding .html file already exists in source directory
+      const outputHtmlRelative = relativePath.startsWith('/') ? relativePath.slice(1) : relativePath;
+      if (existingHtmlFiles.has(outputHtmlRelative)) {
+        progress.log(`⚠️  Warning: Skipping ${shortFile} - would overwrite existing ${outputHtmlRelative} in source`);
+        skippedCount++;
+        return;
+      }
+
       // Check if file needs regeneration
       const needsRegen = _clean || needsRegeneration(file, rawBody, hashCache);
       
@@ -600,16 +617,23 @@ export async function generate({
   // Clear directory index cache to free memory before processing static files
   dirIndexCache.clear();
 
-  // copy all static files (i.e. images) with batched concurrency
+  // copy all static files (images and existing HTML files) with batched concurrency
   const imageExtensions = /\.(jpg|jpeg|png|gif|webp|svg|ico)/; // static asset extensions
   const allSourceFilenamesThatAreImages = allSourceFilenames.filter(
     (filename) => filename.match(imageExtensions)
   );
-  const totalStatic = allSourceFilenamesThatAreImages.length;
+  
+  // Also copy existing HTML files from source to output (they're treated as static)
+  const allSourceFilenamesThatAreHtml = allSourceFilenames.filter(
+    (filename) => filename.match(/\.html$/) && !filename.match(hiddenOrSystemDirs)
+  );
+  
+  const allStaticFiles = [...allSourceFilenamesThatAreImages, ...allSourceFilenamesThatAreHtml];
+  const totalStatic = allStaticFiles.length;
   let processedStatic = 0;
   let copiedStatic = 0;
-  progress.log(`Processing ${totalStatic} static files...`);
-  await processBatched(allSourceFilenamesThatAreImages, async (file) => {
+  progress.log(`Processing ${totalStatic} static files (${allSourceFilenamesThatAreImages.length} images, ${allSourceFilenamesThatAreHtml.length} HTML)...`);
+  await processBatched(allStaticFiles, async (file) => {
     try {
       processedStatic++;
       const shortFile = file.replace(source, '');
@@ -639,7 +663,7 @@ export async function generate({
 
   // Automatic index generation for folders without index.html
   progress.log(`Checking for missing index files...`);
-  await generateAutoIndices(output, allSourceFilenamesThatAreDirectories, source, templates, menu, footer, allSourceFilenamesThatAreArticles, copiedCssFiles);
+  await generateAutoIndices(output, allSourceFilenamesThatAreDirectories, source, templates, menu, footer, allSourceFilenamesThatAreArticles, copiedCssFiles, existingHtmlFiles);
 
   // Save the hash cache to .ursa folder in source directory
   if (hashCache.size > 0) {
@@ -706,8 +730,9 @@ export async function generate({
  * @param {string} footer - Footer HTML
  * @param {string[]} generatedArticles - List of source article paths that were generated
  * @param {Set<string>} copiedCssFiles - Set of CSS files already copied to output
+ * @param {Set<string>} existingHtmlFiles - Set of existing HTML files in source (relative paths)
  */
-async function generateAutoIndices(output, directories, source, templates, menu, footer, generatedArticles, copiedCssFiles) {
+async function generateAutoIndices(output, directories, source, templates, menu, footer, generatedArticles, copiedCssFiles, existingHtmlFiles) {
   // Alternate index file names to look for (in priority order)
   const INDEX_ALTERNATES = ['_index.html', 'home.html', '_home.html'];
   
@@ -736,6 +761,7 @@ async function generateAutoIndices(output, directories, source, templates, menu,
   
   let generatedCount = 0;
   let renamedCount = 0;
+  let skippedHtmlCount = 0;
   
   for (const dir of outputDirs) {
     const indexPath = join(dir, 'index.html');
@@ -745,7 +771,15 @@ async function generateAutoIndices(output, directories, source, templates, menu,
       continue;
     }
     
-    // Skip if index.html already exists (e.g., created by previous run)
+    // Check if there's an existing index.html in the source directory (don't overwrite it)
+    const sourceDir = dir.replace(outputNorm, sourceNorm);
+    const relativeIndexPath = join(sourceDir, 'index.html').replace(sourceNorm + '/', '');
+    if (existingHtmlFiles && existingHtmlFiles.has(relativeIndexPath)) {
+      skippedHtmlCount++;
+      continue; // Don't overwrite existing source HTML
+    }
+    
+    // Skip if index.html already exists in output (e.g., created by previous run)
     if (existsSync(indexPath)) {
       continue;
     }
@@ -860,8 +894,12 @@ async function generateAutoIndices(output, directories, source, templates, menu,
     }
   }
   
-  if (generatedCount > 0 || renamedCount > 0) {
-    progress.done('Auto-index', `${generatedCount} generated, ${renamedCount} promoted`);
+  if (generatedCount > 0 || renamedCount > 0 || skippedHtmlCount > 0) {
+    let summary = `${generatedCount} generated, ${renamedCount} promoted`;
+    if (skippedHtmlCount > 0) {
+      summary += `, ${skippedHtmlCount} skipped (existing HTML)`;
+    }
+    progress.done('Auto-index', summary);
   } else {
     progress.log(`Auto-index: All folders already have index.html`);
   }

@@ -1,3 +1,8 @@
+# 0.51.0
+2025-12-21
+
+- Existing .html files are no longer overwritten by generated documents.
+
 # 0.50.0
 2025-12-21
 
