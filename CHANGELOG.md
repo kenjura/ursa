@@ -1,3 +1,8 @@
+# 0.55.0
+2025-12-21
+
+- custom menus (menu.md|txt) override the automenu when present
+
 # 0.54.0
 2025-12-21
 

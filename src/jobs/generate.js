@@ -46,6 +46,8 @@ import {
   addTrailingSlash,
   getTemplates,
   getMenu,
+  findAllCustomMenus,
+  getCustomMenuForFile,
   getTransformedMetadata,
   getFooter,
   generateAutoIndices,
@@ -160,6 +162,10 @@ export async function generate({
   const menuResult = await getMenu(allSourceFilenames, source, validPaths);
   const menu = menuResult.html;
   const menuData = menuResult.menuData;
+
+  // Find all custom menus in the source tree
+  const customMenus = findAllCustomMenus(allSourceFilenames, source);
+  progress.log(`Found ${customMenus.size} custom menu(s)`);
 
   // Get and increment build ID from .ursa.json
   const buildId = getAndIncrementBuildId(resolve(_source));
@@ -334,6 +340,9 @@ export async function generate({
         throw new Error(`Template not found. Requested: "${requestedTemplateName || DEFAULT_TEMPLATE_NAME}". Available templates: ${Object.keys(templates).join(', ') || 'none'}`);
       }
 
+      // Check if this file has a custom menu
+      const customMenuInfo = getCustomMenuForFile(file, source, customMenus);
+
       // Build final HTML with all replacements in a single regex pass
       // This avoids creating 8 intermediate strings
       const replacements = {
@@ -349,6 +358,14 @@ export async function generate({
       // Single-pass replacement using regex alternation
       const pattern = /\$\{(title|menu|meta|transformedMetadata|body|styleLink|searchIndex|footer)\}/g;
       let finalHtml = template.replace(pattern, (match) => replacements[match] ?? match);
+
+      // If this page has a custom menu, add data attribute to body
+      if (customMenuInfo) {
+        finalHtml = finalHtml.replace(
+          /<body([^>]*)>/,
+          `<body$1 data-custom-menu="${customMenuInfo.menuJsonPath}">`
+        );
+      }
 
       // Resolve links and mark broken internal links as inactive
       finalHtml = markInactiveLinks(finalHtml, validPaths, docUrlPath, false);
@@ -413,6 +430,14 @@ export async function generate({
   const menuDataJson = JSON.stringify(menuData);
   progress.log(`Writing menu data (${(menuDataJson.length / 1024).toFixed(1)} KB)`);
   await outputFile(menuDataPath, menuDataJson);
+
+  // Write custom menu JSON files
+  for (const [menuDir, menuInfo] of customMenus) {
+    const customMenuPath = join(output, menuInfo.menuJsonPath);
+    const customMenuJson = JSON.stringify(menuInfo.menuData);
+    progress.log(`Writing custom menu: ${menuInfo.menuJsonPath}`);
+    await outputFile(customMenuPath, customMenuJson);
+  }
 
   // Process directory indices with batched concurrency
   const totalDirs = allSourceFilenamesThatAreDirectories.length;

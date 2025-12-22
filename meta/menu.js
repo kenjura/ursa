@@ -2,6 +2,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const navMain = document.querySelector('nav#nav-main');
     if (!navMain) return;
 
+    // Check for custom menu
+    const customMenuPath = document.body.dataset.customMenu;
+    const isCustomMenu = !!customMenuPath;
+
     // State - menu data will be loaded asynchronously
     let menuData = null;
     let menuDataLoaded = false;
@@ -36,13 +40,16 @@ document.addEventListener('DOMContentLoaded', () => {
     /**
      * Load menu data from external JSON file
      * This is done asynchronously to avoid blocking page render
+     * Will load custom menu if data-custom-menu is present, otherwise loads auto-menu
      */
     async function loadMenuData() {
         if (menuDataLoaded || menuDataLoading) return;
         menuDataLoading = true;
         
         try {
-            const response = await fetch('/public/menu-data.json');
+            // Use custom menu path if present, otherwise use auto-menu
+            const menuUrl = customMenuPath || '/public/menu-data.json';
+            const response = await fetch(menuUrl);
             if (!response.ok) {
                 throw new Error(`HTTP ${response.status}`);
             }
@@ -50,7 +57,11 @@ document.addEventListener('DOMContentLoaded', () => {
             menuDataLoaded = true;
             
             // Re-render menu now that we have full data
-            initializeFromCurrentPage();
+            if (isCustomMenu) {
+                renderCustomMenu();
+            } else {
+                initializeFromCurrentPage();
+            }
         } catch (error) {
             console.error('Failed to load menu data:', error);
             menuDataLoaded = true; // Mark as loaded to prevent retries
@@ -229,6 +240,230 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Attach click handlers
         attachClickHandlers();
+    }
+
+    /**
+     * Get the custom menu root folder name and parent URL from the current location
+     * @returns {{name: string, parentUrl: string}} - Menu root name and parent URL
+     */
+    function getCustomMenuInfo() {
+        const pathname = window.location.pathname;
+        // Remove the filename to get the directory
+        const pathParts = pathname.split('/').filter(Boolean);
+        
+        // Find the menu root by looking at the custom menu path
+        // e.g., /public/custom-menu-systems-system6.json -> systems/system6
+        if (customMenuPath) {
+            const match = customMenuPath.match(/custom-menu-(.+)\.json$/);
+            if (match) {
+                const menuId = match[1];
+                // Convert dashes back to path (e.g., systems-system6 -> systems/system6)
+                // But we need to be careful - the ID uses dashes for path separators
+                // The actual menu root is the folder containing the menu file
+                // We can infer it from the current URL path
+                
+                // Find common prefix between current path and menu ID
+                const menuParts = menuId.split('-');
+                let matchedParts = [];
+                let currentIndex = 0;
+                
+                for (let i = 0; i < pathParts.length && currentIndex < menuParts.length; i++) {
+                    // Check if this path part matches the next menu ID parts
+                    let pathPart = pathParts[i].toLowerCase();
+                    let menuPart = menuParts[currentIndex].toLowerCase();
+                    
+                    // Handle multi-word folder names (e.g., "Galactic Horizons" -> "GalacticHorizons")
+                    if (pathPart.replace(/\s+/g, '').toLowerCase() === menuPart.toLowerCase()) {
+                        matchedParts.push(pathParts[i]);
+                        currentIndex++;
+                    } else if (pathPart === menuPart) {
+                        matchedParts.push(pathParts[i]);
+                        currentIndex++;
+                    }
+                }
+                
+                if (matchedParts.length > 0) {
+                    const menuRootName = matchedParts[matchedParts.length - 1];
+                    // Parent URL is one level up from the menu root
+                    const parentParts = matchedParts.slice(0, -1);
+                    const parentUrl = parentParts.length > 0 
+                        ? '/' + parentParts.join('/') + '/index.html'
+                        : '/index.html';
+                    
+                    return { name: menuRootName, parentUrl };
+                }
+            }
+        }
+        
+        // Fallback: use the first directory in the current path
+        if (pathParts.length > 0) {
+            return { 
+                name: pathParts[0], 
+                parentUrl: '/index.html' 
+            };
+        }
+        
+        return { name: 'Menu', parentUrl: '/index.html' };
+    }
+
+    /**
+     * Render custom menu with two-level display
+     * Custom menus use a simpler structure but same visual style
+     */
+    function renderCustomMenu() {
+        // Wait for menu data to load
+        if (!menuData) {
+            menuContainer.innerHTML = '<li class="menu-loading">Loading menu...</li>';
+            return;
+        }
+
+        // Show breadcrumb for custom menus with menu root name and back button
+        if (breadcrumb) {
+            const menuInfo = getCustomMenuInfo();
+            breadcrumb.style.display = 'flex';
+            if (currentPathSpan) {
+                currentPathSpan.textContent = menuInfo.name;
+            }
+            // Update back button to navigate to parent
+            if (backButton) {
+                backButton.onclick = (e) => {
+                    e.preventDefault();
+                    window.location.href = menuInfo.parentUrl;
+                };
+            }
+            // Hide home button for custom menus (back is enough)
+            if (homeButton) {
+                homeButton.style.display = 'none';
+            }
+        }
+
+        // Build HTML for level 1 and level 2 (max 2 levels shown)
+        let html = '';
+        for (const item of menuData) {
+            const isActive = isCurrentPage(item);
+            const activeClass = isActive ? ' current-menu-item' : '';
+            const hasChildrenClass = item.hasChildren ? ' has-children' : '';
+            
+            // Auto-expand items that contain the current page
+            const containsCurrentPage = item.hasChildren && isCurrentPageInSubtree(item);
+            const isExpanded = expandedLevel1.has(item.path) || (containsCurrentPage && !collapsedLevel1.has(item.path));
+            const expandedClass = isExpanded ? ' expanded' : '';
+            const caretIndicator = item.hasChildren 
+                ? `<span class="menu-caret">${isExpanded ? '▼' : '▶'}</span>` 
+                : '';
+            
+            const labelHtml = item.href
+                ? `<a href="${item.href}" class="menu-label">${item.label}</a>`
+                : `<span class="menu-label">${item.label}</span>`;
+
+            html += `
+<li class="menu-item level-1${hasChildrenClass}${activeClass}${expandedClass}" data-path="${item.path}">
+  <div class="menu-item-row">
+    ${item.icon || '<span class="menu-icon">📄</span>'}
+    ${labelHtml}
+    ${caretIndicator}
+  </div>`;
+
+            // Show children if expanded
+            if (item.children && item.children.length > 0 && isExpanded) {
+                html += '<ul class="menu-sublevel">';
+                for (const child of item.children) {
+                    const childActive = isCurrentPage(child);
+                    const childActiveClass = childActive ? ' current-menu-item' : '';
+                    const childHasChildren = child.hasChildren ? ' has-children' : '';
+                    // Level-2 items with children get triple-dot indicator
+                    const childMoreIndicator = child.hasChildren ? '<span class="menu-more" title="Has sub-items">⋮</span>' : '';
+                    
+                    const childLabelHtml = child.href
+                        ? `<a href="${child.href}" class="menu-label">${child.label}</a>`
+                        : `<span class="menu-label">${child.label}</span>`;
+
+                    html += `
+  <li class="menu-item level-2${childHasChildren}${childActiveClass}" data-path="${child.path}">
+    <div class="menu-item-row">
+      ${child.icon || '<span class="menu-icon">📄</span>'}
+      ${childLabelHtml}
+      ${childMoreIndicator}
+    </div>
+  </li>`;
+                }
+                html += '</ul>';
+            }
+
+            html += '</li>';
+        }
+
+        menuContainer.innerHTML = html;
+
+        // Attach click handlers for custom menu
+        attachCustomMenuClickHandlers();
+    }
+
+    /**
+     * Check if current page is within an item's subtree (for custom menus)
+     */
+    function isCurrentPageInSubtree(item) {
+        if (isCurrentPage(item)) return true;
+        if (item.children) {
+            for (const child of item.children) {
+                if (isCurrentPageInSubtree(child)) return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Attach click handlers for custom menu items
+     */
+    function attachCustomMenuClickHandlers() {
+        const menuItems = menuContainer.querySelectorAll('.menu-item.level-1.has-children');
+        menuItems.forEach(li => {
+            const row = li.querySelector('.menu-item-row');
+            const caret = li.querySelector('.menu-caret');
+            const link = li.querySelector('a.menu-label');
+            const path = li.dataset.path;
+            
+            const toggleExpand = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                
+                const isCurrentlyExpanded = li.classList.contains('expanded');
+                
+                if (isCurrentlyExpanded) {
+                    expandedLevel1.delete(path);
+                    collapsedLevel1.add(path);
+                } else {
+                    expandedLevel1.add(path);
+                    collapsedLevel1.delete(path);
+                }
+                renderCustomMenu();
+            };
+            
+            if (caret) {
+                caret.addEventListener('click', toggleExpand);
+            }
+            
+            // If clicking the link on current page, toggle instead of navigate
+            if (link) {
+                link.addEventListener('click', (e) => {
+                    const linkHref = link.getAttribute('href');
+                    const currentHref = window.location.pathname;
+                    const normalizedLinkHref = linkHref.replace(/\/index\.html$/, '').replace(/\.html$/, '');
+                    const normalizedCurrentHref = currentHref.replace(/\/index\.html$/, '').replace(/\.html$/, '');
+                    
+                    if (normalizedLinkHref === normalizedCurrentHref) {
+                        toggleExpand(e);
+                    }
+                });
+            }
+            
+            // Clicking row (not link) toggles
+            row.addEventListener('click', (e) => {
+                if (!e.target.closest('a')) {
+                    toggleExpand(e);
+                }
+            });
+        });
     }
 
     // Check if an item matches the current page
