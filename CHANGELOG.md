@@ -1,5 +1,12 @@
+# 0.54.0
+2025-12-21
+
+- added cache-busting timestamps to static files
+- cleaned up generate.js by moving helper functions to separate files
+
+
 # 0.53.0
-2025-01-01
+2025-12-21
 
 ### Menu Size Optimization
 - **External Menu JSON**: Menu data is now stored in `/public/menu-data.json` instead of being embedded in every HTML file. This dramatically reduces HTML file sizes for sites with large folder structures (e.g., from 2-3MB per file down to ~50KB).
