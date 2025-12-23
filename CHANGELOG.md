@@ -1,3 +1,8 @@
+# 0.56.0
+2025-12-23
+
+- restored metadata to directory index JSON files
+
 # 0.55.0
 2025-12-21
 

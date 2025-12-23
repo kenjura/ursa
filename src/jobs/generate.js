@@ -275,10 +275,12 @@ export async function generate({
       if (!needsRegen) {
         skippedCount++;
         // For directory indices, store minimal data (not full bodyHtml)
+        // But include metadata for directory JSON files
+        const skippedMeta = extractMetadata(rawBody);
         dirIndexCache.set(file, {
           name: base,
           url,
-          // Don't store contents or bodyHtml - saves significant memory
+          metadata: skippedMeta,
         });
         return; // Skip regenerating this file
       }
@@ -394,10 +396,11 @@ export async function generate({
         transformedMetadata,
       };
       
-      // Store minimal data for directory indices
+      // Store minimal data for directory indices, including metadata
       dirIndexCache.set(file, {
         name: base,
         url,
+        metadata: fileMeta,
       });
       
       const json = JSON.stringify(jsonObject);
