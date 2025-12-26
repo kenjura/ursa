@@ -243,3 +243,16 @@ Generates the site once using default directories.
 ## Requirements
 
 SOURCE folder should have at least an index.md in it.
+
+
+## Link logic
+Links are allowed to be extensionless. Link resolution works as follows:
+- If link has an extension, look for exact match, and 404 if not found
+- If link has no extension:
+  - Look for exact match with .md, .txt, .yml extensions (in that order)
+  - If not found, assume the path is a folder, and look for:
+    - index.md, index.txt, _index.md, _index.txt
+    - home.md, home.txt, _home.md, _home.txt
+    - (folder name).md, (folder name).txt
+  - If any of these are found, link to that file's html version
+  - If still not found, 404

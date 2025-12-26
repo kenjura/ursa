@@ -8,7 +8,7 @@ import { dirname, relative, resolve } from "path";
  * Get menu HTML and menu data from source directory
  * @param {string[]} allSourceFilenames - All source file names
  * @param {string} source - Source directory path
- * @param {Set<string>} validPaths - Set of valid internal paths for link validation
+ * @param {Map<string, string>} validPaths - Map of normalized paths to canonical resolved paths for link validation
  * @returns {Promise<{html: string, menuData: Object}>} Menu HTML and menu data
  */
 export async function getMenu(allSourceFilenames, source, validPaths) {

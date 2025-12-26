@@ -23,6 +23,7 @@ import { getAndIncrementBuildId } from "../helper/ursaConfig.js";
 import { extractSections } from "../helper/sectionExtractor.js";
 import { renderFile } from "../helper/fileRenderer.js";
 import { findStyleCss } from "../helper/findStyleCss.js";
+import { buildFullTextIndex } from "../helper/fullTextIndex.js";
 import { copy as copyDir, emptyDir, outputFile } from "fs-extra";
 import { basename, dirname, extname, join, parse, resolve } from "path";
 import { URL } from "url";
@@ -212,6 +213,8 @@ export async function generate({
 
   // Search index: built incrementally during article processing (lighter memory footprint)
   const searchIndex = [];
+  // Full-text index: collect documents for word-to-document mapping
+  const fullTextDocs = [];
   // Directory index cache: only stores minimal data needed for directory indices
   // Uses WeakRef-style approach - store only what's needed, clear as we go
   const dirIndexCache = new Map();
@@ -259,6 +262,13 @@ export async function generate({
         path: relativePath,
         url: searchUrl,
         content: '' // Content excerpts built lazily to save memory
+      });
+
+      // Add document to full-text index (uses raw markdown content)
+      fullTextDocs.push({
+        path: relativePath,
+        title: title,
+        content: rawBody
       });
       
       // Check if a corresponding .html file already exists in source directory
@@ -427,6 +437,15 @@ export async function generate({
   progress.log(`Writing search index with ${searchIndex.length} entries`);
   await outputFile(searchIndexPath, JSON.stringify(searchIndex));
 
+  // Build and write full-text index
+  progress.log(`Building full-text index from ${fullTextDocs.length} documents...`);
+  const fullTextIndex = buildFullTextIndex(fullTextDocs);
+  const fullTextIndexPath = join(output, 'public', 'fulltext-index.json');
+  const fullTextIndexJson = JSON.stringify(fullTextIndex);
+  const wordCount = Object.keys(fullTextIndex).length;
+  progress.log(`Writing full-text index (${wordCount} unique words, ${(fullTextIndexJson.length / 1024).toFixed(1)} KB)`);
+  await outputFile(fullTextIndexPath, fullTextIndexJson);
+
   // Write menu data as a separate JSON file (not embedded in each page)
   // This dramatically reduces HTML file sizes for large sites
   const menuDataPath = join(output, 'public', 'menu-data.json');
@@ -552,6 +571,16 @@ export async function generate({
         const cssContent = await readFile(file, 'utf8');
         const processedCss = addTimestampToCssUrls(cssContent, cacheBustTimestamp);
         await outputFile(outputFilename, processedCss);
+      } else if (file.endsWith('.html')) {
+        // Process HTML files for link resolution
+        let htmlContent = await readFile(file, 'utf8');
+        // Calculate the document's URL path for relative link resolution
+        const docUrlPath = '/' + file.replace(source, '').replace(/^\//, '');
+        // Resolve internal links to have proper .html extensions
+        htmlContent = markInactiveLinks(htmlContent, validPaths, docUrlPath, false);
+        // Add cache-busting timestamps
+        htmlContent = addTimestampToHtmlStaticRefs(htmlContent, cacheBustTimestamp);
+        await outputFile(outputFilename, htmlContent);
       } else {
         await copyFile(file, outputFilename);
       }

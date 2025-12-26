@@ -114,7 +114,8 @@ export async function generateAutoIndices(output, directories, source, templates
           .map(child => {
             const isDir = child.isDirectory();
             const name = isDir ? child.name : child.name.replace('.html', '');
-            const href = isDir ? `${child.name}/` : child.name;
+            // For directories, link to /folder/index.html; for files, use the filename directly
+            const href = isDir ? `${child.name}/index.html` : child.name;
             const displayName = toTitleCase(name);
             const icon = isDir ? '📁' : '📄';
             return `<li>${icon} <a href="${href}">${displayName}</a></li>`;

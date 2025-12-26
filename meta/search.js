@@ -6,11 +6,19 @@ class GlobalSearch {
     this.searchInput = document.getElementById('global-search');
     this.searchResults = null;
     this.searchIndex = null; // Will be loaded asynchronously
+    this.fullTextIndex = null; // Word-to-document mapping
     this.indexLoading = false;
     this.indexLoaded = false;
+    this.fullTextLoading = false;
+    this.fullTextLoaded = false;
     this.currentSelection = -1;
     this._lastResults = null;
+    this._lastFullTextResults = null;
+    this._showingMorePaths = false;
+    this._showingMoreFullText = false;
     this.MIN_QUERY_LENGTH = 3;
+    this.INITIAL_PATH_RESULTS = 5;
+    this.INITIAL_FULLTEXT_RESULTS = 5;
     
     if (!this.searchInput) return;
     
@@ -22,8 +30,9 @@ class GlobalSearch {
     this.createResultsContainer();
     this.createClearButton();
     this.bindEvents();
-    // Start loading the index immediately (but don't block)
+    // Start loading the indices immediately (but don't block)
     this.loadSearchIndex();
+    this.loadFullTextIndex();
   }
   
   wrapSearchInput() {
@@ -87,6 +96,36 @@ class GlobalSearch {
     }
   }
   
+  /**
+   * Load full-text index from external JSON file
+   * This maps words to document paths for content-based search
+   */
+  async loadFullTextIndex() {
+    this.fullTextLoading = true;
+    
+    try {
+      const response = await fetch('/public/fulltext-index.json');
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      const data = await response.json();
+      this.fullTextIndex = data;
+      this.fullTextLoaded = true;
+      window.FULLTEXT_INDEX = data;
+      
+      // If user was waiting, trigger search now
+      if (this.searchInput.value.length >= this.MIN_QUERY_LENGTH) {
+        this.handleSearch(this.searchInput.value);
+      }
+    } catch (error) {
+      console.error('Failed to load full-text index:', error);
+      this.fullTextIndex = {};
+      this.fullTextLoaded = true;
+    } finally {
+      this.fullTextLoading = false;
+    }
+  }
+  
   bindEvents() {
     // Input events
     this.searchInput.addEventListener('input', (e) => {
@@ -125,10 +164,24 @@ class GlobalSearch {
         this.hideResults();
       }
     });
+    
+    // Global hotkey: Cmd/Ctrl+P to focus search
+    document.addEventListener('keydown', (e) => {
+      // Check for Cmd+P (Mac) or Ctrl+P (Windows/Linux)
+      if ((e.metaKey || e.ctrlKey) && e.key === 'p') {
+        e.preventDefault();
+        this.searchInput.focus();
+        this.searchInput.select();
+      }
+    });
   }
   
   handleSearch(query) {
     const trimmedQuery = (query || '').trim();
+    
+    // Reset "show more" state on new search
+    this._showingMorePaths = false;
+    this._showingMoreFullText = false;
     
     // Clear results for empty query
     if (!trimmedQuery) {
@@ -148,9 +201,14 @@ class GlobalSearch {
       return;
     }
     
-    const results = this.search(trimmedQuery);
-    this._lastResults = results;
-    this.displayResults(results, trimmedQuery);
+    const pathResults = this.searchPaths(trimmedQuery);
+    const fullTextResults = this.searchFullText(trimmedQuery);
+    
+    this._lastResults = pathResults;
+    this._lastFullTextResults = fullTextResults;
+    this._lastQuery = trimmedQuery;
+    
+    this.displayCombinedResults(pathResults, fullTextResults, trimmedQuery);
   }
   
   /**
@@ -168,7 +226,10 @@ class GlobalSearch {
     this.showResults();
   }
   
-  search(query) {
+  /**
+   * Search paths/titles (original search method)
+   */
+  searchPaths(query) {
     if (!this.searchIndex || !Array.isArray(this.searchIndex)) {
       return [];
     }
@@ -181,13 +242,11 @@ class GlobalSearch {
     this.searchIndex.forEach(item => {
       const titleLower = (item.title || '').toLowerCase();
       const pathLower = (item.path || '').toLowerCase();
-      const contentLower = (item.content || '').toLowerCase();
       
-      // Check if all query words match somewhere
+      // Check if all query words match in title or path
       const allWordsMatch = queryWords.every(word => 
         titleLower.includes(word) || 
-        pathLower.includes(word) || 
-        contentLower.includes(word)
+        pathLower.includes(word)
       );
       
       if (!allWordsMatch) return;
@@ -202,15 +261,12 @@ class GlobalSearch {
       // Boost path matches
       if (pathLower.includes(normalizedQuery)) score += 10;
       
-      // Content matches get lower score
-      if (contentLower.includes(normalizedQuery)) score += 5;
-      
       // Bonus for each word match in title
       queryWords.forEach(word => {
         if (titleLower.includes(word)) score += 3;
       });
       
-      results.push({ ...item, score });
+      results.push({ ...item, score, matchType: 'path' });
     });
     
     // Sort by score, then by title
@@ -218,12 +274,87 @@ class GlobalSearch {
       .sort((a, b) => {
         if (b.score !== a.score) return b.score - a.score;
         return (a.title || '').localeCompare(b.title || '');
-      })
-      .slice(0, 10); // Limit to 10 results
+      });
   }
   
-  displayResults(results, query) {
-    if (results.length === 0) {
+  /**
+   * Search full-text index for content matches
+   */
+  searchFullText(query) {
+    if (!this.fullTextIndex || !this.fullTextLoaded) {
+      return [];
+    }
+    
+    const normalizedQuery = query.toLowerCase().trim();
+    const queryWords = normalizedQuery.split(/\s+/).filter(w => w.length >= 2);
+    
+    if (queryWords.length === 0) return [];
+    
+    // Collect document scores from full-text index
+    const docScores = {};
+    const docWordMatches = {};
+    
+    for (const word of queryWords) {
+      // Find matching words in the index (prefix match)
+      const matchingWords = Object.keys(this.fullTextIndex).filter(indexWord => 
+        indexWord.startsWith(word) || indexWord === word
+      );
+      
+      for (const matchingWord of matchingWords) {
+        const entries = this.fullTextIndex[matchingWord];
+        if (!entries) continue;
+        
+        for (const entry of entries) {
+          const path = entry.p;
+          const score = entry.s;
+          
+          // Boost exact word match over prefix match
+          const scoreMultiplier = matchingWord === word ? 1.0 : 0.5;
+          
+          docScores[path] = (docScores[path] || 0) + (score * scoreMultiplier);
+          
+          // Track which words matched for this document
+          if (!docWordMatches[path]) {
+            docWordMatches[path] = new Set();
+          }
+          docWordMatches[path].add(word);
+        }
+      }
+    }
+    
+    // Only include documents that match ALL query words
+    const results = [];
+    for (const [path, score] of Object.entries(docScores)) {
+      // Check if all query words matched
+      if (!docWordMatches[path] || docWordMatches[path].size < queryWords.length) {
+        continue;
+      }
+      
+      // Find the document info from search index
+      const docInfo = this.searchIndex?.find(item => item.path === path);
+      
+      results.push({
+        path: path,
+        url: docInfo?.url || path,
+        title: docInfo?.title || path.split('/').pop().replace('.html', ''),
+        score: score,
+        matchType: 'fulltext'
+      });
+    }
+    
+    // Sort by score descending
+    return results.sort((a, b) => b.score - a.score);
+  }
+  
+  /**
+   * Display combined path and full-text results
+   */
+  displayCombinedResults(pathResults, fullTextResults, query) {
+    // Deduplicate: remove full-text results that are already in path results
+    const pathPaths = new Set(pathResults.map(r => r.path));
+    const uniqueFullTextResults = fullTextResults.filter(r => !pathPaths.has(r.path));
+    
+    if (pathResults.length === 0 && uniqueFullTextResults.length === 0) {
       this.showMessage(`No results for "${query}"`);
       return;
     }
@@ -231,37 +362,120 @@ class GlobalSearch {
     this.searchResults.innerHTML = '';
     this.currentSelection = -1;
     
-    results.forEach((result, index) => {
-      const item = document.createElement('div');
-      item.className = 'search-result-item';
-      item.dataset.index = index;
+    // Determine how many results to show
+    const pathLimit = this._showingMorePaths ? pathResults.length : this.INITIAL_PATH_RESULTS;
+    const fullTextLimit = this._showingMoreFullText ? uniqueFullTextResults.length : this.INITIAL_FULLTEXT_RESULTS;
+    
+    const visiblePathResults = pathResults.slice(0, pathLimit);
+    const visibleFullTextResults = uniqueFullTextResults.slice(0, fullTextLimit);
+    
+    let currentIndex = 0;
+    
+    // Path/Title matches section
+    if (pathResults.length > 0) {
+      const section = document.createElement('div');
+      section.className = 'search-section';
       
-      const title = document.createElement('div');
-      title.className = 'search-result-title';
-      title.textContent = result.title || 'Untitled';
+      const header = document.createElement('div');
+      header.className = 'search-section-header';
+      header.textContent = `Title/Path Matches (${pathResults.length})`;
+      section.appendChild(header);
       
-      const path = document.createElement('div');
-      path.className = 'search-result-path';
-      path.textContent = result.path || result.url || '';
-      
-      item.appendChild(title);
-      item.appendChild(path);
-      
-      // Click handler
-      item.addEventListener('click', () => {
-        this.navigateToResult(result);
+      visiblePathResults.forEach((result) => {
+        const item = this.createResultItem(result, currentIndex);
+        section.appendChild(item);
+        currentIndex++;
       });
       
-      // Mouse hover selection
-      item.addEventListener('mouseenter', () => {
-        this.currentSelection = index;
-        this.updateSelection();
+      // Add "show more" button if there are more results
+      if (pathResults.length > this.INITIAL_PATH_RESULTS && !this._showingMorePaths) {
+        const moreBtn = document.createElement('button');
+        moreBtn.className = 'search-show-more';
+        moreBtn.textContent = `Show ${pathResults.length - this.INITIAL_PATH_RESULTS} more`;
+        moreBtn.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          this._showingMorePaths = true;
+          this.displayCombinedResults(this._lastResults, this._lastFullTextResults, this._lastQuery);
+        });
+        section.appendChild(moreBtn);
+      }
+      
+      this.searchResults.appendChild(section);
+    }
+    
+    // Full-text matches section
+    if (uniqueFullTextResults.length > 0) {
+      const section = document.createElement('div');
+      section.className = 'search-section';
+      
+      const header = document.createElement('div');
+      header.className = 'search-section-header';
+      header.textContent = `Content Matches (${uniqueFullTextResults.length})`;
+      section.appendChild(header);
+      
+      visibleFullTextResults.forEach((result) => {
+        const item = this.createResultItem(result, currentIndex);
+        section.appendChild(item);
+        currentIndex++;
       });
       
-      this.searchResults.appendChild(item);
-    });
+      // Add "show more" button if there are more results
+      if (uniqueFullTextResults.length > this.INITIAL_FULLTEXT_RESULTS && !this._showingMoreFullText) {
+        const moreBtn = document.createElement('button');
+        moreBtn.className = 'search-show-more';
+        moreBtn.textContent = `Show ${uniqueFullTextResults.length - this.INITIAL_FULLTEXT_RESULTS} more`;
+        moreBtn.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          this._showingMoreFullText = true;
+          this.displayCombinedResults(this._lastResults, this._lastFullTextResults, this._lastQuery);
+        });
+        section.appendChild(moreBtn);
+      }
+      
+      this.searchResults.appendChild(section);
+    }
     
     this.showResults();
+  }
+  
+  /**
+   * Create a single result item element
+   */
+  createResultItem(result, index) {
+    const item = document.createElement('div');
+    item.className = 'search-result-item';
+    item.dataset.index = index;
+    
+    const title = document.createElement('div');
+    title.className = 'search-result-title';
+    title.textContent = result.title || 'Untitled';
+    
+    const path = document.createElement('div');
+    path.className = 'search-result-path';
+    path.textContent = result.path || result.url || '';
+    
+    item.appendChild(title);
+    item.appendChild(path);
+    
+    // Click handler
+    item.addEventListener('click', () => {
+      this.navigateToResult(result);
+    });
+    
+    // Mouse hover selection
+    item.addEventListener('mouseenter', () => {
+      this.currentSelection = index;
+      this.updateSelection();
+    });
+    
+    return item;
+  }
+  
+  displayResults(results, query) {
+    // Legacy method - redirect to combined display
+    this.displayCombinedResults(results, [], query);
   }
   
   showResults() {
@@ -310,8 +524,11 @@ class GlobalSearch {
         
       case 'Enter':
         e.preventDefault();
-        if (this.currentSelection >= 0 && this._lastResults && this._lastResults[this.currentSelection]) {
-          this.navigateToResult(this._lastResults[this.currentSelection]);
+        if (this.currentSelection >= 0) {
+          const result = this.getResultByIndex(this.currentSelection);
+          if (result) {
+            this.navigateToResult(result);
+          }
         }
         break;
         
@@ -320,6 +537,35 @@ class GlobalSearch {
         this.searchInput.blur();
         break;
     }
+  }
+  
+  /**
+   * Get the result object for a given display index
+   * Handles both path results and full-text results
+   */
+  getResultByIndex(index) {
+    if (!this._lastResults && !this._lastFullTextResults) return null;
+    
+    // Calculate which results are visible
+    const pathLimit = this._showingMorePaths ? this._lastResults?.length || 0 : this.INITIAL_PATH_RESULTS;
+    const visiblePathResults = (this._lastResults || []).slice(0, pathLimit);
+    
+    // Deduplicate full-text results
+    const pathPaths = new Set(visiblePathResults.map(r => r.path));
+    const uniqueFullTextResults = (this._lastFullTextResults || []).filter(r => !pathPaths.has(r.path));
+    const fullTextLimit = this._showingMoreFullText ? uniqueFullTextResults.length : this.INITIAL_FULLTEXT_RESULTS;
+    const visibleFullTextResults = uniqueFullTextResults.slice(0, fullTextLimit);
+    
+    if (index < visiblePathResults.length) {
+      return visiblePathResults[index];
+    }
+    
+    const fullTextIndex = index - visiblePathResults.length;
+    if (fullTextIndex < visibleFullTextResults.length) {
+      return visibleFullTextResults[fullTextIndex];
+    }
+    
+    return null;
   }
   
   updateSelection() {

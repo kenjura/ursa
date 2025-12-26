@@ -1,14 +1,16 @@
 import { extname, dirname, join, normalize, posix, basename } from "path";
 
 /**
- * Build a set of valid internal paths from the list of source files and directories
+ * Build a set of valid internal paths from the list of source files and directories.
+ * Returns a Map where keys are normalized paths (with/without extension) and values
+ * are the canonical resolved paths (always with .html extension).
  * @param {string[]} sourceFiles - Array of source file paths
  * @param {string} source - Source directory path
  * @param {string[]} [directories] - Optional array of directory paths (for auto-index support)
- * @returns {Set<string>} Set of valid internal paths (without extension, lowercased)
+ * @returns {Map<string, string>} Map of normalized paths to canonical resolved paths
  */
 export function buildValidPaths(sourceFiles, source, directories = []) {
-  const validPaths = new Set();
+  const validPaths = new Map();
   
   for (const file of sourceFiles) {
     // Get the path relative to source, without extension
@@ -27,16 +29,20 @@ export function buildValidPaths(sourceFiles, source, directories = []) {
       // Ignore decode errors
     }
     
-    // Add both with and without trailing slash for directories
-    validPaths.add(relativePath.toLowerCase());
-    validPaths.add((relativePath + ".html").toLowerCase());
+    // The canonical resolved path (always .html)
+    const resolvedPath = relativePath + ".html";
+    
+    // Add mappings: extensionless and with .html both resolve to the .html version
+    validPaths.set(relativePath.toLowerCase(), resolvedPath);
+    validPaths.set(resolvedPath.toLowerCase(), resolvedPath);
     
     // Also add /index.html variant for directory indexes
     if (relativePath.endsWith("/index")) {
       const dirPath = relativePath.replace(/\/index$/, "");
-      validPaths.add(dirPath.toLowerCase());
-      validPaths.add((dirPath + "/").toLowerCase());
-      validPaths.add((dirPath + "/index.html").toLowerCase());
+      const dirResolvedPath = dirPath + "/index.html";
+      validPaths.set(dirPath.toLowerCase(), dirResolvedPath);
+      validPaths.set((dirPath + "/").toLowerCase(), dirResolvedPath);
+      validPaths.set(dirResolvedPath.toLowerCase(), dirResolvedPath);
     }
     
     // Handle (foldername).md files - they get promoted to index.html by auto-index
@@ -47,9 +53,10 @@ export function buildValidPaths(sourceFiles, source, directories = []) {
     
     if (fileName === parentDirName) {
       // This file has same name as its parent folder - it will be promoted to index.html
-      validPaths.add(parentDir.toLowerCase());
-      validPaths.add((parentDir + "/").toLowerCase());
-      validPaths.add((parentDir + "/index.html").toLowerCase());
+      const promotedPath = parentDir + "/index.html";
+      validPaths.set(parentDir.toLowerCase(), promotedPath);
+      validPaths.set((parentDir + "/").toLowerCase(), promotedPath);
+      validPaths.set(promotedPath.toLowerCase(), promotedPath);
     }
   }
   
@@ -74,15 +81,16 @@ export function buildValidPaths(sourceFiles, source, directories = []) {
       // Ignore decode errors
     }
     
-    // Add directory paths - all folders now have index.html (auto-generated if needed)
-    validPaths.add(relativePath.toLowerCase());
-    validPaths.add((relativePath + "/").toLowerCase());
-    validPaths.add((relativePath + "/index.html").toLowerCase());
+    // All folders resolve to /folder/index.html
+    const resolvedPath = relativePath + "/index.html";
+    validPaths.set(relativePath.toLowerCase(), resolvedPath);
+    validPaths.set((relativePath + "/").toLowerCase(), resolvedPath);
+    validPaths.set(resolvedPath.toLowerCase(), resolvedPath);
   }
   
   // Add root
-  validPaths.add("/");
-  validPaths.add("/index.html");
+  validPaths.set("/", "/index.html");
+  validPaths.set("/index.html", "/index.html");
   
   return validPaths;
 }
@@ -170,12 +178,12 @@ function normalizeHref(href, currentDocPath = null) {
 /**
  * Resolve an href to a valid path, trying .html and /index.html extensions.
  * Returns { resolvedHref, inactive, debug } where:
- * - resolvedHref is the corrected href (with .html extension if needed)
+ * - resolvedHref is the corrected href (with .html extension)
  * - inactive is true if the link doesn't resolve to a valid path
  * - debug contains information about what was tried
  * 
  * @param {string} href - The original href
- * @param {Set<string>} validPaths - Set of valid internal paths (lowercased)
+ * @param {Map<string, string>} validPaths - Map of normalized paths to canonical resolved paths
  * @param {string} currentDocPath - The current document's URL path (for relative link resolution)
  * @returns {{ resolvedHref: string, inactive: boolean, debug: string }}
  */
@@ -196,10 +204,11 @@ function resolveHref(href, validPaths, currentDocPath = null) {
     ? resolveRelativePath(hrefWithoutHash, currentDocPath)
     : hrefWithoutHash;
   
-  // If exact match exists, return resolved absolute path
+  // Check if path exists in validPaths map - the value is the canonical resolved path
   if (validPaths.has(normalized)) {
-    debugTries.push(`${normalized} → ✓ (exact)`);
-    return { resolvedHref: absoluteHref + hash, inactive: false, debug: debugTries.join(' | ') };
+    const canonicalPath = validPaths.get(normalized);
+    debugTries.push(`${normalized} → ${canonicalPath} ✓`);
+    return { resolvedHref: canonicalPath + hash, inactive: false, debug: debugTries.join(' | ') };
   }
   
   // Check if the href already has an extension
@@ -210,16 +219,17 @@ function resolveHref(href, validPaths, currentDocPath = null) {
       // Remove .md and check if .html version exists
       const pathWithoutMd = normalized.slice(0, -3); // Remove '.md'
       const htmlPath = pathWithoutMd + '.html';
-      debugTries.push(`${normalized} (.md → .html) ${htmlPath} → ${validPaths.has(htmlPath) ? '✓' : '✗'}`);
-      if (validPaths.has(htmlPath)) {
-        // Convert .md to .html in the resolved href
-        const resolvedHref = absoluteHref.slice(0, -3) + '.html' + hash;
-        return { resolvedHref, inactive: false, debug: debugTries.join(' | ') };
+      
+      if (validPaths.has(htmlPath.toLowerCase())) {
+        const canonicalPath = validPaths.get(htmlPath.toLowerCase());
+        debugTries.push(`${normalized} (.md → .html) → ${canonicalPath} ✓`);
+        return { resolvedHref: canonicalPath + hash, inactive: false, debug: debugTries.join(' | ') };
       }
-      // Also check without extension (in case valid paths don't have .html suffix)
-      if (validPaths.has(pathWithoutMd)) {
-        const resolvedHref = absoluteHref.slice(0, -3) + '.html' + hash;
-        return { resolvedHref, inactive: false, debug: debugTries.join(' | ') };
+      // Also check without extension
+      if (validPaths.has(pathWithoutMd.toLowerCase())) {
+        const canonicalPath = validPaths.get(pathWithoutMd.toLowerCase());
+        debugTries.push(`${normalized} (.md → resolved) → ${canonicalPath} ✓`);
+        return { resolvedHref: canonicalPath + hash, inactive: false, debug: debugTries.join(' | ') };
       }
     }
     // Has extension but doesn't exist (or is not .md)
@@ -229,25 +239,23 @@ function resolveHref(href, validPaths, currentDocPath = null) {
   
   // No extension - try .html first
   const htmlPath = normalized + '.html';
-  debugTries.push(`${htmlPath} → ${validPaths.has(htmlPath) ? '✓' : '✗'}`);
-  if (validPaths.has(htmlPath)) {
-    // Construct the resolved href as absolute path with .html
-    const resolvedHref = absoluteHref + '.html' + hash;
-    return { resolvedHref, inactive: false, debug: debugTries.join(' | ') };
+  if (validPaths.has(htmlPath.toLowerCase())) {
+    const canonicalPath = validPaths.get(htmlPath.toLowerCase());
+    debugTries.push(`${htmlPath} → ${canonicalPath} ✓`);
+    return { resolvedHref: canonicalPath + hash, inactive: false, debug: debugTries.join(' | ') };
   }
+  debugTries.push(`${htmlPath} → ✗`);
   
   // Try /index.html
   const indexPath = normalized.endsWith('/') 
     ? normalized + 'index.html' 
     : normalized + '/index.html';
-  debugTries.push(`${indexPath} → ${validPaths.has(indexPath) ? '✓' : '✗'}`);
-  if (validPaths.has(indexPath)) {
-    // Construct the resolved href as absolute path with /index.html
-    const resolvedHref = (absoluteHref.endsWith('/') 
-      ? absoluteHref + 'index.html' 
-      : absoluteHref + '/index.html') + hash;
-    return { resolvedHref, inactive: false, debug: debugTries.join(' | ') };
+  if (validPaths.has(indexPath.toLowerCase())) {
+    const canonicalPath = validPaths.get(indexPath.toLowerCase());
+    debugTries.push(`${indexPath} → ${canonicalPath} ✓`);
+    return { resolvedHref: canonicalPath + hash, inactive: false, debug: debugTries.join(' | ') };
   }
+  debugTries.push(`${indexPath} → ✗`);
   
   // Neither exists - mark as inactive, keep absolute href
   return { resolvedHref: absoluteHref + hash, inactive: true, debug: debugTries.join(' | ') };
@@ -261,15 +269,16 @@ function resolveHref(href, validPaths, currentDocPath = null) {
  * 3. Marks broken links with the "inactive" class
  * 
  * @param {string} html - The HTML content
- * @param {Set<string>} validPaths - Set of valid internal paths
+ * @param {Map<string, string>} validPaths - Map of normalized paths to canonical resolved paths
  * @param {string} currentDocPath - The current document's URL path (e.g., "/character/index.html")
  * @param {boolean} includeDebug - Whether to include debug info in link text
  * @returns {string} Processed HTML with resolved links and inactive class on broken links
  */
 export function markInactiveLinks(html, validPaths, currentDocPath = '/', includeDebug = false) {
   // Match anchor tags with href attribute
-  // This regex captures: everything before href, the href value, everything after, and the link text
-  return html.replace(/<a\s+([^>]*?)href=["']([^"']+)["']([^>]*)>([^<]*)<\/a>/gi, (match, before, href, after, text) => {
+  // This regex captures: everything before href, the href value, everything after href, and the link content (including nested HTML)
+  // Using [\s\S]*? for content to match anything including newlines, non-greedy
+  return html.replace(/<a\s+([^>]*?)href=["']([^"']+)["']([^>]*)>([\s\S]*?)<\/a>/gi, (match, before, href, after, content) => {
     // Skip external links
     if (!isInternalLink(href)) {
       return match;
@@ -303,9 +312,9 @@ export function markInactiveLinks(html, validPaths, currentDocPath = '/', includ
       }
     }
     
-    // Add debug text if requested
-    const debugText = includeDebug ? ` [DEBUG: ${debug}]` : '';
+    // Add debug text if requested (only for plain text content)
+    const debugText = includeDebug && !content.includes('<') ? ` [DEBUG: ${debug}]` : '';
     
-    return `<a ${newBefore}href="${resolvedHref}"${newAfter}>${text}${debugText}</a>`;
+    return `<a ${newBefore}href="${resolvedHref}"${newAfter}>${content}${debugText}</a>`;
   });
 }

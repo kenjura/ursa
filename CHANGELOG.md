@@ -1,3 +1,9 @@
+# 0.57.0
+2025-12-26
+
+- added full-text indexing and search using lunr.js
+- all links in generated html will be full links with extensions (e.g. /folder/page.html)
+
 # 0.56.0
 2025-12-23
 

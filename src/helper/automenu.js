@@ -80,6 +80,9 @@ function getIcon(item, source, isHome = false) {
  *   - Try adding "/index.html" - if path exists, use it
  *   - Otherwise, mark as inactive
  * - Links with extensions are checked directly
+ * 
+ * @param {string} rawHref - The original href
+ * @param {Map<string, string>} validPaths - Map of normalized paths to canonical resolved paths
  */
 function resolveHref(rawHref, validPaths) {
   const debugTries = [];
@@ -93,39 +96,49 @@ function resolveHref(rawHref, validPaths) {
   
   // Root link
   if (rawHref === '/') {
-    const indexPath = '/index.html';
-    const exists = validPaths.has(normalize(indexPath));
-    debugTries.push(`${indexPath} → ${exists ? '✓' : '✗'}`);
-    if (exists) {
-      return { href: '/index.html', inactive: false, debug: debugTries.join(' | ') };
+    const normalized = normalize('/');
+    if (validPaths.has(normalized)) {
+      const canonicalPath = validPaths.get(normalized);
+      debugTries.push(`/ → ${canonicalPath} ✓`);
+      return { href: canonicalPath, inactive: false, debug: debugTries.join(' | ') };
     }
+    debugTries.push(`/ → ✗`);
     return { href: '/', inactive: true, debug: debugTries.join(' | ') };
+  }
+  
+  // Check if the path exists in validPaths - use canonical resolved path
+  const normalized = normalize(rawHref);
+  if (validPaths.has(normalized)) {
+    const canonicalPath = validPaths.get(normalized);
+    debugTries.push(`${rawHref} → ${canonicalPath} ✓`);
+    return { href: canonicalPath, inactive: false, debug: debugTries.join(' | ') };
   }
   
   // Check if the link already has an extension
   const ext = extname(rawHref);
   if (ext) {
-    // Has extension - check if path exists
-    const exists = validPaths.has(normalize(rawHref));
-    debugTries.push(`${rawHref} → ${exists ? '✓' : '✗'}`);
-    return { href: rawHref, inactive: !exists, debug: debugTries.join(' | ') };
+    // Has extension but doesn't exist in validPaths
+    debugTries.push(`${rawHref} → ✗`);
+    return { href: rawHref, inactive: true, debug: debugTries.join(' | ') };
   }
   
   // No extension - try .html first
   const htmlPath = rawHref + '.html';
-  const htmlExists = validPaths.has(normalize(htmlPath));
-  debugTries.push(`${htmlPath} → ${htmlExists ? '✓' : '✗'}`);
-  if (htmlExists) {
-    return { href: htmlPath, inactive: false, debug: debugTries.join(' | ') };
+  if (validPaths.has(normalize(htmlPath))) {
+    const canonicalPath = validPaths.get(normalize(htmlPath));
+    debugTries.push(`${htmlPath} → ${canonicalPath} ✓`);
+    return { href: canonicalPath, inactive: false, debug: debugTries.join(' | ') };
   }
+  debugTries.push(`${htmlPath} → ✗`);
   
   // Try /index.html
   const indexPath = rawHref + '/index.html';
-  const indexExists = validPaths.has(normalize(indexPath));
-  debugTries.push(`${indexPath} → ${indexExists ? '✓' : '✗'}`);
-  if (indexExists) {
-    return { href: indexPath, inactive: false, debug: debugTries.join(' | ') };
+  if (validPaths.has(normalize(indexPath))) {
+    const canonicalPath = validPaths.get(normalize(indexPath));
+    debugTries.push(`${indexPath} → ${canonicalPath} ✓`);
+    return { href: canonicalPath, inactive: false, debug: debugTries.join(' | ') };
   }
+  debugTries.push(`${indexPath} → ✗`);
   
   // Neither exists - mark as inactive, keep original href
   return { href: rawHref, inactive: true, debug: debugTries.join(' | ') };
