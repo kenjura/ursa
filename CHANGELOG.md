@@ -1,3 +1,8 @@
+# 0.58.0
+2025-12-26
+
+- new menu UI with 2-pane horizontal layout
+
 # 0.57.0
 2025-12-26
 

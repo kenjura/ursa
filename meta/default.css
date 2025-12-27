@@ -225,9 +225,9 @@ nav#nav-main {
   left: 0;
   width: 260px;
   max-height: calc(100vh - var(--global-nav-height));
-  overflow-y: auto;
-  padding: 0.5rem 0;
-  font-size: 0.9rem;
+  overflow: hidden;
+  padding: 0;
+  font-size: 0.85rem;
   transition: transform 0.2s ease;
 }
 
@@ -243,114 +243,88 @@ body:has(nav#nav-main.collapsed) article#main-content {
 }
 
 nav#nav-main {
-
-  /* Scrollbar styling */
-  &::-webkit-scrollbar {
-    width: 6px;
+  /* Column-based menu styles */
+  
+  .menu-loading {
+    padding: 1rem;
+    opacity: 0.6;
+    text-align: center;
   }
-  &::-webkit-scrollbar-track {
-    background: transparent;
-  }
-  &::-webkit-scrollbar-thumb {
-    background: rgba(128, 128, 128, 0.3);
-    border-radius: 3px;
-  }
-  &::-webkit-scrollbar-thumb:hover {
-    background: rgba(128, 128, 128, 0.5);
-  }
-
-  /* Breadcrumb navigation header */
-  .menu-breadcrumb {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 0.5rem 1rem;
-    margin: 0 8px 0.5rem 8px;
-    border-bottom: 1px solid rgba(128, 128, 128, 0.2);
-  }
-
-  .menu-breadcrumb button {
-    background: none;
-    border: none;
-    color: var(--text-color);
-    cursor: pointer;
-    padding: 4px 8px;
-    border-radius: 4px;
-    font-size: 1rem;
-    opacity: 0.7;
-    transition: all 0.2s ease;
-  }
-
-  .menu-breadcrumb button:hover {
-    opacity: 1;
-    background: rgba(128, 128, 128, 0.2);
-  }
-
-  .menu-current-path {
-    flex: 1;
-    font-weight: 500;
-    opacity: 0.9;
-    text-transform: capitalize;
-    white-space: nowrap;
+  
+  /* Container that clips the columns */
+  .menu-columns-container {
+    width: 100%;
+    height: calc(100vh - var(--global-nav-height) - 40px);
     overflow: hidden;
-    text-overflow: ellipsis;
+    position: relative;
   }
-
-  /* Root ul */
-  ul.menu-level {
+  
+  /* Wrapper that holds all columns and transforms for scrolling */
+  .menu-columns-wrapper {
+    display: flex;
+    height: 100%;
+    transition: transform 0.25s ease-out;
+  }
+  
+  /* Individual column */
+  .menu-column {
+    width: 130px;
+    min-width: 130px;
+    height: 100%;
+    overflow-y: auto;
+    overflow-x: hidden;
+    border-right: 1px solid rgba(128, 128, 128, 0.15);
+    
+    /* Scrollbar styling */
+    &::-webkit-scrollbar {
+      width: 4px;
+    }
+    &::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    &::-webkit-scrollbar-thumb {
+      background: rgba(128, 128, 128, 0.2);
+      border-radius: 2px;
+    }
+    &::-webkit-scrollbar-thumb:hover {
+      background: rgba(128, 128, 128, 0.4);
+    }
+  }
+  
+  .menu-column:last-child {
+    border-right: none;
+  }
+  
+  /* Column list */
+  .menu-column-list {
     list-style: none;
     margin: 0;
-    padding: 0;
+    padding: 4px 0;
   }
-
-  ul {
-    list-style: none;
+  
+  /* Column item */
+  .menu-column-item {
     margin: 0;
     padding: 0;
   }
-
-  li {
-    margin: 0;
-    padding: 0;
-  }
-
-  /* Menu item row container - cleaner style like reference */
-  .menu-item-row {
+  
+  .menu-column-item-row {
     display: flex;
     align-items: center;
-    padding: 0.5rem 0.75rem;
-    margin: 2px 8px;
-    border-radius: 6px;
+    padding: 6px 8px;
+    margin: 1px 4px;
+    border-radius: 4px;
     cursor: pointer;
-    transition: all 0.15s ease;
-    gap: 10px;
+    transition: background-color 0.15s ease;
+    gap: 4px;
   }
-
-  .menu-item-row:hover {
-    background-color: rgba(128, 128, 128, 0.1);
+  
+  .menu-column-item-row:hover {
+    background-color: rgba(128, 128, 128, 0.15);
   }
-
-  /* Icon container */
-  .menu-icon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 20px;
-    height: 20px;
-    flex-shrink: 0;
-    font-size: 16px;
-    opacity: 0.7;
-  }
-
-  .menu-icon img {
-    width: 18px;
-    height: 18px;
-    object-fit: contain;
-    border-radius: 3px;
-  }
-
-  /* Menu link */
-  .menu-label {
+  
+  /* Label styling */
+  .menu-column-label {
     flex: 1;
     text-decoration: none;
     color: var(--text-color);
@@ -359,89 +333,105 @@ nav#nav-main {
     overflow: hidden;
     text-overflow: ellipsis;
     font-weight: 400;
-    line-height: 1.4;
+    line-height: 1.3;
     text-transform: capitalize;
+    font-size: 0.8rem;
   }
-
-  .menu-item-row:hover .menu-label {
+  
+  .menu-column-item-row:hover .menu-column-label {
     opacity: 1;
   }
-
-  /* More indicator for items with children */
-  .menu-more {
-    opacity: 0.4;
-    font-size: 14px;
-    padding: 0 4px;
-    cursor: pointer;
-    transition: opacity 0.15s ease;
-  }
-
-  .menu-item-row:hover .menu-more {
-    opacity: 0.7;
-  }
-
-  .menu-more:hover {
-    opacity: 1 !important;
-  }
-
-  /* Caret indicator for level-1 expandable items */
-  .menu-caret {
+  
+  /* Arrow for folders */
+  .menu-column-arrow {
     opacity: 0.4;
     font-size: 12px;
-    padding: 0 4px;
-    cursor: pointer;
-    transition: opacity 0.15s ease;
-    font-weight: bold;
+    flex-shrink: 0;
   }
-
-  .menu-item-row:hover .menu-caret {
-    opacity: 0.7;
+  
+  .menu-column-item.has-children .menu-column-item-row:hover .menu-column-arrow {
+    opacity: 0.8;
   }
-
-  .menu-caret:hover {
-    opacity: 1 !important;
+  
+  /* Selected item (on path to current doc) */
+  .menu-column-item.selected > .menu-column-item-row {
+    background-color: rgba(128, 128, 128, 0.2);
   }
-
-  /* Current/active item */
-  .current-menu-item > .menu-item-row {
-    background-color: rgba(0, 255, 255, 0.15);
-  }
-
-  .current-menu-item > .menu-item-row .menu-label {
-    opacity: 1;
+  
+  .menu-column-item.selected > .menu-column-item-row .menu-column-label {
     font-weight: 500;
+    opacity: 1;
   }
-
-  /* Level 1 items - main folder entries */
-  .menu-item.level-1 > .menu-item-row {
-    font-size: 0.9rem;
+  
+  /* Current page item */
+  .menu-column-item.current-page > .menu-column-item-row {
+    background-color: rgba(0, 255, 255, 0.2);
   }
-
-  .menu-item.level-1.has-children > .menu-item-row {
-    margin-top: 0.25rem;
+  
+  .menu-column-item.current-page > .menu-column-item-row .menu-column-label {
+    font-weight: 600;
+    opacity: 1;
   }
-
-  /* Sublevel container - always visible for 2-level nav */
-  .menu-sublevel {
-    margin-left: 0;
-    padding-left: 0;
+  
+  /* Scroll buttons */
+  .menu-scroll-btn {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 24px;
+    height: 48px;
+    background: rgba(0, 0, 0, 0.4);
+    border: none;
+    color: var(--text-color);
+    font-size: 18px;
+    cursor: pointer;
+    z-index: 10;
+    border-radius: 4px;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
-
-  /* Level 2 items - nested under folders */
-  .menu-item.level-2 > .menu-item-row {
-    padding-left: 2.5rem;
-    font-size: 0.85rem;
+  
+  .menu-scroll-btn:hover:not(:disabled) {
+    background: rgba(0, 0, 0, 0.6);
   }
-
-  .menu-item.level-2 > .menu-item-row .menu-icon {
-    display: none;
+  
+  .menu-scroll-btn:disabled {
+    cursor: default;
   }
-
-  /* Separator between sections */
-  .menu-item.level-1.has-children + .menu-item.level-1:not(.has-children) {
-    margin-top: 0.5rem;
-    padding-top: 0.5rem;
-    border-top: 1px solid rgba(128, 128, 128, 0.15);
+  
+  .menu-scroll-btn.scroll-left {
+    left: 2px;
+  }
+  
+  .menu-scroll-btn.scroll-right {
+    right: 2px;
+  }
+  
+  /* Scroll indicator for current doc */
+  .menu-scroll-indicator {
+    position: absolute;
+    bottom: 8px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10;
+  }
+  
+  .menu-scroll-indicator .scroll-to-current {
+    background: rgba(0, 255, 255, 0.3);
+    border: 1px solid rgba(0, 255, 255, 0.5);
+    color: var(--text-color);
+    padding: 4px 12px;
+    border-radius: 12px;
+    font-size: 0.75rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+  }
+  
+  .menu-scroll-indicator .scroll-to-current:hover {
+    background: rgba(0, 255, 255, 0.5);
   }
 }
 
