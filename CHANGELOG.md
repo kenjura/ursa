@@ -1,3 +1,8 @@
+# 0.59.0
+2026-01-01
+
+- added frontmatter rendering
+
 # 0.58.0
 2025-12-26
 

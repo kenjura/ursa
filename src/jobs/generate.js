@@ -8,6 +8,7 @@ import {
   extractMetadata,
   extractRawMetadata,
 } from "../helper/metadataExtractor.js";
+import { injectFrontmatterTable } from "../helper/frontmatterTable.js";
 import {
   hashContent,
   loadHashCache,
@@ -307,12 +308,17 @@ export async function generate({
       // Calculate the document's URL path (e.g., "/character/index.html")
       const docUrlPath = '/' + dir + base + '.html';
 
-      const body = renderFile({
+      let body = renderFile({
         fileContents: rawBody,
         type,
         dirname: dir,
         basename: base,
       });
+
+      // Inject frontmatter table after first H1 (for markdown files with metadata)
+      if (type === '.md' && fileMeta) {
+        body = injectFrontmatterTable(body, fileMeta);
+      }
 
       // Find nearest style.css or _style.css up the tree and copy to output
       // Use cache to avoid repeated filesystem walks for same directory
