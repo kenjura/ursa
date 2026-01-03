@@ -1,7 +1,9 @@
 import dirTree from "directory-tree";
 import { extname, basename, join, dirname } from "path";
-import { existsSync } from "fs";
+import { existsSync, readFileSync } from "fs";
 import { getFolderConfig, isFolderHidden, getRootConfig } from "./folderConfig.js";
+import { extractMetadata, isMetadataOnly } from "./metadataExtractor.js";
+import { stripHtml } from "./stripHtml.js";
 
 // Icon extensions to check for custom icons
 const ICON_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.ico'];
@@ -19,6 +21,92 @@ function toDisplayName(filename) {
   return filename
     .replace(/[-_]/g, ' ')  // Replace dashes and underscores with spaces
     .replace(/\b\w/g, c => c.toUpperCase());  // Capitalize first letter of each word
+}
+
+/**
+ * Get the menu label from a file's frontmatter
+ * @param {string} filePath - Path to the markdown file
+ * @returns {string|null} The menu-label value (with HTML stripped), or null if not found
+ */
+function getMenuLabelFromFile(filePath) {
+  try {
+    if (!existsSync(filePath)) return null;
+    const content = readFileSync(filePath, 'utf8');
+    const metadata = extractMetadata(content);
+    if (metadata && metadata['menu-label']) {
+      return stripHtml(String(metadata['menu-label']));
+    }
+  } catch (e) {
+    // Ignore read errors
+  }
+  return null;
+}
+
+/**
+ * Get the menu-sort-as value from a file's frontmatter
+ * @param {string} filePath - Path to the markdown file
+ * @returns {string|null} The menu-sort-as value (with HTML stripped), or null if not found
+ */
+function getMenuSortAsFromFile(filePath) {
+  try {
+    if (!existsSync(filePath)) return null;
+    const content = readFileSync(filePath, 'utf8');
+    const metadata = extractMetadata(content);
+    if (metadata && metadata['menu-sort-as']) {
+      return stripHtml(String(metadata['menu-sort-as']));
+    }
+  } catch (e) {
+    // Ignore read errors
+  }
+  return null;
+}
+
+/**
+ * Get the menu label for a folder from its index.md frontmatter
+ * Falls back to config.json label (deprecated), then display name
+ * @param {string} dirPath - Path to the folder
+ * @param {object|null} folderConfig - The folder's config.json if any
+ * @param {string} baseName - The folder's base name
+ * @returns {string} The label to display
+ */
+function getFolderLabel(dirPath, folderConfig, baseName) {
+  // First, check index.md for menu-label (preferred method)
+  for (const ext of INDEX_EXTENSIONS) {
+    const indexPath = join(dirPath, `index${ext}`);
+    const label = getMenuLabelFromFile(indexPath);
+    if (label) return label;
+  }
+  
+  // Fall back to config.json label (deprecated)
+  if (folderConfig?.label) {
+    return folderConfig.label;
+  }
+  
+  // Default to display name from folder name
+  return toDisplayName(baseName);
+}
+
+/**
+ * Get the sort key for a folder from its index.md frontmatter
+ * @param {string} dirPath - Path to the folder
+ * @returns {string|null} The menu-sort-as value, or null if not found
+ */
+function getFolderSortKey(dirPath) {
+  for (const ext of INDEX_EXTENSIONS) {
+    const indexPath = join(dirPath, `index${ext}`);
+    const sortKey = getMenuSortAsFromFile(indexPath);
+    if (sortKey) return sortKey;
+  }
+  return null;
+}
+
+/**
+ * Check if a file is an index file
+ * @param {string} baseName - The file's base name (without extension)
+ * @returns {boolean} True if this is an index file
+ */
+function isIndexFile(baseName) {
+  return baseName.toLowerCase() === 'index';
 }
 
 function hasIndexFile(dirPath) {
@@ -165,14 +253,45 @@ function buildMenuData(tree, source, validPaths, parentPath = '', includeDebug =
       continue;
     }
     
+    // Skip metadata-only index files (they only provide folder metadata, not actual pages)
+    if (!hasChildren && isIndexFile(baseName)) {
+      try {
+        const content = readFileSync(item.path, 'utf8');
+        if (isMetadataOnly(content)) {
+          continue; // Skip - this file doesn't produce a page
+        }
+      } catch (e) {
+        // If we can't read it, include it in the menu
+      }
+    }
+    
     // Check if this folder is hidden via config.json
     if (hasChildren && isFolderHidden(item.path, source)) {
       continue; // Skip hidden folders
     }
     
-    // Get folder config for custom label and icon
+    // Get folder config for custom label and icon (deprecated for labels, still used for icons/hidden)
     const folderConfig = hasChildren ? getFolderConfig(item.path) : null;
-    const label = folderConfig?.label || toDisplayName(baseName);
+    
+    // Determine the label - prefer menu-label from frontmatter
+    let label;
+    let sortKey;
+    const isIndex = !hasChildren && isIndexFile(baseName);
+    
+    if (hasChildren) {
+      // For folders, get label from index.md frontmatter, then config.json, then folder name
+      label = getFolderLabel(item.path, folderConfig, baseName);
+      // Get sort key from folder's index.md, fall back to baseName (not transformed label)
+      sortKey = getFolderSortKey(item.path) || baseName;
+    } else {
+      // For files, check frontmatter for menu-label
+      const fileLabel = getMenuLabelFromFile(item.path);
+      label = fileLabel || toDisplayName(baseName);
+      // Get sort key from file's frontmatter, fall back to baseName (not transformed label)
+      // This ensures menu-sort-as values can match original filenames consistently
+      const fileSortKey = getMenuSortAsFromFile(item.path);
+      sortKey = fileSortKey || baseName;
+    }
     
     let rawHref = null;
     let href = null;
@@ -204,10 +323,12 @@ function buildMenuData(tree, source, validPaths, parentPath = '', includeDebug =
     
     const menuItem = {
       label,
+      sortKey, // Used for sorting (menu-sort-as or label)
       path: folderPath,
       href,
       hasChildren,
       icon,
+      isIndex, // Mark index files for special styling and sorting
     };
     
     // Only include debug and inactive fields if requested (for smaller JSON)
@@ -226,11 +347,17 @@ function buildMenuData(tree, source, validPaths, parentPath = '', includeDebug =
     items.push(menuItem);
   }
   
+  // Sort: folders first, then index files, then alphabetically by sortKey
   return items.sort((a, b) => {
+    // Folders always come first
     if (a.hasChildren && !b.hasChildren) return -1;
     if (b.hasChildren && !a.hasChildren) return 1;
-    if (a.label > b.label) return 1;
-    if (a.label < b.label) return -1;
+    // Index files come before other files (after folders)
+    if (a.isIndex && !b.isIndex) return -1;
+    if (b.isIndex && !a.isIndex) return 1;
+    // Alphabetical sort by sortKey (menu-sort-as or label)
+    if (a.sortKey > b.sortKey) return 1;
+    if (a.sortKey < b.sortKey) return -1;
     return 0;
   });
 }
@@ -280,13 +407,14 @@ function renderMenuLevel(items, level) {
     const hasChildrenClass = item.hasChildren ? ' has-children' : '';
     const hasChildrenIndicator = item.hasChildren ? '<span class="menu-more">⋯</span>' : '';
     const inactiveClass = item.inactive ? ' inactive' : '';
+    const isIndexClass = item.isIndex ? ' is-index' : '';
     
     const labelHtml = item.href
       ? `<a href="${item.href}" class="menu-label${inactiveClass}">${item.label}</a>`
       : `<span class="menu-label">${item.label}</span>`;
     
     return `
-<li class="menu-item${hasChildrenClass}" data-path="${item.path}">
+<li class="menu-item${hasChildrenClass}${isIndexClass}" data-path="${item.path}">
   <div class="menu-item-row">
     ${item.icon}
     ${labelHtml}

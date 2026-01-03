@@ -263,6 +263,7 @@ nav#nav-main {
   .menu-columns-wrapper {
     display: flex;
     height: 100%;
+    min-height: 0; /* Allow flex children to shrink */
     transition: transform 0.25s ease-out;
   }
   
@@ -270,7 +271,9 @@ nav#nav-main {
   .menu-column {
     width: 130px;
     min-width: 130px;
+    flex-shrink: 0;
     height: 100%;
+    min-height: 0; /* Allow flex child to shrink and enable scrolling */
     overflow-y: auto;
     overflow-x: hidden;
     border-right: 1px solid rgba(128, 128, 128, 0.15);
@@ -371,6 +374,18 @@ nav#nav-main {
   .menu-column-item.current-page > .menu-column-item-row .menu-column-label {
     font-weight: 600;
     opacity: 1;
+  }
+  
+  /* Index file styling - appears at top of menu with subtle emphasis */
+  .menu-column-item.is-index > .menu-column-item-row {
+    border-bottom: 1px solid rgba(128, 128, 128, 0.15);
+    margin-bottom: 4px;
+    padding-bottom: 8px;
+  }
+  
+  .menu-column-item.is-index > .menu-column-item-row .menu-column-label {
+    font-weight: 500;
+    opacity: 0.95;
   }
   
   /* Scroll buttons */

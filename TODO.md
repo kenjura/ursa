@@ -1,3 +1,9 @@
+# 0.60.0
+
+- [ ] Change the way index.md is positioned in the menu
+- [ ] Markdown files can specify menu-label in the frontmatter to override their menu label
+- [ ] Folder index.md files can specify menu-label in the frontmatter to override their menu label
+
 # 0.57.0
 
 - [x] All links in generated html will be full links with extensions (e.g. /folder/page.html)

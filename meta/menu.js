@@ -227,6 +227,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     li.classList.add('has-children');
                 }
                 
+                // Check if this is an index file
+                if (item.isIndex) {
+                    li.classList.add('is-index');
+                }
+                
                 // Create the item content
                 const row = document.createElement('div');
                 row.className = 'menu-column-item-row';
@@ -396,8 +401,15 @@ document.addEventListener('DOMContentLoaded', () => {
         let scrollTimeout = null;
         
         container.addEventListener('wheel', (e) => {
-            // Handle both horizontal and vertical scroll (convert vertical to horizontal for menu)
-            const delta = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+            // Only handle horizontal scroll - let vertical scroll work normally for column scrolling
+            const isHorizontalScroll = Math.abs(e.deltaX) > Math.abs(e.deltaY);
+            
+            if (!isHorizontalScroll) {
+                // Allow vertical scrolling within columns
+                return;
+            }
+            
+            const delta = e.deltaX;
             
             if (Math.abs(delta) > 0) {
                 e.preventDefault();

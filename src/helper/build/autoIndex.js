@@ -1,11 +1,12 @@
 // Auto-index generation helpers for build
-import { existsSync } from "fs";
+import { existsSync, readFileSync } from "fs";
 import { readdir, readFile } from "fs/promises";
 import { basename, dirname, extname, join } from "path";
 import { outputFile } from "fs-extra";
 import { findStyleCss } from "../findStyleCss.js";
 import { toTitleCase } from "./titleCase.js";
 import { addTimestampToHtmlStaticRefs } from "./cacheBust.js";
+import { isMetadataOnly } from "../metadataExtractor.js";
 
 /**
  * Generate automatic index.html files for folders that don't have one
@@ -30,10 +31,23 @@ export async function generateAutoIndices(output, directories, source, templates
   const outputNorm = output.replace(/\/+$/, '');
   
   // Build set of directories that already have an index.html from a source index.md/txt/yml
+  // Exclude metadata-only index files - they should still get auto-generated indices
   const dirsWithSourceIndex = new Set();
   for (const articlePath of generatedArticles) {
     const base = basename(articlePath, extname(articlePath));
     if (base === 'index') {
+      // Check if this is a metadata-only index file
+      try {
+        if (existsSync(articlePath)) {
+          const content = readFileSync(articlePath, 'utf8');
+          if (isMetadataOnly(content)) {
+            // Skip - this folder should still get an auto-index
+            continue;
+          }
+        }
+      } catch (e) {
+        // If we can't read it, assume it has content
+      }
       const dir = dirname(articlePath);
       const outputDir = dir.replace(sourceNorm, outputNorm);
       dirsWithSourceIndex.add(outputDir);

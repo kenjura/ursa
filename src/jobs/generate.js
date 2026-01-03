@@ -7,6 +7,7 @@ import { isFolderHidden, clearConfigCache } from "../helper/folderConfig.js";
 import {
   extractMetadata,
   extractRawMetadata,
+  isMetadataOnly,
 } from "../helper/metadataExtractor.js";
 import { injectFrontmatterTable } from "../helper/frontmatterTable.js";
 import {
@@ -276,6 +277,14 @@ export async function generate({
       const outputHtmlRelative = relativePath.startsWith('/') ? relativePath.slice(1) : relativePath;
       if (existingHtmlFiles.has(outputHtmlRelative)) {
         progress.log(`⚠️  Warning: Skipping ${shortFile} - would overwrite existing ${outputHtmlRelative} in source`);
+        skippedCount++;
+        return;
+      }
+
+      // Skip metadata-only index files - they exist only to provide folder metadata
+      // The auto-index system will generate the actual index.html for these folders
+      if (base === 'index' && type === '.md' && isMetadataOnly(rawBody)) {
+        progress.log(`ℹ️  Skipping metadata-only ${shortFile} - auto-index will generate listing`);
         skippedCount++;
         return;
       }

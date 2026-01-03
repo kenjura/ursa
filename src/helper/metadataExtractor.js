@@ -18,6 +18,25 @@ export function extractRawMetadata(rawBody) {
   return frontMatter;
 }
 
+/**
+ * Check if a markdown file is "metadata-only" - has frontmatter but no meaningful content
+ * Such files are used only to provide metadata (like menu-label) for folders
+ * @param {string} rawBody - The raw file content
+ * @returns {boolean} True if the file has only frontmatter and no other content
+ */
+export function isMetadataOnly(rawBody) {
+  if (!rawBody) return false;
+  
+  const frontMatter = matchAllFrontMatter(rawBody);
+  if (!frontMatter) return false;
+  
+  // Get content after frontmatter
+  const contentAfter = rawBody.slice(frontMatter.length).trim();
+  
+  // Consider the file metadata-only if there's no content after frontmatter
+  return contentAfter.length === 0;
+}
+
 function matchFrontMatter(str) {
   // Only match YAML front matter at the start of the file
   // Must have --- at line start, content, then closing --- also at line start

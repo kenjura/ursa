@@ -1,3 +1,13 @@
+# 0.60.0
+2026-01-03
+
+- added `menu-label` frontmatter field to override default menu labels
+- added `menu-sort-as` frontmatter field for custom sort ordering
+- metadata-only index.md files now trigger auto-index generation
+- index files sorted to top of menu panes with distinct styling
+- fixed menu column vertical scrolling
+- excluded Ursa-internal fields from frontmatter table display
+
 # 0.59.0
 2026-01-01
 
