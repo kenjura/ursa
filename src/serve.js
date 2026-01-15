@@ -2,10 +2,11 @@ import express from "express";
 import compression from "compression";
 import watch from "node-watch";
 import { generate, regenerateSingleFile, clearWatchCache } from "./jobs/generate.js";
-import { join, resolve, dirname } from "path";
+import { join, resolve, dirname, basename } from "path";
 import fs from "fs";
 import { promises } from "fs";
 import { outputFile } from "fs-extra";
+import { processImage } from "./helper/imageProcessor.js";
 const { readdir, mkdir, readFile, copyFile } = promises;
 
 // Debounce timer and lock for preventing concurrent regenerations
@@ -36,9 +37,12 @@ async function copyCssFile(cssPath, sourceDir, outputDir) {
 
 // Static file extensions that should be copied (images, fonts, etc.)
 const STATIC_FILE_EXTENSIONS = /\.(jpg|jpeg|png|gif|webp|svg|ico|woff|woff2|ttf|eot|pdf|mp3|mp4|webm|ogg)$/i;
+// Image extensions that get preview processing
+const IMAGE_EXTENSIONS = /\.(jpg|jpeg|png|gif|webp|svg|ico)$/i;
 
 /**
  * Copy a single static file to the output directory
+ * For images, also generates a preview version
  * @param {string} filePath - Absolute path to the static file
  * @param {string} sourceDir - Source directory root
  * @param {string} outputDir - Output directory root
@@ -46,13 +50,23 @@ const STATIC_FILE_EXTENSIONS = /\.(jpg|jpeg|png|gif|webp|svg|ico|woff|woff2|ttf|
 async function copyStaticFile(filePath, sourceDir, outputDir) {
   const startTime = Date.now();
   const relativePath = filePath.replace(sourceDir, '');
-  const outputPath = join(outputDir, relativePath);
+  const relativeDir = dirname(relativePath);
+  const absoluteOutputDir = join(outputDir, relativeDir);
   
   try {
-    // Ensure directory exists
-    await mkdir(dirname(outputPath), { recursive: true });
+    // Check if this is an image that needs preview processing
+    if (IMAGE_EXTENSIONS.test(filePath)) {
+      const result = await processImage(filePath, absoluteOutputDir, relativeDir);
+      const elapsed = Date.now() - startTime;
+      if (result && result.preview !== result.original) {
+        return { success: true, message: `Processed ${relativePath} with preview in ${elapsed}ms` };
+      }
+      return { success: true, message: `Copied ${relativePath} in ${elapsed}ms` };
+    }
     
-    // Copy the file
+    // For non-image files, just copy
+    const outputPath = join(outputDir, relativePath);
+    await mkdir(dirname(outputPath), { recursive: true });
     await copyFile(filePath, outputPath);
     const elapsed = Date.now() - startTime;
     return { success: true, message: `Copied ${relativePath} in ${elapsed}ms` };

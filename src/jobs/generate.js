@@ -33,6 +33,7 @@ import o2x from "object-to-xml";
 import { existsSync } from "fs";
 import { fileExists } from "../helper/fileExists.js";
 import { createWhitelistFilter } from "../helper/whitelistFilter.js";
+import { processAllImages, transformImageTags, clearImageCache } from "../helper/imageProcessor.js";
 
 // Import build helpers from organized modules
 import {
@@ -224,6 +225,24 @@ export async function generate({
   // Track CSS files that have been copied to avoid duplicates
   const copiedCssFiles = new Set();
 
+  // Process all images FIRST to build the preview image map
+  // This is done before articles so we can transform img tags in the HTML
+  const imageExtensions = /\.(jpg|jpeg|png|gif|webp|svg|ico)/;
+  const allSourceFilenamesThatAreImages = allSourceFilenames.filter(
+    (filename) => filename.match(imageExtensions) && !filename.match(hiddenOrSystemDirs)
+  );
+  
+  progress.log(`Processing ${allSourceFilenamesThatAreImages.length} images for preview generation...`);
+  const imageMap = await processAllImages(
+    allSourceFilenamesThatAreImages,
+    source,
+    output,
+    (current, total, path) => {
+      progress.status('Images', `${current}/${total} ${path}`);
+    }
+  );
+  progress.done('Images', `${allSourceFilenamesThatAreImages.length} done (${imageMap.size} with previews)`);
+
   // Track files that were regenerated (for incremental mode stats)
   let regeneratedCount = 0;
   let skippedCount = 0;
@@ -397,6 +416,9 @@ export async function generate({
       // Resolve links and mark broken internal links as inactive
       finalHtml = markInactiveLinks(finalHtml, validPaths, docUrlPath, false);
 
+      // Transform image tags to use preview images with data-fullsrc for originals
+      finalHtml = transformImageTags(finalHtml, imageMap, docUrlPath);
+
       // Add cache-busting timestamps to static file references
       finalHtml = addTimestampToHtmlStaticRefs(finalHtml, cacheBustTimestamp);
 
@@ -546,22 +568,19 @@ export async function generate({
   // Clear directory index cache to free memory before processing static files
   dirIndexCache.clear();
 
-  // copy all static files (images and existing HTML files) with batched concurrency
-  const imageExtensions = /\.(jpg|jpeg|png|gif|webp|svg|ico)/; // static asset extensions
-  const allSourceFilenamesThatAreImages = allSourceFilenames.filter(
-    (filename) => filename.match(imageExtensions)
-  );
+  // Copy static HTML files (images were already processed above with preview generation)
+  // Note: Images are processed before articles to enable preview transformation in HTML
   
   // Also copy existing HTML files from source to output (they're treated as static)
   const allSourceFilenamesThatAreHtml = allSourceFilenames.filter(
     (filename) => filename.match(/\.html$/) && !filename.match(hiddenOrSystemDirs)
   );
   
-  const allStaticFiles = [...allSourceFilenamesThatAreImages, ...allSourceFilenamesThatAreHtml];
+  const allStaticFiles = allSourceFilenamesThatAreHtml;
   const totalStatic = allStaticFiles.length;
   let processedStatic = 0;
   let copiedStatic = 0;
-  progress.log(`Processing ${totalStatic} static files (${allSourceFilenamesThatAreImages.length} images, ${allSourceFilenamesThatAreHtml.length} HTML)...`);
+  progress.log(`Processing ${totalStatic} static HTML files...`);
   await processBatched(allStaticFiles, async (file) => {
     try {
       processedStatic++;
@@ -593,6 +612,8 @@ export async function generate({
         const docUrlPath = '/' + file.replace(source, '').replace(/^\//, '');
         // Resolve internal links to have proper .html extensions
         htmlContent = markInactiveLinks(htmlContent, validPaths, docUrlPath, false);
+        // Transform image tags to use preview images with data-fullsrc for originals
+        htmlContent = transformImageTags(htmlContent, imageMap, docUrlPath);
         // Add cache-busting timestamps
         htmlContent = addTimestampToHtmlStaticRefs(htmlContent, cacheBustTimestamp);
         await outputFile(outputFilename, htmlContent);
@@ -625,6 +646,7 @@ export async function generate({
   watchModeCache.meta = meta;
   watchModeCache.output = output;
   watchModeCache.hashCache = hashCache;
+  watchModeCache.imageMap = imageMap;
   watchModeCache.lastFullBuild = Date.now();
   watchModeCache.isInitialized = true;
   progress.log(`Watch cache initialized for fast single-file regeneration`);
@@ -701,7 +723,7 @@ export async function regenerateSingleFile(changedFile, {
   }
   
   try {
-    const { templates, menu, footer, validPaths, hashCache, cacheBustTimestamp } = watchModeCache;
+    const { templates, menu, footer, validPaths, hashCache, cacheBustTimestamp, imageMap } = watchModeCache;
     
     const rawBody = await readFile(changedFile, "utf8");
     const type = parse(changedFile).ext;
@@ -783,6 +805,11 @@ export async function regenerateSingleFile(changedFile, {
     
     // Mark broken links
     finalHtml = markInactiveLinks(finalHtml, validPaths, docUrlPath, false);
+    
+    // Transform image tags to use preview images with data-fullsrc for originals
+    if (imageMap) {
+      finalHtml = transformImageTags(finalHtml, imageMap, docUrlPath);
+    }
     
     // Add cache-busting timestamps to static file references
     finalHtml = addTimestampToHtmlStaticRefs(finalHtml, cacheBustTimestamp);
