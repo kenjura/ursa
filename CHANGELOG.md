@@ -1,3 +1,8 @@
+# 0.61.1
+2026-01-14
+
+- Fix: package-lock.json version mismatch
+
 # 0.61.0
 2026-01-14
 
