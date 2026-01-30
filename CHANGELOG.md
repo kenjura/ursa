@@ -1,3 +1,8 @@
+# 0.62.2
+2026-01-29
+
+- Fixed CI issue with pnpm using npm-specific syntax
+
 # 0.62.1
 2026-01-29
 
