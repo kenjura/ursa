@@ -216,6 +216,53 @@ your-project/
 └── output/          # Generated site (created automatically)
 ```
 
+## Auto-Index Generation
+
+Ursa automatically generates index pages for folders that don't have one. You can also explicitly control auto-index generation in your index documents using frontmatter:
+
+```yaml
+---
+title: My Section
+generate-auto-index: true
+auto-index-depth: 2
+auto-index-position: bottom
+---
+
+# Welcome to My Section
+
+This is the introduction to my section. The auto-generated file listing will appear below.
+```
+
+### Auto-Index Frontmatter Options
+
+| Property | Type | Default | Description |
+|----------|------|---------|-------------|
+| `generate-auto-index` | boolean | false | When true, generates an auto-index listing for this folder |
+| `auto-index-depth` | number | 1 | Recursion depth: 1 = current folder only, 2 = include subfolders, etc. |
+| `auto-index-position` | 'top' \| 'bottom' | 'top' | Where to insert the auto-index relative to document content |
+
+### Examples
+
+**Basic auto-index (top of page):**
+```yaml
+---
+generate-auto-index: true
+---
+```
+
+**Deep auto-index at bottom:**
+```yaml
+---
+generate-auto-index: true
+auto-index-depth: 3
+auto-index-position: bottom
+---
+
+# Section Overview
+
+Here's some content explaining this section...
+```
+
 ## Developing
 
 For development on ursa itself:

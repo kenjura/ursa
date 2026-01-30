@@ -37,6 +37,19 @@ export function isMetadataOnly(rawBody) {
   return contentAfter.length === 0;
 }
 
+/**
+ * Extract auto-index configuration from metadata
+ * @param {object} metadata - Parsed frontmatter metadata
+ * @returns {{enabled: boolean, depth: number, position: 'top'|'bottom'}} Auto-index configuration
+ */
+export function getAutoIndexConfig(metadata) {
+  return {
+    enabled: metadata?.['generate-auto-index'] === true,
+    depth: typeof metadata?.['auto-index-depth'] === 'number' ? metadata['auto-index-depth'] : 1,
+    position: metadata?.['auto-index-position'] === 'bottom' ? 'bottom' : 'top'
+  };
+}
+
 function matchFrontMatter(str) {
   // Only match YAML front matter at the start of the file
   // Must have --- at line start, content, then closing --- also at line start

@@ -6,7 +6,149 @@ import { outputFile } from "fs-extra";
 import { findStyleCss } from "../findStyleCss.js";
 import { toTitleCase } from "./titleCase.js";
 import { addTimestampToHtmlStaticRefs } from "./cacheBust.js";
-import { isMetadataOnly } from "../metadataExtractor.js";
+import { isMetadataOnly, extractMetadata, getAutoIndexConfig } from "../metadataExtractor.js";
+
+/**
+ * Generate auto-index HTML content for a directory from the OUTPUT folder
+ * (used by fallback auto-index generation after all files are generated)
+ * @param {string} dir - The directory path to generate index for (in output folder)
+ * @param {number} depth - How deep to recurse (1 = current level only, 2 = current + children, etc.)
+ * @param {number} [currentDepth=0] - Current recursion depth (internal use)
+ * @param {string} [pathPrefix=''] - Path prefix for generating correct hrefs (internal use)
+ * @returns {Promise<string>} HTML content for the auto-index
+ */
+export async function generateAutoIndexHtml(dir, depth = 1, currentDepth = 0, pathPrefix = '') {
+  try {
+    const children = await readdir(dir, { withFileTypes: true });
+    
+    // Filter to only include relevant files and folders
+    const filteredChildren = children
+      .filter(child => {
+        // Skip hidden files
+        if (child.name.startsWith('.')) return false;
+        // Skip index.html - we're generating it or it's the current page
+        if (child.name === 'index.html') return false;
+        // Skip img folders (contain images, not content)
+        if (child.isDirectory() && child.name === 'img') return false;
+        // Include directories and html files
+        return child.isDirectory() || child.name.endsWith('.html');
+      })
+      .sort((a, b) => {
+        // Directories first, then files, alphabetically within each group
+        if (a.isDirectory() && !b.isDirectory()) return -1;
+        if (!a.isDirectory() && b.isDirectory()) return 1;
+        return a.name.localeCompare(b.name);
+      });
+    
+    if (filteredChildren.length === 0) {
+      return '';
+    }
+    
+    const items = [];
+    
+    for (const child of filteredChildren) {
+      const isDir = child.isDirectory();
+      const name = isDir ? child.name : child.name.replace('.html', '');
+      // Use pathPrefix to ensure hrefs are correct relative to the document root
+      const childPath = pathPrefix ? `${pathPrefix}/${child.name}` : child.name;
+      const href = isDir ? `${childPath}/index.html` : (pathPrefix ? `${pathPrefix}/${child.name}` : child.name);
+      const displayName = toTitleCase(name);
+      const icon = isDir ? '📁' : '📄';
+      
+      let itemHtml = `<li>${icon} <a href="${href}">${displayName}</a>`;
+      
+      // If this is a directory and we need to go deeper, recurse
+      if (isDir && currentDepth + 1 < depth) {
+        const childDir = join(dir, child.name);
+        const childHtml = await generateAutoIndexHtml(childDir, depth, currentDepth + 1, childPath);
+        if (childHtml) {
+          itemHtml += `\n${childHtml}`;
+        }
+      }
+      
+      itemHtml += '</li>';
+      items.push(itemHtml);
+    }
+    
+    return `<ul class="auto-index depth-${currentDepth + 1}">\n${items.join('\n')}\n</ul>`;
+  } catch (e) {
+    console.error(`Error generating auto-index HTML for ${dir}: ${e.message}`);
+    return '';
+  }
+}
+
+/**
+ * Generate auto-index HTML content from the SOURCE folder
+ * (used for inline auto-index generation in index.md files with generate-auto-index: true)
+ * This version reads from source to avoid race conditions with concurrent file generation
+ * @param {string} sourceDir - The source directory path
+ * @param {number} depth - How deep to recurse (1 = current level only, 2 = current + children, etc.)
+ * @param {number} [currentDepth=0] - Current recursion depth (internal use)
+ * @param {string} [pathPrefix=''] - Path prefix for generating correct hrefs (internal use)
+ * @returns {Promise<string>} HTML content for the auto-index
+ */
+export async function generateAutoIndexHtmlFromSource(sourceDir, depth = 1, currentDepth = 0, pathPrefix = '') {
+  try {
+    const children = await readdir(sourceDir, { withFileTypes: true });
+    
+    // Filter to only include relevant files and folders
+    const filteredChildren = children
+      .filter(child => {
+        // Skip hidden files
+        if (child.name.startsWith('.')) return false;
+        // Skip index files (we're generating into the index)
+        if (child.name.match(/^index\.(md|txt|yml|html)$/i)) return false;
+        // Skip img folders (contain images, not content)
+        if (child.isDirectory() && child.name === 'img') return false;
+        // Include directories and article files (md, txt, yml, html)
+        return child.isDirectory() || child.name.match(/\.(md|txt|yml|html)$/i);
+      })
+      .sort((a, b) => {
+        // Directories first, then files, alphabetically within each group
+        if (a.isDirectory() && !b.isDirectory()) return -1;
+        if (!a.isDirectory() && b.isDirectory()) return 1;
+        return a.name.localeCompare(b.name);
+      });
+    
+    if (filteredChildren.length === 0) {
+      return '';
+    }
+    
+    const items = [];
+    
+    for (const child of filteredChildren) {
+      const isDir = child.isDirectory();
+      // Get name without extension for display
+      const ext = isDir ? '' : extname(child.name);
+      const nameWithoutExt = isDir ? child.name : basename(child.name, ext);
+      // Generate href - directories link to folder/index.html, files convert to .html
+      // Use pathPrefix to ensure hrefs are correct relative to the document root
+      const childPath = pathPrefix ? `${pathPrefix}/${child.name}` : child.name;
+      const href = isDir ? `${childPath}/index.html` : `${pathPrefix ? pathPrefix + '/' : ''}${nameWithoutExt}.html`;
+      const displayName = toTitleCase(nameWithoutExt);
+      const icon = isDir ? '📁' : '📄';
+      
+      let itemHtml = `<li>${icon} <a href="${href}">${displayName}</a>`;
+      
+      // If this is a directory and we need to go deeper, recurse
+      if (isDir && currentDepth + 1 < depth) {
+        const childDir = join(sourceDir, child.name);
+        const childHtml = await generateAutoIndexHtmlFromSource(childDir, depth, currentDepth + 1, childPath);
+        if (childHtml) {
+          itemHtml += `\n${childHtml}`;
+        }
+      }
+      
+      itemHtml += '</li>';
+      items.push(itemHtml);
+    }
+    
+    return `<ul class="auto-index depth-${currentDepth + 1}">\n${items.join('\n')}\n</ul>`;
+  } catch (e) {
+    console.error(`Error generating auto-index HTML for ${sourceDir}: ${e.message}`);
+    return '';
+  }
+}
 
 /**
  * Generate automatic index.html files for folders that don't have one

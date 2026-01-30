@@ -7,7 +7,91 @@ import fs from "fs";
 import { promises } from "fs";
 import { outputFile } from "fs-extra";
 import { processImage } from "./helper/imageProcessor.js";
+import { WebSocketServer } from "ws";
+import { createServer } from "http";
 const { readdir, mkdir, readFile, copyFile } = promises;
+
+// WebSocket server for hot reloading
+let wss = null;
+
+/**
+ * Broadcast a reload message to all connected clients
+ * @param {string} [changedFile] - Optional path of the changed file
+ */
+function broadcastReload(changedFile = null) {
+  if (!wss) return;
+  const message = JSON.stringify({ 
+    type: 'reload',
+    file: changedFile,
+    timestamp: Date.now()
+  });
+  wss.clients.forEach(client => {
+    if (client.readyState === 1) { // WebSocket.OPEN
+      client.send(message);
+    }
+  });
+  const clientCount = wss.clients.size;
+  if (clientCount > 0) {
+    console.log(`🔄 Hot reload: notified ${clientCount} browser${clientCount > 1 ? 's' : ''}`);
+  }
+}
+
+/**
+ * Generate the hot reload client script
+ * @param {number} wsPort - WebSocket server port
+ * @returns {string} JavaScript code to inject
+ */
+function getHotReloadScript(wsPort) {
+  return `
+<!-- Ursa Hot Reload -->
+<script>
+(function() {
+  const wsUrl = 'ws://' + window.location.hostname + ':${wsPort}';
+  let ws;
+  let reconnectAttempts = 0;
+  const maxReconnectAttempts = 10;
+  const reconnectDelay = 1000;
+
+  function connect() {
+    ws = new WebSocket(wsUrl);
+    
+    ws.onopen = function() {
+      console.log('[Ursa] Hot reload connected');
+      reconnectAttempts = 0;
+    };
+    
+    ws.onmessage = function(event) {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.type === 'reload') {
+          console.log('[Ursa] Reloading page...');
+          window.location.reload();
+        }
+      } catch (e) {
+        console.error('[Ursa] Hot reload error:', e);
+      }
+    };
+    
+    ws.onclose = function() {
+      if (reconnectAttempts < maxReconnectAttempts) {
+        reconnectAttempts++;
+        console.log('[Ursa] Hot reload disconnected, reconnecting... (' + reconnectAttempts + '/' + maxReconnectAttempts + ')');
+        setTimeout(connect, reconnectDelay);
+      } else {
+        console.log('[Ursa] Hot reload: max reconnect attempts reached');
+      }
+    };
+    
+    ws.onerror = function(error) {
+      console.error('[Ursa] Hot reload WebSocket error');
+    };
+  }
+  
+  connect();
+})();
+</script>
+`;
+}
 
 // Debounce timer and lock for preventing concurrent regenerations
 let debounceTimer = null;
@@ -98,12 +182,25 @@ export async function serve({
   serveFiles(outputDir, port);
   console.log(`🚀 Development server running at http://localhost:${port}`);
   console.log("📁 Serving files from:", outputDir);
-  console.log("⏳ Generating site in background...\n");
+  console.log("⏳ Generating site in background (deferred image processing)...\n");
 
-  // Initial generation (use _clean flag only for initial generation)
+  // Initial generation with deferred image processing for faster startup
   // This also initializes the watch cache for fast single-file updates
-  generate({ _source: sourceDir, _meta: metaDir, _output: outputDir, _whitelist, _exclude, _clean })
-    .then(() => console.log("\n✅ Initial generation complete. Fast single-file regeneration enabled.\n"))
+  generate({ _source: sourceDir, _meta: metaDir, _output: outputDir, _whitelist, _exclude, _clean, _deferImages: true })
+    .then(async (result) => {
+      console.log("\n✅ Initial HTML generation complete. Fast single-file regeneration enabled.");
+      console.log("   Note: Images may show as originals until preview generation completes.\n");
+      
+      // Wait for deferred image processing to complete
+      if (result && result.deferredImageProcessing) {
+        try {
+          await result.deferredImageProcessing;
+          console.log("\n✅ Image preview generation complete. Full site ready.\n");
+        } catch (error) {
+          console.error("Error during image processing:", error.message);
+        }
+      }
+    })
     .catch((error) => console.error("Error during initial generation:", error.message));
 
   // Watch for changes
@@ -118,8 +215,15 @@ export async function serve({
     console.log("Full rebuild required (meta files affect all pages)...");
     clearWatchCache(); // Clear cache since templates/CSS may have changed
     try {
-      await generate({ _source: sourceDir, _meta: metaDir, _output: outputDir, _whitelist, _exclude, _clean: true });
-      console.log("Regeneration complete.");
+      // Use deferred images for meta rebuilds too
+      const result = await generate({ _source: sourceDir, _meta: metaDir, _output: outputDir, _whitelist, _exclude, _clean: true, _deferImages: true });
+      console.log("HTML regeneration complete.");
+      broadcastReload(name);
+      if (result && result.deferredImageProcessing) {
+        result.deferredImageProcessing.then(() => {
+          console.log("Image preview generation complete.");
+        }).catch(e => console.error("Image processing error:", e.message));
+      }
     } catch (error) {
       console.error("Error during regeneration:", error.message);
     }
@@ -155,6 +259,7 @@ export async function serve({
         const result = await copyCssFile(name, sourceDir + '/', outputDir + '/');
         if (result.success) {
           console.log(`✅ ${result.message}`);
+          broadcastReload(name);
         } else {
           console.log(`⚠️ ${result.message}`);
         }
@@ -188,6 +293,7 @@ export async function serve({
           const result = await copyStaticFile(name, sourceDir + '/', outputDir + '/');
           if (result.success) {
             console.log(`✅ ${result.message}`);
+            broadcastReload(name);
           } else {
             console.log(`⚠️ ${result.message}`);
           }
@@ -208,6 +314,7 @@ export async function serve({
       try {
         await generate({ _source: sourceDir, _meta: metaDir, _output: outputDir, _whitelist, _exclude, _clean: true });
         console.log("Regeneration complete.");
+        broadcastReload(name);
       } catch (error) {
         console.error("Error during regeneration:", error.message);
       } finally {
@@ -230,6 +337,7 @@ export async function serve({
         
         if (result.success) {
           console.log(`✅ ${result.message}`);
+          broadcastReload(name);
           return;
         }
         
@@ -238,6 +346,7 @@ export async function serve({
         console.log("Falling back to full rebuild...");
         await generate({ _source: sourceDir, _meta: metaDir, _output: outputDir, _whitelist, _exclude });
         console.log("Regeneration complete.");
+        broadcastReload(name);
       } catch (error) {
         console.error("Error during regeneration:", error.message);
       } finally {
@@ -253,6 +362,7 @@ export async function serve({
     try {
       await generate({ _source: sourceDir, _meta: metaDir, _output: outputDir, _whitelist, _exclude });
       console.log("Regeneration complete.");
+      broadcastReload(name);
     } catch (error) {
       console.error("Error during regeneration:", error.message);
     } finally {
@@ -262,10 +372,14 @@ export async function serve({
 }
 
 /**
- * Start HTTP server to serve static files
+ * Start HTTP server to serve static files with hot reload support
+ * @param {string} outputDir - Directory to serve files from
+ * @param {number} port - HTTP server port
+ * @returns {object} Object containing httpServer and wsPort
  */
 function serveFiles(outputDir, port = 8080) {
   const app = express();
+  const wsPort = port + 1; // WebSocket on port+1
 
   // Enable gzip compression for all responses
   // This significantly reduces transfer size for JSON and HTML files
@@ -276,49 +390,83 @@ function serveFiles(outputDir, port = 8080) {
     level: 6
   }));
 
+  // Middleware to inject hot reload script into HTML responses
+  app.use(async (req, res, next) => {
+    // Only intercept HTML requests
+    const url = req.url;
+    const isHtmlRequest = url.endsWith('.html') || 
+                          url.endsWith('/') || 
+                          !url.includes('.') ||
+                          url === '/';
+    
+    if (!isHtmlRequest) {
+      return next();
+    }
+    
+    // Determine the file path
+    let filePath;
+    if (url === '/' || url.endsWith('/')) {
+      filePath = join(outputDir, url, 'index.html');
+    } else if (url.endsWith('.html')) {
+      filePath = join(outputDir, url);
+    } else {
+      // Try adding .html extension
+      filePath = join(outputDir, url + '.html');
+      if (!fs.existsSync(filePath)) {
+        filePath = join(outputDir, url, 'index.html');
+      }
+    }
+    
+    try {
+      if (fs.existsSync(filePath)) {
+        let html = await readFile(filePath, 'utf8');
+        // Inject hot reload script before </body>
+        const hotReloadScript = getHotReloadScript(wsPort);
+        if (html.includes('</body>')) {
+          html = html.replace('</body>', hotReloadScript + '</body>');
+        } else {
+          html += hotReloadScript;
+        }
+        res.setHeader('Content-Type', 'text/html');
+        res.send(html);
+      } else {
+        next();
+      }
+    } catch (error) {
+      next();
+    }
+  });
+
+  // Fallback static file serving for non-HTML files
   app.use(
     express.static(outputDir, { extensions: ["html"], index: "index.html" })
   );
 
-  app.get("/", async (req, res) => {
-    try {
-      console.log({ output: outputDir });
-      const dir = await readdir(outputDir);
-      const html = `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <title>Ursa Development Server</title>
-          <style>
-            body { font-family: Arial, sans-serif; margin: 40px; }
-            h1 { color: #333; }
-            ul { list-style-type: none; padding: 0; }
-            li { margin: 8px 0; }
-            a { color: #0066cc; text-decoration: none; }
-            a:hover { text-decoration: underline; }
-          </style>
-        </head>
-        <body>
-          <h1>Ursa Development Server</h1>
-          <p>Files in ${outputDir}:</p>
-          <ul>
-            ${dir
-              .map((file) => `<li><a href="${file}">${file}</a></li>`)
-              .join("")}
-          </ul>
-        </body>
-        </html>
-      `;
-      res.setHeader("Content-Type", "text/html");
-      res.send(html);
-    } catch (error) {
-      res.status(500).send("Error reading directory");
-    }
+  // Create HTTP server
+  const httpServer = createServer(app);
+  
+  // Create WebSocket server for hot reload
+  wss = new WebSocketServer({ port: wsPort });
+  
+  wss.on('connection', (ws) => {
+    // Send a ping to keep connection alive
+    const pingInterval = setInterval(() => {
+      if (ws.readyState === 1) {
+        ws.ping();
+      }
+    }, 30000);
+    
+    ws.on('close', () => {
+      clearInterval(pingInterval);
+    });
   });
 
-  app.listen(port, () => {
+  httpServer.listen(port, () => {
     console.log(`🌐 Server listening on port ${port}`);
+    console.log(`🔥 Hot reload WebSocket on port ${wsPort}`);
   });
+  
+  return { httpServer, wsPort };
 }
 
 /**

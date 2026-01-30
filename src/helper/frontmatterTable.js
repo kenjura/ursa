@@ -65,12 +65,16 @@ export function metadataToTable(metadata) {
   // Filter out Ursa-internal keys that shouldn't be displayed in the metadata table
   // These are used by Ursa for rendering/menu behavior, not document metadata
   const excludeKeys = [
+    'title',          // Document title
     'template',       // Specifies which HTML template to use
     'layout',         // Alternative name for template
     'draft',          // Marks document as draft (not published)
     'published',      // Publication status
     'menu-label',     // Custom label for menu display
     'menu-sort-as',   // Custom sort key for menu ordering
+    'generate-auto-index', // Auto-indexing control
+    'auto-index-depth',    // Auto-indexing depth
+    'auto-index-position'  // Auto-indexing position
   ];
   const entries = Object.entries(metadata).filter(
     ([key]) => !excludeKeys.includes(key.toLowerCase())

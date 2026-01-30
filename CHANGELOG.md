@@ -1,3 +1,24 @@
+# 0.62.0
+2026-01-29
+
+- **Enhanced Auto-Index**: Index documents can now configure auto-index generation via frontmatter
+  - `generate-auto-index: true` - Include an auto-generated index listing in the page
+  - `auto-index-depth: N` - Control recursion depth (1 = current folder, 2 = current + subfolders, etc.)
+  - `auto-index-position: top|bottom` - Insert the auto-index before or after the document content
+
+- **Faster Serve Mode**: The `serve` command now uses deferred image processing for significantly faster startup
+  - HTML files are generated immediately with original image paths
+  - Image preview generation runs in the background after HTML is ready
+  - Site is browsable within seconds instead of waiting for full image processing
+  - Images will display as originals until preview generation completes (then show optimized WebP previews)
+  - Added hot reloading for regeneration
+
+- **Bug Fixes**:
+  - Fixed issue where style.css changes were not reflected until server restart in `serve` mode
+  - Fixed issue where root-level auto-index had incorrect HREFs
+  - Fixed issue where re-generating an index document with `generate-auto-index:true` did not include the auto-index until server restart
+  - Fixed issue where auto-indexer was rendering 'img' folders
+
 # 0.61.1
 2026-01-14
 

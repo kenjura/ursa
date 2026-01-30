@@ -152,6 +152,69 @@ export async function processImage(sourcePath, outputDir, relativeDir) {
 }
 
 /**
+ * Copy a single image file without preview generation (fast copy).
+ * Used for deferred image processing mode where HTML is generated first.
+ * 
+ * @param {string} sourcePath - Absolute path to source image
+ * @param {string} outputDir - Absolute path to output directory
+ * @param {string} relativeDir - Relative directory path for URL generation
+ * @returns {Promise<{original: string, preview: string}|null>} Paths or null if not an image
+ */
+export async function copyImageFast(sourcePath, outputDir, relativeDir) {
+  const ext = extname(sourcePath).toLowerCase();
+  const filename = basename(sourcePath);
+  
+  // Ensure output directory exists
+  await mkdir(outputDir, { recursive: true });
+  
+  const originalOutputPath = join(outputDir, filename);
+  // Ensure URL is absolute (starts with /)
+  let originalUrl = join(relativeDir, filename).replace(/\\/g, '/');
+  if (!originalUrl.startsWith('/')) {
+    originalUrl = '/' + originalUrl;
+  }
+  
+  // Check if this is an image we handle
+  const allImageExtensions = [...COPY_ONLY_EXTENSIONS, ...PROCESSABLE_EXTENSIONS];
+  if (!allImageExtensions.includes(ext)) {
+    return null;
+  }
+  
+  // Just copy the original (no preview generation)
+  await copyFile(sourcePath, originalOutputPath);
+  
+  return {
+    original: originalUrl,
+    preview: originalUrl, // Same as original - no preview yet
+  };
+}
+
+/**
+ * Copy all images without processing (fast copy).
+ * Used for deferred image processing mode.
+ * 
+ * @param {string[]} imageFiles - Array of absolute paths to image files
+ * @param {string} sourceDir - Source directory root
+ * @param {string} outputDir - Output directory root
+ * @param {Function} progressCallback - Optional callback for progress updates
+ * @returns {Promise<void>}
+ */
+export async function copyAllImagesFast(imageFiles, sourceDir, outputDir, progressCallback) {
+  for (let i = 0; i < imageFiles.length; i++) {
+    const file = imageFiles[i];
+    const relativePath = file.replace(sourceDir, '');
+    const relativeDir = dirname(relativePath);
+    const absoluteOutputDir = join(outputDir, relativeDir);
+    
+    if (progressCallback) {
+      progressCallback(i + 1, imageFiles.length, relativePath);
+    }
+    
+    await copyImageFast(file, absoluteOutputDir, relativeDir);
+  }
+}
+
+/**
  * Build a map of all image paths to their preview/original URLs.
  * This is used to transform img tags in HTML.
  * 

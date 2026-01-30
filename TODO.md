@@ -1,3 +1,14 @@
+# 0.62.0
+
+- [x] Add support for auto-index in a defined index document, rather than only when index document is absent.
+- [x] Auto-index has configurable depth and placement (top/bottom).
+- [x] Serve command will wait to generate images until HTML files are generated and served.
+- [x] Bug: serve a docs folder with no style.css at the root. Add a style.css. Expected: on reload, style changes are visible. Observed: styles do not change until serve command is restarted. Note that 'copied style.css' is shown in server logs, but the HTML does not load this stylesheet (until restart).
+- [x] Bug: when generating auto-index at root level, the HREFs are incorrect (missing leading slash).
+- [x] Bug: When re-generating an index document with generate-auto-index:true, the new html doesn't have the auto-index. Restarting the serve command fixes the issue.
+- [x] Auto-indexer no longer renders 'img' folders
+
+
 # 0.61.0
 
 - Image Handling

@@ -8,6 +8,7 @@ import {
   extractMetadata,
   extractRawMetadata,
   isMetadataOnly,
+  getAutoIndexConfig,
 } from "../helper/metadataExtractor.js";
 import { injectFrontmatterTable } from "../helper/frontmatterTable.js";
 import {
@@ -33,7 +34,7 @@ import o2x from "object-to-xml";
 import { existsSync } from "fs";
 import { fileExists } from "../helper/fileExists.js";
 import { createWhitelistFilter } from "../helper/whitelistFilter.js";
-import { processAllImages, transformImageTags, clearImageCache } from "../helper/imageProcessor.js";
+import { processAllImages, transformImageTags, clearImageCache, copyAllImagesFast } from "../helper/imageProcessor.js";
 
 // Import build helpers from organized modules
 import {
@@ -55,6 +56,7 @@ import {
   getTransformedMetadata,
   getFooter,
   generateAutoIndices,
+  generateAutoIndexHtmlFromSource,
 } from "../helper/build/index.js";
 
 // Concurrency limiter for batch processing to avoid memory exhaustion
@@ -81,8 +83,9 @@ export async function generate({
   _exclude = null,
   _incremental = false,  // Legacy flag, now ignored (always incremental)
   _clean = false,  // When true, ignore cache and regenerate all files
+  _deferImages = false,  // When true, copy images without processing, return promise for background processing
 } = {}) {
-  console.log({ _source, _meta, _output, _whitelist, _exclude, _clean });
+  console.log({ _source, _meta, _output, _whitelist, _exclude, _clean, _deferImages });
   const source = resolve(_source) + "/";
   const meta = resolve(_meta);
   const output = resolve(_output) + "/";
@@ -225,23 +228,63 @@ export async function generate({
   // Track CSS files that have been copied to avoid duplicates
   const copiedCssFiles = new Set();
 
-  // Process all images FIRST to build the preview image map
-  // This is done before articles so we can transform img tags in the HTML
+  // Identify all image files
   const imageExtensions = /\.(jpg|jpeg|png|gif|webp|svg|ico)/;
   const allSourceFilenamesThatAreImages = allSourceFilenames.filter(
     (filename) => filename.match(imageExtensions) && !filename.match(hiddenOrSystemDirs)
   );
   
-  progress.log(`Processing ${allSourceFilenamesThatAreImages.length} images for preview generation...`);
-  const imageMap = await processAllImages(
-    allSourceFilenamesThatAreImages,
-    source,
-    output,
-    (current, total, path) => {
-      progress.status('Images', `${current}/${total} ${path}`);
-    }
-  );
-  progress.done('Images', `${allSourceFilenamesThatAreImages.length} done (${imageMap.size} with previews)`);
+  // Handle images based on deferred mode
+  let imageMap = new Map();
+  let deferredImageProcessingPromise = null;
+  
+  if (_deferImages) {
+    // Fast mode: just copy images without processing, defer preview generation
+    progress.log(`Copying ${allSourceFilenamesThatAreImages.length} images (preview generation deferred)...`);
+    await copyAllImagesFast(
+      allSourceFilenamesThatAreImages,
+      source,
+      output,
+      (current, total, path) => {
+        progress.status('Images (copy)', `${current}/${total} ${path}`);
+      }
+    );
+    progress.done('Images (copy)', `${allSourceFilenamesThatAreImages.length} copied (previews deferred)`);
+    
+    // Create promise for background image processing (will be returned to caller)
+    deferredImageProcessingPromise = (async () => {
+      progress.log(`\n🖼️  Starting deferred image preview generation...`);
+      const startTime = Date.now();
+      const processedImageMap = await processAllImages(
+        allSourceFilenamesThatAreImages,
+        source,
+        output,
+        (current, total, path) => {
+          progress.status('Images (previews)', `${current}/${total} ${path}`);
+        }
+      );
+      const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+      progress.done('Images (previews)', `${allSourceFilenamesThatAreImages.length} done (${processedImageMap.size} with previews) in ${elapsed}s`);
+      
+      // Update the watch cache with the processed image map
+      watchModeCache.imageMap = processedImageMap;
+      
+      return processedImageMap;
+    })();
+  } else {
+    // Normal mode: process all images FIRST to build the preview image map
+    // This is done before articles so we can transform img tags in the HTML
+    progress.log(`Processing ${allSourceFilenamesThatAreImages.length} images for preview generation...`);
+    imageMap = await processAllImages(
+      allSourceFilenamesThatAreImages,
+      source,
+      output,
+      (current, total, path) => {
+        progress.status('Images', `${current}/${total} ${path}`);
+      }
+    );
+    progress.done('Images', `${allSourceFilenamesThatAreImages.length} done (${imageMap.size} with previews)`);
+  }
 
   // Track files that were regenerated (for incremental mode stats)
   let regeneratedCount = 0;
@@ -348,11 +391,32 @@ export async function generate({
         body = injectFrontmatterTable(body, fileMeta);
       }
 
+      // Handle auto-index generation for index files with generate-auto-index: true
+      if (base === 'index' && fileMeta) {
+        const autoIndexConfig = getAutoIndexConfig(fileMeta);
+        if (autoIndexConfig.enabled) {
+          // Generate auto-index HTML for this directory from source
+          // Using source avoids race conditions with concurrent file generation
+          const sourceDir = dirname(file);
+          const autoIndexHtml = await generateAutoIndexHtmlFromSource(sourceDir, autoIndexConfig.depth);
+          
+          if (autoIndexHtml) {
+            if (autoIndexConfig.position === 'bottom') {
+              body = body + '\n' + autoIndexHtml;
+            } else {
+              body = autoIndexHtml + '\n' + body;
+            }
+          }
+        }
+      }
+
       // Find nearest style.css or _style.css up the tree and copy to output
       // Use cache to avoid repeated filesystem walks for same directory
       let styleLink = "";
       try {
-        const dirKey = resolve(_source, dir);
+        // For root-level files, dir may be "/" which would resolve to filesystem root
+        // Use source directory directly in that case
+        const dirKey = (dir === "/" || dir === "") ? _source : resolve(_source, dir);
         let cssPath = cssPathCache.get(dirKey);
         if (cssPath === undefined) {
           cssPath = await findStyleCss(dirKey);
@@ -417,7 +481,10 @@ export async function generate({
       finalHtml = markInactiveLinks(finalHtml, validPaths, docUrlPath, false);
 
       // Transform image tags to use preview images with data-fullsrc for originals
-      finalHtml = transformImageTags(finalHtml, imageMap, docUrlPath);
+      // Skip in deferred mode - images will use original paths until preview generation completes
+      if (!_deferImages) {
+        finalHtml = transformImageTags(finalHtml, imageMap, docUrlPath);
+      }
 
       // Add cache-busting timestamps to static file references
       finalHtml = addTimestampToHtmlStaticRefs(finalHtml, cacheBustTimestamp);
@@ -613,7 +680,10 @@ export async function generate({
         // Resolve internal links to have proper .html extensions
         htmlContent = markInactiveLinks(htmlContent, validPaths, docUrlPath, false);
         // Transform image tags to use preview images with data-fullsrc for originals
-        htmlContent = transformImageTags(htmlContent, imageMap, docUrlPath);
+        // Skip in deferred mode - images will use original paths until preview generation completes
+        if (!_deferImages) {
+          htmlContent = transformImageTags(htmlContent, imageMap, docUrlPath);
+        }
         // Add cache-busting timestamps
         htmlContent = addTimestampToHtmlStaticRefs(htmlContent, cacheBustTimestamp);
         await outputFile(outputFilename, htmlContent);
@@ -686,6 +756,12 @@ export async function generate({
   } else {
     progress.log(`\n✅ Generation complete with no errors.\n`);
   }
+  
+  // Return deferred image processing promise if in deferred mode
+  // Caller can await this to know when image previews are ready
+  return {
+    deferredImageProcessing: deferredImageProcessingPromise
+  };
 }
 
 /**
@@ -751,17 +827,42 @@ export async function regenerateSingleFile(changedFile, {
     const docUrlPath = '/' + dir + base + '.html';
     
     // Render body
-    const body = renderFile({
+    let body = renderFile({
       fileContents: rawBody,
       type,
       dirname: dir,
       basename: base,
     });
     
+    // Inject frontmatter table for markdown files
+    if (type === '.md' && fileMeta) {
+      body = injectFrontmatterTable(body, fileMeta);
+    }
+
+    // Handle auto-index generation for index files with generate-auto-index: true
+    if (base === 'index' && fileMeta) {
+      const autoIndexConfig = getAutoIndexConfig(fileMeta);
+      if (autoIndexConfig.enabled) {
+        // Generate auto-index HTML for this directory from source
+        const sourceDir = dirname(changedFile);
+        const autoIndexHtml = await generateAutoIndexHtmlFromSource(sourceDir, autoIndexConfig.depth);
+        
+        if (autoIndexHtml) {
+          if (autoIndexConfig.position === 'bottom') {
+            body = body + '\n' + autoIndexHtml;
+          } else {
+            body = autoIndexHtml + '\n' + body;
+          }
+        }
+      }
+    }
+
     // Find CSS and copy to output
     let styleLink = "";
     try {
-      const cssPath = await findStyleCss(resolve(_source, dir));
+      // For root-level files, dir may be "/" which would resolve to filesystem root
+      const dirKey = (dir === "/" || dir === "") ? _source : resolve(_source, dir);
+      const cssPath = await findStyleCss(dirKey);
       if (cssPath) {
         // Calculate output path for the CSS file
         const cssOutputPath = cssPath.replace(source, output);
