@@ -1,3 +1,8 @@
+# 0.62.1
+2026-01-29
+
+- CI now uses pnpm to avoid redundant package managers
+
 # 0.62.0
 2026-01-29
 
