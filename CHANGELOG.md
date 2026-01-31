@@ -1,3 +1,9 @@
+# 0.63.0
+2026-01-31
+
+- Images inside an anchor tag will no longer have a click handler added to open the image in a new tab
+  
+
 # 0.62.2
 2026-01-29
 

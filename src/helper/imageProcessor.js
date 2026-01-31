@@ -250,7 +250,7 @@ export async function processAllImages(imageFiles, sourceDir, outputDir, progres
 
 /**
  * Transform HTML to use preview images with data-fullsrc for originals.
- * Also adds onclick handler to open full image in new tab.
+ * Also adds onclick handler to open full image in new tab (unless image is inside an <a> tag).
  * 
  * @param {string} html - The HTML content
  * @param {Map<string, {original: string, preview: string}>} imageMap - Map of image paths to URLs
@@ -265,10 +265,17 @@ export function transformImageTags(html, imageMap, docUrlPath = '/') {
   // Get the directory of the current document for resolving relative paths
   const docDir = docUrlPath.substring(0, docUrlPath.lastIndexOf('/')) || '/';
   
-  // Match img tags and extract src
+  // Match img tags and extract src, capturing context to detect if inside <a> tag
   return html.replace(
     /<img([^>]*)src=["']([^"']+)["']([^>]*)>/gi,
-    (match, before, src, after) => {
+    (match, before, src, after, offset) => {
+      // Check if this img is inside an <a> tag by looking at preceding HTML
+      // Find the last unclosed <a> tag before this position
+      const precedingHtml = html.substring(Math.max(0, offset - 500), offset);
+      const lastAOpen = precedingHtml.lastIndexOf('<a ');
+      const lastAClose = precedingHtml.lastIndexOf('</a>');
+      const isInsideAnchor = lastAOpen > lastAClose;
+      
       // Normalize src path for lookup
       let lookupPath = src;
       // Remove query strings for lookup
@@ -295,10 +302,10 @@ export function transformImageTags(html, imageMap, docUrlPath = '/') {
       
       const imageInfo = imageMap.get(lookupPath);
       if (!imageInfo || imageInfo.preview === imageInfo.original) {
-        // No preview available, add click handler for full-size viewing
+        // No preview available, add click handler for full-size viewing (if not inside <a>)
         if (imageInfo) {
           const hasOnclick = /onclick=/i.test(before + after);
-          if (!hasOnclick) {
+          if (!hasOnclick && !isInsideAnchor) {
             return `<img${before}src="${src}"${after} data-fullsrc="${imageInfo.original}" onclick="window.open(this.dataset.fullsrc || this.src, '_blank')">`;
           }
         }
@@ -309,9 +316,9 @@ export function transformImageTags(html, imageMap, docUrlPath = '/') {
       const newSrc = imageInfo.preview;
       const fullSrc = imageInfo.original;
       
-      // Check if already has onclick
+      // Check if already has onclick or is inside an anchor tag
       const hasOnclick = /onclick=/i.test(before + after);
-      const clickHandler = hasOnclick ? '' : ` onclick="window.open(this.dataset.fullsrc || this.src, '_blank')"`;
+      const clickHandler = (hasOnclick || isInsideAnchor) ? '' : ` onclick="window.open(this.dataset.fullsrc || this.src, '_blank')"`;
       
       // Preserve any existing query string (like cache busting) on preview
       const querySuffix = queryIndex !== -1 ? src.substring(queryIndex) : '';
