@@ -1,3 +1,11 @@
+# 0.64.0
+2026-01-31
+
+- Handles scenario where a new image is added while serving (previously the image wouldn't show without a full restart)
+  - New images are now processed on-the-fly when detected in serve mode
+  - Image previews are generated and copied to output automatically
+  - HTML is updated to use preview images without needing a full rebuild
+
 # 0.63.0
 2026-01-31
 

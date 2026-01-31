@@ -7,6 +7,7 @@ import fs from "fs";
 import { promises } from "fs";
 import { outputFile } from "fs-extra";
 import { processImage } from "./helper/imageProcessor.js";
+import { watchModeCache } from "./helper/build/watchCache.js";
 import { WebSocketServer } from "ws";
 import { createServer } from "http";
 const { readdir, mkdir, readFile, copyFile } = promises;
@@ -126,7 +127,7 @@ const IMAGE_EXTENSIONS = /\.(jpg|jpeg|png|gif|webp|svg|ico)$/i;
 
 /**
  * Copy a single static file to the output directory
- * For images, also generates a preview version
+ * For images, also generates a preview version and updates the imageMap cache
  * @param {string} filePath - Absolute path to the static file
  * @param {string} sourceDir - Source directory root
  * @param {string} outputDir - Output directory root
@@ -142,6 +143,14 @@ async function copyStaticFile(filePath, sourceDir, outputDir) {
     if (IMAGE_EXTENSIONS.test(filePath)) {
       const result = await processImage(filePath, absoluteOutputDir, relativeDir);
       const elapsed = Date.now() - startTime;
+      
+      // Update the watchModeCache.imageMap so regenerated documents can use the new image
+      if (result && watchModeCache.imageMap) {
+        // The key is the absolute URL path (e.g., /campaigns/ABS/img/map.jpg)
+        const imageKey = result.original;
+        watchModeCache.imageMap.set(imageKey, result);
+      }
+      
       if (result && result.preview !== result.original) {
         return { success: true, message: `Processed ${relativePath} with preview in ${elapsed}ms` };
       }
