@@ -1,3 +1,8 @@
+# 0.65.0
+2026-02-01
+
+- Fixed issue where images wrapped in an anchor tag were incorrectly given a click handler to open in a new tab
+
 # 0.64.0
 2026-01-31
 

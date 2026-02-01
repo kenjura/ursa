@@ -249,8 +249,9 @@ export async function processAllImages(imageFiles, sourceDir, outputDir, progres
 }
 
 /**
- * Transform HTML to use preview images with data-fullsrc for originals.
- * Also adds onclick handler to open full image in new tab (unless image is inside an <a> tag).
+ * Transform HTML to use preview images and wrap standalone images in anchor tags.
+ * - If image is already inside an <a> tag, only update src to preview (if available)
+ * - Otherwise, wrap image in <a> tag linking to full-size image (opens in new tab)
  * 
  * @param {string} html - The HTML content
  * @param {Map<string, {original: string, preview: string}>} imageMap - Map of image paths to URLs
@@ -301,29 +302,28 @@ export function transformImageTags(html, imageMap, docUrlPath = '/') {
       }
       
       const imageInfo = imageMap.get(lookupPath);
-      if (!imageInfo || imageInfo.preview === imageInfo.original) {
-        // No preview available, add click handler for full-size viewing (if not inside <a>)
-        if (imageInfo) {
-          const hasOnclick = /onclick=/i.test(before + after);
-          if (!hasOnclick && !isInsideAnchor) {
-            return `<img${before}src="${src}"${after} data-fullsrc="${imageInfo.original}" onclick="window.open(this.dataset.fullsrc || this.src, '_blank')">`;
-          }
-        }
-        return match; // No transformation needed
+      
+      // Determine full-size URL (use original from imageInfo, or fallback to src)
+      const fullSizeUrl = imageInfo ? imageInfo.original : src;
+      
+      // Determine the src to use (preview if available, otherwise original)
+      let newSrc = src;
+      if (imageInfo && imageInfo.preview !== imageInfo.original) {
+        // Preserve any existing query string (like cache busting) on preview
+        const querySuffix = queryIndex !== -1 ? src.substring(queryIndex) : '';
+        newSrc = imageInfo.preview + querySuffix;
       }
       
-      // Replace src with preview, add data-fullsrc with original
-      const newSrc = imageInfo.preview;
-      const fullSrc = imageInfo.original;
+      // Build the new img tag
+      const imgTag = `<img${before}src="${newSrc}"${after}>`;
       
-      // Check if already has onclick or is inside an anchor tag
-      const hasOnclick = /onclick=/i.test(before + after);
-      const clickHandler = (hasOnclick || isInsideAnchor) ? '' : ` onclick="window.open(this.dataset.fullsrc || this.src, '_blank')"`;
+      // If already inside an anchor tag, just return the updated img tag
+      if (isInsideAnchor) {
+        return imgTag;
+      }
       
-      // Preserve any existing query string (like cache busting) on preview
-      const querySuffix = queryIndex !== -1 ? src.substring(queryIndex) : '';
-      
-      return `<img${before}src="${newSrc}${querySuffix}"${after} data-fullsrc="${fullSrc}"${clickHandler}>`;
+      // Wrap in anchor tag linking to full-size image
+      return `<a href="${fullSizeUrl}" target="_blank" class="image-link">${imgTag}</a>`;
     }
   );
 }
