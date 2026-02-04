@@ -214,12 +214,14 @@ function resolveHref(href, validPaths, currentDocPath = null) {
   // Check if the href already has an extension
   const ext = extname(hrefWithoutHash);
   if (ext) {
-    // Special handling for .md links - convert to .html if valid
+    // Special handling for .md links - always convert to .html
+    // This ensures links work even if the target file is created after serve starts
     if (ext.toLowerCase() === '.md') {
-      // Remove .md and check if .html version exists
+      // Remove .md and convert to .html
       const pathWithoutMd = normalized.slice(0, -3); // Remove '.md'
       const htmlPath = pathWithoutMd + '.html';
       
+      // Check if .html version exists in validPaths for canonical path
       if (validPaths.has(htmlPath.toLowerCase())) {
         const canonicalPath = validPaths.get(htmlPath.toLowerCase());
         debugTries.push(`${normalized} (.md → .html) → ${canonicalPath} ✓`);
@@ -231,6 +233,11 @@ function resolveHref(href, validPaths, currentDocPath = null) {
         debugTries.push(`${normalized} (.md → resolved) → ${canonicalPath} ✓`);
         return { resolvedHref: canonicalPath + hash, inactive: false, debug: debugTries.join(' | ') };
       }
+      // File doesn't exist yet, but still convert .md to .html optimistically
+      // (the target file may be created later during serve)
+      const resolvedHtmlPath = absoluteHref.replace(/\.md$/i, '.html');
+      debugTries.push(`${normalized} (.md → .html optimistic) → ${resolvedHtmlPath}`);
+      return { resolvedHref: resolvedHtmlPath + hash, inactive: false, debug: debugTries.join(' | ') };
     }
     // Has extension but doesn't exist (or is not .md)
     debugTries.push(`${normalized} → ✗`);
@@ -316,5 +323,85 @@ export function markInactiveLinks(html, validPaths, currentDocPath = '/', includ
     const debugText = includeDebug && !content.includes('<') ? ` [DEBUG: ${debug}]` : '';
     
     return `<a ${newBefore}href="${resolvedHref}"${newAfter}>${content}${debugText}</a>`;
+  });
+}
+
+/**
+ * Resolve relative URLs in raw HTML elements (img src, video src, audio src, source src, etc.)
+ * and in inline style url() references (background-image, etc.)
+ * This ensures that relative paths in raw HTML embedded in markdown are resolved correctly
+ * relative to the document's location.
+ * 
+ * @param {string} html - The HTML content
+ * @param {string} currentDocPath - The current document's URL path (e.g., "/foo/index.html")
+ * @returns {string} Processed HTML with resolved relative URLs
+ */
+export function resolveRelativeUrls(html, currentDocPath = '/') {
+  // Attributes that can contain relative URLs
+  const urlAttributes = ['src', 'poster', 'data'];
+  
+  // Process each URL attribute
+  for (const attr of urlAttributes) {
+    // Match tags with the attribute (case-insensitive)
+    const regex = new RegExp(`(<(?:img|video|audio|source|object|embed|iframe)[^>]*?)${attr}=["']([^"']+)["']([^>]*>)`, 'gi');
+    
+    html = html.replace(regex, (match, before, url, after) => {
+      // Skip external URLs, data URLs, and absolute paths
+      if (url.match(/^(https?:)?\/\/|^data:|^mailto:|^tel:|^javascript:/i)) {
+        return match;
+      }
+      
+      // Skip already-absolute paths (starting with /)
+      if (url.startsWith('/')) {
+        return match;
+      }
+      
+      // It's a relative path - resolve it against the document's directory
+      const resolvedUrl = resolveRelativePath(url, currentDocPath);
+      
+      return `${before}${attr}="${resolvedUrl}"${after}`;
+    });
+  }
+  
+  // Process url() in inline style attributes (for background-image, etc.)
+  // Handle double-quoted style attributes (content can contain single quotes)
+  html = html.replace(/style="([^"]*)"/gi, (match, styleContent) => {
+    const processedStyle = processStyleUrls(styleContent, currentDocPath);
+    return `style="${processedStyle}"`;
+  });
+  
+  // Handle single-quoted style attributes (content can contain double quotes)
+  html = html.replace(/style='([^']*)'/gi, (match, styleContent) => {
+    const processedStyle = processStyleUrls(styleContent, currentDocPath);
+    return `style='${processedStyle}'`;
+  });
+  
+  return html;
+}
+
+/**
+ * Process url() values in a style string, resolving relative paths
+ * @param {string} styleContent - The content of a style attribute
+ * @param {string} currentDocPath - The current document's URL path
+ * @returns {string} Style content with resolved URLs
+ */
+function processStyleUrls(styleContent, currentDocPath) {
+  return styleContent.replace(/url\(\s*(['"]?)([^'")]+)\1\s*\)/gi, (urlMatch, quote, url) => {
+    // Skip external URLs, data URLs, and absolute paths
+    if (url.match(/^(https?:)?\/\/|^data:/i)) {
+      return urlMatch;
+    }
+    
+    // Skip already-absolute paths (starting with /)
+    if (url.startsWith('/')) {
+      return urlMatch;
+    }
+    
+    // It's a relative path - resolve it against the document's directory
+    const resolvedUrl = resolveRelativePath(url, currentDocPath);
+    
+    // Preserve the original quote style, or use single quotes if none
+    const outputQuote = quote || "'";
+    return `url(${outputQuote}${resolvedUrl}${outputQuote})`;
   });
 }

@@ -21,6 +21,7 @@ import {
 import {
   buildValidPaths,
   markInactiveLinks,
+  resolveRelativeUrls,
 } from "../helper/linkValidator.js";
 import { getAndIncrementBuildId } from "../helper/ursaConfig.js";
 import { extractSections } from "../helper/sectionExtractor.js";
@@ -477,6 +478,9 @@ export async function generate({
         );
       }
 
+      // Resolve relative URLs in raw HTML elements (img src, etc.)
+      finalHtml = resolveRelativeUrls(finalHtml, docUrlPath);
+      
       // Resolve links and mark broken internal links as inactive
       finalHtml = markInactiveLinks(finalHtml, validPaths, docUrlPath, false);
 
@@ -677,6 +681,8 @@ export async function generate({
         let htmlContent = await readFile(file, 'utf8');
         // Calculate the document's URL path for relative link resolution
         const docUrlPath = '/' + file.replace(source, '').replace(/^\//, '');
+        // Resolve relative URLs in raw HTML elements (img src, etc.)
+        htmlContent = resolveRelativeUrls(htmlContent, docUrlPath);
         // Resolve internal links to have proper .html extensions
         htmlContent = markInactiveLinks(htmlContent, validPaths, docUrlPath, false);
         // Transform image tags to use preview images with data-fullsrc for originals
@@ -903,6 +909,9 @@ export async function regenerateSingleFile(changedFile, {
     for (const [key, value] of Object.entries(replacements)) {
       finalHtml = finalHtml.replace(key, value);
     }
+    
+    // Resolve relative URLs in raw HTML elements (img src, etc.)
+    finalHtml = resolveRelativeUrls(finalHtml, docUrlPath);
     
     // Mark broken links
     finalHtml = markInactiveLinks(finalHtml, validPaths, docUrlPath, false);

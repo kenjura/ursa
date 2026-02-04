@@ -1,3 +1,10 @@
+# 0.66.0
+2026-02-04
+
+- Links to a markdown file in source will now render as a link to the corresponding .html file even if the target file does not exist yet
+- Relative URLs in raw HTML elements (img src, video src, etc.) embedded in markdown files are now resolved relative to the document's location
+- Relative URLs in inline style `url()` values (e.g., `background-image: url('./img/foo.webp')`) are now resolved relative to the document's location
+
 # 0.65.0
 2026-02-01
 
