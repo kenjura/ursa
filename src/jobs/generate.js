@@ -25,9 +25,9 @@ import {
 } from "../helper/linkValidator.js";
 import { getAndIncrementBuildId } from "../helper/ursaConfig.js";
 import { extractSections } from "../helper/sectionExtractor.js";
-import { renderFile } from "../helper/fileRenderer.js";
+import { renderFile, renderFileAsync, terminateParserPool } from "../helper/fileRenderer.js";
 import { findStyleCss } from "../helper/findStyleCss.js";
-import { buildFullTextIndex } from "../helper/fullTextIndex.js";
+import { buildFullTextIndex, buildIncrementalIndex, loadIndexCache, saveIndexCache } from "../helper/fullTextIndex.js";
 import { copy as copyDir, emptyDir, outputFile } from "fs-extra";
 import { basename, dirname, extname, join, parse, resolve } from "path";
 import { URL } from "url";
@@ -37,6 +37,7 @@ import { fileExists } from "../helper/fileExists.js";
 import { createWhitelistFilter } from "../helper/whitelistFilter.js";
 import { processAllImages, transformImageTags, clearImageCache, copyAllImagesFast } from "../helper/imageProcessor.js";
 import { extractImageReferences } from "../helper/imageExtractor.js";
+import { checkFileSize, readFileStreaming, formatFileSize } from "../helper/streamingReader.js";
 import {
   loadNavCache,
   saveNavCache,
@@ -96,11 +97,12 @@ export async function generate({
   _incremental = false,  // Legacy flag, now ignored (always incremental)
   _clean = false,  // When true, ignore cache and regenerate all files
   _deferImages = false,  // When true, copy images without processing, return promise for background processing
+  _deferSearchIndex = false,  // When true, return promise for search index building (for faster startup)
 } = {}) {
   // Initialize profiler for this build
   const profiler = getProfiler(true);
   
-  console.log({ _source, _meta, _output, _whitelist, _exclude, _clean, _deferImages });
+  console.log({ _source, _meta, _output, _whitelist, _exclude, _clean, _deferImages, _deferSearchIndex });
   const source = resolve(_source) + "/";
   const meta = resolve(_meta);
   const output = resolve(_output) + "/";
@@ -305,6 +307,8 @@ export async function generate({
   const searchIndex = [];
   // Full-text index: collect documents for word-to-document mapping
   const fullTextDocs = [];
+  // Track paths of documents that were regenerated (for incremental index updates)
+  const changedPaths = new Set();
   // Directory index cache: only stores minimal data needed for directory indices
   // Uses WeakRef-style approach - store only what's needed, clear as we go
   const dirIndexCache = new Map();
@@ -427,7 +431,16 @@ export async function generate({
       const shortFile = file.replace(source, '');
       progress.status('Articles', `${processedCount}/${totalArticles} ${shortFile}`);
       
-      const rawBody = await readFile(file, "utf8");
+      // Use streaming for large files to reduce memory pressure
+      const { size: fileSize, useStreaming } = await checkFileSize(file);
+      let rawBody;
+      if (useStreaming) {
+        rawBody = await readFileStreaming(file, 'utf8');
+        progress.log(`📄 Streaming large file ${shortFile} (${formatFileSize(fileSize)})`);
+      } else {
+        rawBody = await readFile(file, "utf8");
+      }
+      
       const type = parse(file).ext;
       const ext = extname(file);
       const base = basename(file, ext);
@@ -494,22 +507,33 @@ export async function generate({
       }
       
       regeneratedCount++;
+      // Track this path for incremental search index updates
+      changedPaths.add(relativePath);
 
       const fileMeta = extractMetadata(rawBody);
       const rawMeta = extractRawMetadata(rawBody);
-      const transformedMetadata = await getTransformedMetadata(
-        dirname(file),
-        fileMeta
-      );
+      
+      // Lazy metadata transform - only compute if template actually uses it
+      // This defers the potentially expensive custom transform function load
+      let transformedMetadata = null;
+      const getTransformedMeta = async () => {
+        if (transformedMetadata === null) {
+          transformedMetadata = await getTransformedMetadata(dirname(file), fileMeta);
+        }
+        return transformedMetadata;
+      };
       
       // Calculate the document's URL path (e.g., "/character/index.html")
       const docUrlPath = '/' + dir + base + '.html';
 
-      let body = renderFile({
+      // Use async rendering with worker threads for parallel markdown parsing
+      // Wikitext (.txt) files will fall back to main thread
+      let body = await renderFileAsync({
         fileContents: rawBody,
         type,
         dirname: dir,
         basename: base,
+        useWorker: true
       });
 
       // Inject frontmatter table after first H1 (for markdown files with metadata)
@@ -579,13 +603,20 @@ export async function generate({
       // Check if this file has a custom menu
       const customMenuInfo = getCustomMenuForFile(file, source, customMenus);
 
+      // Lazy evaluation of transformed metadata - only compute if template uses it
+      // This defers expensive custom transform function loading until actually needed
+      const templateUsesTransformedMeta = template.includes('${transformedMetadata}');
+      const lazyTransformedMeta = templateUsesTransformedMeta 
+        ? await getTransformedMeta() 
+        : '';
+
       // Build final HTML with all replacements in a single regex pass
       // This avoids creating 8 intermediate strings
       const replacements = {
         "${title}": title,
         "${menu}": menu,
         "${meta}": JSON.stringify(fileMeta),
-        "${transformedMetadata}": transformedMetadata,
+        "${transformedMetadata}": lazyTransformedMeta,
         "${body}": body,
         "${styleLink}": styleLink,
         "${searchIndex}": "[]", // Placeholder - search index written separately as JSON file
@@ -595,11 +626,12 @@ export async function generate({
       const pattern = /\$\{(title|menu|meta|transformedMetadata|body|styleLink|searchIndex|footer)\}/g;
       let finalHtml = template.replace(pattern, (match) => replacements[match] ?? match);
 
-      // If this page has a custom menu, add data attribute to body
+      // If this page has a custom menu, add data attributes to body
       if (customMenuInfo) {
+        const menuPosition = customMenuInfo.menuPosition || 'side';
         finalHtml = finalHtml.replace(
           /<body([^>]*)>/,
-          `<body$1 data-custom-menu="${customMenuInfo.menuJsonPath}">`
+          `<body$1 data-custom-menu="${customMenuInfo.menuJsonPath}" data-menu-position="${menuPosition}">`
         );
       }
 
@@ -629,6 +661,9 @@ export async function generate({
       // Extract sections for markdown files
       const sections = type === '.md' ? extractSections(rawBody) : [];
       
+      // Use lazy metadata for JSON output - may have been computed above for HTML
+      const jsonTransformedMeta = await getTransformedMeta();
+      
       const jsonObject = {
         name: base,
         url,
@@ -636,7 +671,7 @@ export async function generate({
         bodyHtml: body,
         metadata: fileMeta,
         sections,
-        transformedMetadata,
+        transformedMetadata: jsonTransformedMeta,
       };
       
       // Store minimal data for directory indices, including metadata
@@ -667,23 +702,61 @@ export async function generate({
   profiler.endPhase('Process articles');
 
   // Phase: Write search index
-  profiler.startPhase('Write search index');
-  progress.startTimer('Search index');
-  // Write search index as a separate JSON file (not embedded in each page)
-  const searchIndexPath = join(output, 'public', 'search-index.json');
-  progress.log(`Writing search index with ${searchIndex.length} entries`);
-  await outputFile(searchIndexPath, JSON.stringify(searchIndex));
+  // Can be deferred in serve mode for faster startup
+  let deferredSearchIndexPromise = null;
+  
+  const buildSearchIndex = async () => {
+    const indexStartTime = Date.now();
+    progress.logTimed('Building search index...');
+    
+    // Write search index as a separate JSON file (not embedded in each page)
+    const searchIndexPath = join(output, 'public', 'search-index.json');
+    progress.log(`Writing search index with ${searchIndex.length} entries`);
+    await outputFile(searchIndexPath, JSON.stringify(searchIndex));
 
-  // Build and write full-text index
-  progress.log(`Building full-text index from ${fullTextDocs.length} documents...`);
-  const fullTextIndex = buildFullTextIndex(fullTextDocs);
-  const fullTextIndexPath = join(output, 'public', 'fulltext-index.json');
-  const fullTextIndexJson = JSON.stringify(fullTextIndex);
-  const wordCount = Object.keys(fullTextIndex).length;
-  progress.log(`Writing full-text index (${wordCount} unique words, ${(fullTextIndexJson.length / 1024).toFixed(1)} KB)`);
-  await outputFile(fullTextIndexPath, fullTextIndexJson);
-  progress.done('Search index', `${searchIndex.length} entries, ${wordCount} words [${progress.stopTimer('Search index')}]`);
-  profiler.endPhase('Write search index');
+    // Build full-text index - use incremental mode when possible
+    let fullTextIndex;
+    if (!_clean && changedPaths.size > 0 && changedPaths.size < fullTextDocs.length) {
+      // Incremental update: only re-index changed documents
+      progress.log(`Incremental full-text index: ${changedPaths.size} changed, ${fullTextDocs.length - changedPaths.size} cached`);
+      fullTextIndex = buildIncrementalIndex(fullTextDocs, changedPaths, source);
+    } else {
+      // Full rebuild: clean build or all documents changed
+      progress.log(`Building full-text index from ${fullTextDocs.length} documents...`);
+      fullTextIndex = buildFullTextIndex(fullTextDocs);
+      // Save to cache for future incremental updates
+      saveIndexCache(source, fullTextIndex);
+    }
+    
+    const fullTextIndexPath = join(output, 'public', 'fulltext-index.json');
+    const fullTextIndexJson = JSON.stringify(fullTextIndex);
+    const wordCount = Object.keys(fullTextIndex).length;
+    progress.log(`Writing full-text index (${wordCount} unique words, ${(fullTextIndexJson.length / 1024).toFixed(1)} KB)`);
+    await outputFile(fullTextIndexPath, fullTextIndexJson);
+    
+    const elapsed = ((Date.now() - indexStartTime) / 1000).toFixed(1);
+    return { entries: searchIndex.length, words: wordCount, elapsed };
+  };
+  
+  if (_deferSearchIndex) {
+    // Deferred mode: start building in background, return promise
+    profiler.startPhase('Write search index (deferred)');
+    progress.startTimer('Search index');
+    progress.log('Search index building deferred for faster startup...');
+    deferredSearchIndexPromise = buildSearchIndex().then(result => {
+      progress.done('Search index (background)', `${result.entries} entries, ${result.words} words in ${result.elapsed}s`);
+      return result;
+    });
+    progress.done('Search index', 'deferred [0ms]');
+    profiler.endPhase('Write search index (deferred)');
+  } else {
+    // Normal mode: build search index now
+    profiler.startPhase('Write search index');
+    progress.startTimer('Search index');
+    const result = await buildSearchIndex();
+    progress.done('Search index', `${result.entries} entries, ${result.words} words [${progress.stopTimer('Search index')}]`);
+    profiler.endPhase('Write search index');
+  }
 
   // Phase: Write menu data
   profiler.startPhase('Write menu data');
@@ -698,7 +771,11 @@ export async function generate({
   // Write custom menu JSON files
   for (const [menuDir, menuInfo] of customMenus) {
     const customMenuPath = join(output, menuInfo.menuJsonPath);
-    const customMenuJson = JSON.stringify(menuInfo.menuData);
+    // Include menuPosition in the JSON so client knows how to render
+    const customMenuJson = JSON.stringify({
+      menuData: menuInfo.menuData,
+      menuPosition: menuInfo.menuPosition || 'side',
+    });
     progress.log(`Writing custom menu: ${menuInfo.menuJsonPath}`);
     await outputFile(customMenuPath, customMenuJson);
   }
@@ -853,7 +930,7 @@ export async function generate({
   progress.startTimer('Auto-index');
   // Automatic index generation for folders without index.html
   progress.log(`Checking for missing index files...`);
-  await generateAutoIndices(output, allSourceFilenamesThatAreDirectories, source, templates, menu, footer, allSourceFilenamesThatAreArticles, copiedCssFiles, existingHtmlFiles, cacheBustTimestamp, progress);
+  await generateAutoIndices(output, allSourceFilenamesThatAreDirectories, source, templates, menu, footer, allSourceFilenamesThatAreArticles, copiedCssFiles, existingHtmlFiles, cacheBustTimestamp, progress, customMenus);
   progress.done('Auto-index', `checked ${allSourceFilenamesThatAreDirectories.length} directories [${progress.stopTimer('Auto-index')}]`);
   profiler.endPhase('Auto-index generation');
 
@@ -921,10 +998,11 @@ export async function generate({
   // Print profiler report
   progress.log(profiler.report());
   
-  // Return deferred image processing promise if in deferred mode
-  // Caller can await this to know when image previews are ready
+  // Return deferred processing promises if in deferred mode
+  // Caller can await these to know when background processing is complete
   return {
-    deferredImageProcessing: deferredImageProcessingPromise
+    deferredImageProcessing: deferredImageProcessingPromise,
+    deferredSearchIndex: deferredSearchIndexPromise
   };
 }
 

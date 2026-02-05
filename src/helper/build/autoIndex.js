@@ -7,6 +7,7 @@ import { findStyleCss } from "../findStyleCss.js";
 import { toTitleCase } from "./titleCase.js";
 import { addTimestampToHtmlStaticRefs } from "./cacheBust.js";
 import { isMetadataOnly, extractMetadata, getAutoIndexConfig } from "../metadataExtractor.js";
+import { getCustomMenuForFile } from "./menu.js";
 
 /**
  * Generate auto-index HTML content for a directory from the OUTPUT folder
@@ -163,8 +164,9 @@ export async function generateAutoIndexHtmlFromSource(sourceDir, depth = 1, curr
  * @param {Set<string>} existingHtmlFiles - Set of existing HTML files in source (relative paths)
  * @param {string} cacheBustTimestamp - Cache-busting timestamp
  * @param {object} progress - Progress reporter instance
+ * @param {Map} customMenus - Map of custom menus by directory path
  */
-export async function generateAutoIndices(output, directories, source, templates, menu, footer, generatedArticles, copiedCssFiles, existingHtmlFiles, cacheBustTimestamp, progress) {
+export async function generateAutoIndices(output, directories, source, templates, menu, footer, generatedArticles, copiedCssFiles, existingHtmlFiles, cacheBustTimestamp, progress, customMenus) {
   // Alternate index file names to look for (in priority order)
   const INDEX_ALTERNATES = ['_index.html', 'home.html', '_home.html'];
   
@@ -316,6 +318,15 @@ export async function generateAutoIndices(output, directories, source, templates
           // ignore CSS lookup errors
         }
         
+        // Find custom menu for this directory
+        let customMenuInfo = null;
+        if (customMenus) {
+          // Create a pseudo-file path for this directory to look up custom menu
+          const sourceDir = dir.replace(outputNorm, sourceNorm);
+          const pseudoFilePath = join(sourceDir, 'index.md'); // Pretend there's an index.md
+          customMenuInfo = getCustomMenuForFile(pseudoFilePath, sourceNorm, customMenus);
+        }
+        
         let finalHtml = template;
         const replacements = {
           "${menu}": menu,
@@ -330,6 +341,16 @@ export async function generateAutoIndices(output, directories, source, templates
         for (const [key, value] of Object.entries(replacements)) {
           finalHtml = finalHtml.replace(key, value);
         }
+        
+        // Add custom menu data attributes if applicable
+        if (customMenuInfo) {
+          const menuPosition = customMenuInfo.menuPosition || 'side';
+          finalHtml = finalHtml.replace(
+            /<body([^>]*)>/,
+            `<body$1 data-custom-menu="${customMenuInfo.menuJsonPath}" data-menu-position="${menuPosition}">`
+          );
+        }
+        
         // Add cache-busting timestamps to static file references
         finalHtml = addTimestampToHtmlStaticRefs(finalHtml, cacheBustTimestamp);
         

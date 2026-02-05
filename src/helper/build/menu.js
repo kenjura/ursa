@@ -1,8 +1,9 @@
 // Menu helpers for build
 import { getAutomenu } from "../automenu.js";
 import { renderFile } from "../fileRenderer.js";
-import { findCustomMenu, parseCustomMenu, buildCustomMenuHtml } from "../customMenu.js";
+import { findCustomMenu, parseCustomMenu, buildCustomMenuHtml, getCustomMenuForFile as getCustomMenuFromFile, extractMenuFrontmatter, autoGenerateMenuFromFolder } from "../customMenu.js";
 import { dirname, relative, resolve } from "path";
+import { readFileSync } from "fs";
 
 /**
  * Get menu HTML and menu data from source directory
@@ -24,7 +25,7 @@ export async function getMenu(allSourceFilenames, source, validPaths) {
  * Find all unique custom menus in the source tree
  * @param {string[]} allSourceFilenames - All source file names
  * @param {string} source - Source directory path
- * @returns {Map<string, {menuPath: string, menuDir: string, menuData: Array}>} Map of menu dir to menu info
+ * @returns {Map<string, {menuPath: string, menuDir: string, menuData: Array, menuPosition: string}>} Map of menu dir to menu info
  */
 export function findAllCustomMenus(allSourceFilenames, source) {
   const customMenus = new Map();
@@ -38,14 +39,42 @@ export function findAllCustomMenus(allSourceFilenames, source) {
     
     const menuInfo = findCustomMenu(dir, source);
     if (menuInfo && !customMenus.has(menuInfo.menuDir)) {
-      const menuData = parseCustomMenu(menuInfo.content, menuInfo.menuDir, source);
-      customMenus.set(menuInfo.menuDir, {
-        menuPath: menuInfo.path,
-        menuDir: menuInfo.menuDir,
-        menuData,
-        // The URL path for the menu JSON file
-        menuJsonPath: '/public/custom-menu-' + getMenuId(menuInfo.menuDir, source) + '.json',
-      });
+      // Use the enhanced getCustomMenuForFile that handles frontmatter
+      const parsedMenu = getCustomMenuFromFile(dir + '/index.md', source);
+      
+      // If getCustomMenuFromFile found the same menu, use its parsed data
+      if (parsedMenu && parsedMenu.menuDir === menuInfo.menuDir) {
+        customMenus.set(menuInfo.menuDir, {
+          menuPath: menuInfo.path,
+          menuDir: menuInfo.menuDir,
+          menuData: parsedMenu.menuData,
+          menuPosition: parsedMenu.menuPosition || 'side',
+          // The URL path for the menu JSON file
+          menuJsonPath: '/public/custom-menu-' + getMenuId(menuInfo.menuDir, source) + '.json',
+        });
+      } else {
+        // Fallback to direct parsing - also handles auto-generate
+        const { frontmatter } = extractMenuFrontmatter(menuInfo.content);
+        const autoGenerate = frontmatter['auto-generate-menu'] === true || frontmatter['auto-generate-menu'] === 'true';
+        
+        let menuData;
+        if (autoGenerate) {
+          const depth = parseInt(frontmatter['menu-depth'], 10) || 2;
+          menuData = autoGenerateMenuFromFolder(menuInfo.menuDir, source, depth, true);
+        } else {
+          const contentWithoutFrontmatter = menuInfo.content.replace(/^---[\s\S]*?---\s*/, '');
+          menuData = parseCustomMenu(contentWithoutFrontmatter, menuInfo.menuDir, source);
+        }
+        
+        customMenus.set(menuInfo.menuDir, {
+          menuPath: menuInfo.path,
+          menuDir: menuInfo.menuDir,
+          menuData,
+          menuPosition: frontmatter['menu-position'] || 'side',
+          // The URL path for the menu JSON file
+          menuJsonPath: '/public/custom-menu-' + getMenuId(menuInfo.menuDir, source) + '.json',
+        });
+      }
     }
   }
   
@@ -69,7 +98,7 @@ function getMenuId(menuDir, source) {
  * @param {string} filePath - The source file path
  * @param {string} source - The source root directory
  * @param {Map} customMenus - Map of all custom menus
- * @returns {{menuJsonPath: string, menuDir: string} | null} - Custom menu info or null
+ * @returns {{menuJsonPath: string, menuDir: string, menuPosition: string} | null} - Custom menu info or null
  */
 export function getCustomMenuForFile(filePath, source, customMenus) {
   const fileDir = resolve(dirname(filePath));
@@ -83,6 +112,7 @@ export function getCustomMenuForFile(filePath, source, customMenus) {
       return {
         menuJsonPath: menuInfo.menuJsonPath,
         menuDir: relative(source, menuInfo.menuDir) || '',
+        menuPosition: menuInfo.menuPosition || 'side',
       };
     }
     const parentDir = dirname(currentDir);
@@ -96,8 +126,9 @@ export function getCustomMenuForFile(filePath, source, customMenus) {
 /**
  * Build HTML for a custom menu
  * @param {Array} menuData - The parsed menu data
+ * @param {string} position - 'side' or 'top' (default: 'side')
  * @returns {string} - HTML string for the menu
  */
-export function buildCustomMenuHtmlExport(menuData) {
-  return buildCustomMenuHtml(menuData);
+export function buildCustomMenuHtmlExport(menuData, position = 'side') {
+  return buildCustomMenuHtml(menuData, position);
 }

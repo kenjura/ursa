@@ -12,9 +12,20 @@
     <nav id="nav-global">
         <button class="menu-button" aria-label="Menu">☰</button>
 
-        <input id="global-search" type="text" placeholder="Search..." />
+        <div class="nav-center">
+            <nav id="nav-main-top">
+                <!-- Top menu will be populated by JavaScript when data-menu-position="top" -->
+            </nav>
 
-        <span class="avatar" aria-hidden="true">👤</span>
+            <div class="search-wrapper">
+                <input id="global-search" type="text" placeholder="Search..." />
+            </div>
+        </div>
+
+        <div class="nav-right-controls">
+            <button class="search-button" aria-label="Search">🔍</button>
+            <span class="avatar" aria-hidden="true">👤</span>
+        </div>
     </nav>
     <nav id="nav-main">
         ${menu}

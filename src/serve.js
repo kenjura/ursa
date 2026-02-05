@@ -191,23 +191,37 @@ export async function serve({
   serveFiles(outputDir, port);
   console.log(`🚀 Development server running at http://localhost:${port}`);
   console.log("📁 Serving files from:", outputDir);
-  console.log("⏳ Generating site in background (deferred image processing)...\n");
+  console.log("⏳ Generating site in background (deferred image + search index processing)...\n");
 
-  // Initial generation with deferred image processing for faster startup
+  // Initial generation with deferred image and search index processing for faster startup
   // This also initializes the watch cache for fast single-file updates
-  generate({ _source: sourceDir, _meta: metaDir, _output: outputDir, _whitelist, _exclude, _clean, _deferImages: true })
+  generate({ _source: sourceDir, _meta: metaDir, _output: outputDir, _whitelist, _exclude, _clean, _deferImages: true, _deferSearchIndex: true })
     .then(async (result) => {
       console.log("\n✅ Initial HTML generation complete. Fast single-file regeneration enabled.");
-      console.log("   Note: Images may show as originals until preview generation completes.\n");
+      console.log("   Note: Images/search may be incomplete until background processing completes.\n");
       
-      // Wait for deferred image processing to complete
+      // Wait for deferred processing to complete in parallel
+      const promises = [];
+      
       if (result && result.deferredImageProcessing) {
-        try {
-          await result.deferredImageProcessing;
-          console.log("\n✅ Image preview generation complete. Full site ready.\n");
-        } catch (error) {
-          console.error("Error during image processing:", error.message);
-        }
+        promises.push(
+          result.deferredImageProcessing
+            .then(() => console.log("\n✅ Image preview generation complete."))
+            .catch(error => console.error("Error during image processing:", error.message))
+        );
+      }
+      
+      if (result && result.deferredSearchIndex) {
+        promises.push(
+          result.deferredSearchIndex
+            .then(() => console.log("✅ Search index generation complete."))
+            .catch(error => console.error("Error during search index generation:", error.message))
+        );
+      }
+      
+      await Promise.all(promises);
+      if (promises.length > 0) {
+        console.log("\n✅ Full site ready.\n");
       }
     })
     .catch((error) => console.error("Error during initial generation:", error.message));
@@ -224,14 +238,19 @@ export async function serve({
     console.log("Full rebuild required (meta files affect all pages)...");
     clearWatchCache(); // Clear cache since templates/CSS may have changed
     try {
-      // Use deferred images for meta rebuilds too
-      const result = await generate({ _source: sourceDir, _meta: metaDir, _output: outputDir, _whitelist, _exclude, _clean: true, _deferImages: true });
+      // Use deferred images and search index for meta rebuilds too
+      const result = await generate({ _source: sourceDir, _meta: metaDir, _output: outputDir, _whitelist, _exclude, _clean: true, _deferImages: true, _deferSearchIndex: true });
       console.log("HTML regeneration complete.");
       broadcastReload(name);
       if (result && result.deferredImageProcessing) {
         result.deferredImageProcessing.then(() => {
           console.log("Image preview generation complete.");
         }).catch(e => console.error("Image processing error:", e.message));
+      }
+      if (result && result.deferredSearchIndex) {
+        result.deferredSearchIndex.then(() => {
+          console.log("Search index generation complete.");
+        }).catch(e => console.error("Search index error:", e.message));
       }
     } catch (error) {
       console.error("Error during regeneration:", error.message);

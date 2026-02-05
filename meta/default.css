@@ -74,11 +74,17 @@ nav#nav-global {
     opacity: 0.7;
   }
 
-  .search-wrapper {
-    position: relative;
+  /* Center container for search and top menu */
+  .nav-center {
     width: var(--article-width);
     max-width: calc(100% - 16px);
     justify-self: center;
+    position: relative;
+  }
+
+  .search-wrapper {
+    position: relative;
+    width: 100%;
   }
   
   input#global-search {
@@ -120,6 +126,10 @@ nav#nav-global {
     font-size: 1.5rem;
     line-height: 1;
     padding: 8px;
+  }
+  
+  /* When avatar is standalone (not in container), align to end */
+  > .avatar {
     justify-self: end;
   }
 }
@@ -217,6 +227,251 @@ nav#nav-global {
 .search-show-more:hover {
   background-color: var(--nav-top-bg);
   text-decoration: underline;
+}
+
+/* ==========================================
+   TOP NAVIGATION MENU STYLES
+   When body[data-menu-position="top"] is set
+   ========================================== */
+
+/* Top menu container - positioning handled by parent .nav-center */
+nav#nav-main-top {
+  display: none;
+  width: 100%;
+}
+
+/* Show top menu when position is top */
+body[data-menu-position="top"] nav#nav-main-top {
+  display: flex;
+  align-items: center;
+}
+
+/* Hide search input when top menu is present - it moves to a button */
+body[data-menu-position="top"] nav#nav-global input#global-search {
+  display: none;
+}
+
+/* Show search button instead when top menu is active */
+body[data-menu-position="top"] nav#nav-global .search-button {
+  display: inline-flex;
+}
+
+/* Hide side nav when top menu is active */
+body[data-menu-position="top"] nav#nav-main {
+  display: none;
+}
+
+/* Full-width article when side nav is hidden */
+body[data-menu-position="top"] article#main-content {
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* Update nav-global grid to accommodate top menu - keep search+avatar together on right */
+body[data-menu-position="top"] nav#nav-global {
+  grid-template-columns: auto 1fr auto;
+}
+
+/* Top-level menu list */
+nav#nav-main-top .top-menu-level {
+  display: flex;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  gap: 0;
+}
+
+/* Top-level menu items */
+nav#nav-main-top .top-menu-item {
+  position: relative;
+  padding: 0;
+}
+
+nav#nav-main-top .top-menu-label {
+  display: block;
+  padding: 8px 16px;
+  color: var(--text-color);
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+nav#nav-main-top .top-menu-label:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+nav#nav-main-top a.top-menu-label:hover {
+  text-decoration: none;
+}
+
+/* Dropdown indicator for items with children */
+nav#nav-main-top .top-menu-item.has-dropdown > .top-menu-label::after {
+  content: '▼';
+  font-size: 0.65em;
+  margin-left: 6px;
+  opacity: 0.6;
+}
+
+/* Dropdown menu (first level of children) */
+nav#nav-main-top .top-menu-dropdown {
+  display: none;
+  position: absolute;
+  top: 100%;
+  left: 0;
+  min-width: 200px;
+  background-color: var(--bg-color);
+  border: 1px solid var(--nav-top-bg);
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  list-style: none;
+  margin: 0;
+  padding: 4px 0;
+  z-index: 1005;
+}
+
+/* Show dropdown on hover */
+nav#nav-main-top .top-menu-item.has-dropdown:hover > .top-menu-dropdown {
+  display: block;
+}
+
+/* Dropdown items */
+nav#nav-main-top .dropdown-item {
+  position: relative;
+}
+
+nav#nav-main-top .dropdown-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 16px;
+  color: var(--text-color);
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+nav#nav-main-top .dropdown-label:hover {
+  background-color: var(--nav-top-bg);
+}
+
+nav#nav-main-top a.dropdown-label:hover {
+  text-decoration: none;
+}
+
+/* Flyout indicator */
+nav#nav-main-top .flyout-indicator {
+  font-size: 0.7em;
+  opacity: 0.6;
+  margin-left: 8px;
+}
+
+/* Flyout menu (nested children) */
+nav#nav-main-top .top-menu-flyout {
+  display: none;
+  position: absolute;
+  left: 100%;
+  top: 0;
+  min-width: 200px;
+  background-color: var(--bg-color);
+  border: 1px solid var(--nav-top-bg);
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  list-style: none;
+  margin: 0;
+  padding: 4px 0;
+  z-index: 1006;
+}
+
+/* Show flyout on hover */
+nav#nav-main-top .dropdown-item.has-flyout:hover > .top-menu-flyout {
+  display: block;
+}
+
+/* Search button and avatar container (shown when top menu is active) */
+nav#nav-global .nav-right-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  justify-self: end;
+}
+
+nav#nav-global .search-button {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: var(--text-color);
+  font-size: 1.25rem;
+  padding: 8px 12px;
+  cursor: pointer;
+  opacity: 0.8;
+  transition: opacity 0.2s ease;
+}
+
+nav#nav-global .search-button:hover {
+  opacity: 1;
+}
+
+/* Search backdrop - just the dark overlay */
+body[data-menu-position="top"] .search-backdrop {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  z-index: 1010;
+}
+
+body[data-menu-position="top"] .search-backdrop.active {
+  display: block;
+}
+
+/* Floating search container - positioned above nav */
+body[data-menu-position="top"] .search-floating {
+  display: none;
+  position: fixed;
+  top: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(600px, calc(100vw - 32px));
+  z-index: 1020;
+}
+
+body[data-menu-position="top"] .search-floating.active {
+  display: block;
+}
+
+/* Style the search wrapper when inside floating container */
+body[data-menu-position="top"] .search-floating .search-wrapper {
+  width: 100%;
+}
+
+body[data-menu-position="top"] .search-floating #global-search {
+  width: 100%;
+  height: 48px;
+  font-size: 1.25rem;
+  padding: 0 16px;
+  border: 2px solid var(--nav-top-bg);
+  border-radius: 8px;
+  background: var(--bg-color);
+  color: var(--text-color);
+}
+
+/* Search results inside floating container */
+body[data-menu-position="top"] .search-floating .search-results {
+  position: relative;
+  top: 4px;
+  max-height: 60vh;
+  overflow-y: auto;
+  background: var(--bg-color);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
 }
 
 nav#nav-main {

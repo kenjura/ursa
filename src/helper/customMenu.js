@@ -1,6 +1,7 @@
 // Custom menu support - allows defining custom menus in menu.md, menu.txt, _menu.md, or _menu.txt
-import { existsSync, readFileSync } from "fs";
-import { join, dirname, relative, resolve, basename } from "path";
+import { existsSync, readFileSync, readdirSync, statSync } from "fs";
+import { join, dirname, relative, resolve, basename, extname } from "path";
+import { extractMetadata } from "./metadataExtractor.js";
 
 // Menu file names to look for (in order of priority)
 const MENU_FILE_NAMES = ['menu.md', 'menu.txt', '_menu.md', '_menu.txt'];
@@ -8,9 +9,56 @@ const MENU_FILE_NAMES = ['menu.md', 'menu.txt', '_menu.md', '_menu.txt'];
 // Source file extensions to check
 const SOURCE_EXTENSIONS = ['.md', '.txt'];
 
+// Index file names for folder links
+const INDEX_NAMES = ['index', 'home'];
+
 // Default icons
 const FOLDER_ICON = '📁';
 const DOCUMENT_ICON = '📄';
+
+/**
+ * Extract frontmatter from menu file content
+ * @param {string} content - Menu file content
+ * @returns {{frontmatter: object, body: string}} - Parsed frontmatter and remaining body
+ */
+export function extractMenuFrontmatter(content) {
+  const frontmatterMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/);
+  if (!frontmatterMatch) {
+    return { frontmatter: {}, body: content };
+  }
+  
+  try {
+    // Parse YAML-like frontmatter (simple key: value pairs)
+    const frontmatterText = frontmatterMatch[1];
+    const frontmatter = {};
+    for (const line of frontmatterText.split('\n')) {
+      const match = line.match(/^([^:]+):\s*(.*)$/);
+      if (match) {
+        const key = match[1].trim();
+        let value = match[2].trim();
+        // Parse boolean values
+        if (value === 'true') value = true;
+        else if (value === 'false') value = false;
+        // Parse quoted strings
+        else if (value.startsWith('"') && value.endsWith('"')) value = value.slice(1, -1);
+        else if (value.startsWith("'") && value.endsWith("'")) value = value.slice(1, -1);
+        frontmatter[key] = value;
+      }
+    }
+    return { frontmatter, body: frontmatterMatch[2] };
+  } catch (e) {
+    return { frontmatter: {}, body: content };
+  }
+}
+
+/**
+ * Convert filename to display name (e.g., "foo-bar" -> "Foo Bar")
+ */
+function toDisplayName(filename) {
+  return filename
+    .replace(/[-_]/g, ' ')
+    .replace(/\b\w/g, c => c.toUpperCase());
+}
 
 /**
  * Check if a source file exists for a given path
@@ -39,6 +87,130 @@ function sourceFileExists(basePath) {
   }
   
   return false;
+}
+
+/**
+ * Get the menu-label from a file's frontmatter
+ * @param {string} filePath - Path to the file
+ * @returns {string|null} - Menu label or null
+ */
+function getMenuLabelFromFile(filePath) {
+  try {
+    if (!existsSync(filePath)) return null;
+    const content = readFileSync(filePath, 'utf8');
+    const metadata = extractMetadata(content);
+    return metadata?.['menu-label'] || null;
+  } catch (e) {
+    return null;
+  }
+}
+
+/**
+ * Auto-generate menu items from folder contents
+ * Similar to the main automenu but for custom menu contexts
+ * @param {string} folderPath - Absolute path to folder
+ * @param {string} sourceRoot - Root source directory
+ * @param {number} depth - How deep to recurse (default: 2)
+ * @param {boolean} isRoot - Whether this is the root level (adds Home item)
+ * @returns {Array} - Menu items array
+ */
+export function autoGenerateMenuFromFolder(folderPath, sourceRoot, depth = 2, isRoot = true) {
+  const items = [];
+  
+  if (depth <= 0 || !existsSync(folderPath)) {
+    return items;
+  }
+  
+  // Home item to be added at the start (after sorting other items)
+  let homeItem = null;
+  if (isRoot) {
+    const relativePath = '/' + relative(sourceRoot, folderPath).replace(/\\/g, '/');
+    homeItem = {
+      label: 'Home',
+      path: 'home',
+      href: relativePath + '/index.html',
+      hasChildren: false,
+      icon: `<span class="menu-icon">${DOCUMENT_ICON}</span>`,
+      children: [],
+    };
+  }
+  
+  try {
+    const entries = readdirSync(folderPath, { withFileTypes: true });
+    
+    for (const entry of entries) {
+      // Skip hidden files/folders
+      if (entry.name.startsWith('.') || entry.name.startsWith('_')) continue;
+      // Skip menu files themselves
+      if (MENU_FILE_NAMES.includes(entry.name)) continue;
+      // Skip config files
+      if (entry.name === 'config.json') continue;
+      // Skip img folders
+      if (entry.name === 'img' && entry.isDirectory()) continue;
+      
+      const fullPath = join(folderPath, entry.name);
+      const relativePath = '/' + relative(sourceRoot, fullPath).replace(/\\/g, '/');
+      
+      if (entry.isDirectory()) {
+        // Check for index file to get label
+        let label = null;
+        for (const ext of SOURCE_EXTENSIONS) {
+          const indexPath = join(fullPath, `index${ext}`);
+          label = getMenuLabelFromFile(indexPath);
+          if (label) break;
+        }
+        if (!label) label = toDisplayName(entry.name);
+        
+        const children = depth > 1 ? autoGenerateMenuFromFolder(fullPath, sourceRoot, depth - 1, false) : [];
+        
+        items.push({
+          label,
+          path: entry.name.toLowerCase().replace(/\s+/g, '-'),
+          href: relativePath + '/index.html',
+          hasChildren: children.length > 0,
+          icon: `<span class="menu-icon">${FOLDER_ICON}</span>`,
+          children,
+        });
+      } else {
+        // It's a file
+        const ext = extname(entry.name);
+        if (!SOURCE_EXTENSIONS.includes(ext)) continue;
+        
+        const baseName = basename(entry.name, ext);
+        // Skip index files (they're represented by the folder)
+        if (INDEX_NAMES.includes(baseName.toLowerCase())) continue;
+        
+        // Get label from frontmatter or filename
+        const label = getMenuLabelFromFile(fullPath) || toDisplayName(baseName);
+        
+        items.push({
+          label,
+          path: baseName.toLowerCase().replace(/\s+/g, '-'),
+          href: relativePath.replace(ext, '.html'),
+          hasChildren: false,
+          icon: `<span class="menu-icon">${DOCUMENT_ICON}</span>`,
+          children: [],
+        });
+      }
+    }
+    
+    // Sort: folders first, then alphabetically
+    items.sort((a, b) => {
+      if (a.hasChildren && !b.hasChildren) return -1;
+      if (!a.hasChildren && b.hasChildren) return 1;
+      return a.label.localeCompare(b.label);
+    });
+    
+  } catch (e) {
+    console.error(`Error reading folder ${folderPath}:`, e);
+  }
+  
+  // Add Home item at the very start (after sorting)
+  if (homeItem) {
+    items.unshift(homeItem);
+  }
+  
+  return items;
 }
 
 /**
@@ -227,7 +399,7 @@ export function parseCustomMenu(content, menuDir, sourceRoot) {
  * Get custom menu data for a given file path
  * @param {string} filePath - The source file path
  * @param {string} sourceRoot - The root source directory
- * @returns {{menuData: Array, menuPath: string} | null} - Menu data and path, or null if no custom menu
+ * @returns {{menuData: Array, menuPath: string, menuPosition: string} | null} - Menu data and path, or null if no custom menu
  */
 export function getCustomMenuForFile(filePath, sourceRoot) {
   const fileDir = dirname(filePath);
@@ -237,12 +409,28 @@ export function getCustomMenuForFile(filePath, sourceRoot) {
     return null;
   }
   
-  const menuData = parseCustomMenu(customMenuInfo.content, customMenuInfo.menuDir, sourceRoot);
+  // Extract frontmatter options
+  const { frontmatter } = extractMenuFrontmatter(customMenuInfo.content);
+  const autoGenerate = frontmatter['auto-generate-menu'] === true || frontmatter['auto-generate-menu'] === 'true';
+  const menuPosition = frontmatter['menu-position'] || 'side';
+  const depth = parseInt(frontmatter['menu-depth'], 10) || 2;
+  
+  let menuData;
+  
+  if (autoGenerate) {
+    // Auto-generate menu from folder contents
+    menuData = autoGenerateMenuFromFolder(customMenuInfo.menuDir, sourceRoot, depth);
+  } else {
+    // Parse the custom menu content (excluding frontmatter)
+    const contentWithoutFrontmatter = customMenuInfo.content.replace(/^---[\s\S]*?---\s*/, '');
+    menuData = parseCustomMenu(contentWithoutFrontmatter, customMenuInfo.menuDir, sourceRoot);
+  }
   
   return {
     menuData,
     menuPath: customMenuInfo.path,
     menuDir: customMenuInfo.menuDir,
+    menuPosition, // 'top' or 'side'
   };
 }
 
@@ -250,9 +438,14 @@ export function getCustomMenuForFile(filePath, sourceRoot) {
  * Build menu HTML structure from custom menu data
  * This matches the format expected by the existing menu.js client-side code
  * @param {Array} menuData - The parsed menu data
+ * @param {string} position - 'side' or 'top'
  * @returns {string} - HTML string for the menu
  */
-export function buildCustomMenuHtml(menuData) {
+export function buildCustomMenuHtml(menuData, position = 'side') {
+  if (position === 'top') {
+    return buildTopMenuHtml(menuData);
+  }
+  
   const menuConfigScript = `<script type="application/json" id="menu-config">${JSON.stringify({ openMenuItems: [], customMenu: true })}</script>`;
   
   const breadcrumbHtml = `
@@ -265,6 +458,64 @@ export function buildCustomMenuHtml(menuData) {
   const menuHtml = renderCustomMenuLevel(menuData);
   
   return `${menuConfigScript}${breadcrumbHtml}<ul class="menu-level" data-level="0">${menuHtml}</ul>`;
+}
+
+/**
+ * Build top navigation menu HTML
+ * Top-level items are horizontal, with dropdowns for children
+ * @param {Array} menuData - The parsed menu data
+ * @returns {string} - HTML string for the top menu
+ */
+function buildTopMenuHtml(menuData) {
+  const menuConfigScript = `<script type="application/json" id="menu-config">${JSON.stringify({ openMenuItems: [], customMenu: true, position: 'top' })}</script>`;
+  
+  const menuItems = menuData.map(item => {
+    const hasChildrenClass = item.hasChildren ? ' has-dropdown' : '';
+    
+    const labelHtml = item.href
+      ? `<a href="${item.href}" class="top-menu-label">${item.label}</a>`
+      : `<span class="top-menu-label">${item.label}</span>`;
+    
+    let dropdownHtml = '';
+    if (item.hasChildren && item.children && item.children.length > 0) {
+      dropdownHtml = `<ul class="top-menu-dropdown">${renderTopMenuDropdown(item.children)}</ul>`;
+    }
+    
+    return `
+<li class="top-menu-item${hasChildrenClass}">
+  ${labelHtml}
+  ${dropdownHtml}
+</li>`;
+  }).join('');
+  
+  return `${menuConfigScript}<ul class="top-menu-level">${menuItems}</ul>`;
+}
+
+/**
+ * Render dropdown items for top menu
+ * @param {Array} items - Menu items
+ * @returns {string} - HTML string
+ */
+function renderTopMenuDropdown(items) {
+  return items.map(item => {
+    const hasChildrenClass = item.hasChildren ? ' has-flyout' : '';
+    
+    const labelHtml = item.href
+      ? `<a href="${item.href}" class="dropdown-label">${item.label}</a>`
+      : `<span class="dropdown-label">${item.label}</span>`;
+    
+    let flyoutHtml = '';
+    if (item.hasChildren && item.children && item.children.length > 0) {
+      flyoutHtml = `<ul class="top-menu-flyout">${renderTopMenuDropdown(item.children)}</ul>`;
+    }
+    
+    return `
+<li class="dropdown-item${hasChildrenClass}">
+  ${labelHtml}
+  ${item.hasChildren ? '<span class="flyout-indicator">▶</span>' : ''}
+  ${flyoutHtml}
+</li>`;
+  }).join('');
 }
 
 /**

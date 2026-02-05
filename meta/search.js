@@ -36,11 +36,15 @@ class GlobalSearch {
   }
   
   wrapSearchInput() {
-    // Wrap the search input in a container for positioning the clear button
-    this.searchWrapper = document.createElement('div');
-    this.searchWrapper.className = 'search-wrapper';
-    this.searchInput.parentNode.insertBefore(this.searchWrapper, this.searchInput);
-    this.searchWrapper.appendChild(this.searchInput);
+    // Use existing search-wrapper if present, otherwise create one
+    this.searchWrapper = this.searchInput.closest('.search-wrapper');
+    if (!this.searchWrapper) {
+      // Fallback: wrap the search input in a container for positioning the clear button
+      this.searchWrapper = document.createElement('div');
+      this.searchWrapper.className = 'search-wrapper';
+      this.searchInput.parentNode.insertBefore(this.searchWrapper, this.searchInput);
+      this.searchWrapper.appendChild(this.searchInput);
+    }
   }
   
   createClearButton() {
@@ -153,6 +157,12 @@ class GlobalSearch {
     
     this.searchInput.addEventListener('blur', (e) => {
       // Delay hiding to allow click on results
+      // Check if we're inside the floating search container (top menu mode)
+      const floatingSearch = this.searchInput.closest('.search-floating');
+      if (floatingSearch && floatingSearch.classList.contains('active')) {
+        // In floating mode, don't auto-hide on blur - let the backdrop click handle it
+        return;
+      }
       setTimeout(() => {
         this.hideResults();
       }, 150);
@@ -160,6 +170,11 @@ class GlobalSearch {
     
     // Click outside to close
     document.addEventListener('click', (e) => {
+      // If inside floating search container, don't close on internal clicks
+      const floatingSearch = this.searchInput.closest('.search-floating');
+      if (floatingSearch && floatingSearch.contains(e.target)) {
+        return;
+      }
       if (!this.searchInput.contains(e.target) && !this.searchResults.contains(e.target)) {
         this.hideResults();
       }

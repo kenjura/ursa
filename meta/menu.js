@@ -3,9 +3,20 @@
  * 
  * Displays 2 columns at a time, with horizontal scrolling to navigate deeper levels.
  * Each column represents one level of the folder hierarchy.
+ * 
+ * Also supports top menu position for horizontal navigation with dropdowns.
  */
 document.addEventListener('DOMContentLoaded', () => {
     const navMain = document.querySelector('nav#nav-main');
+    const navMainTop = document.querySelector('nav#nav-main-top');
+    const menuPosition = document.body.dataset.menuPosition || 'side';
+    
+    // If menu position is top, handle differently
+    if (menuPosition === 'top') {
+        initTopMenu();
+        return;
+    }
+    
     if (!navMain) return;
 
     // Check for custom menu
@@ -527,3 +538,222 @@ document.addEventListener('DOMContentLoaded', () => {
     // Initial render (shows loading, then loadMenuData will call initializeFromCurrentPage)
     renderMenu();
 });
+
+/**
+ * Initialize top menu (horizontal navigation with dropdowns)
+ */
+function initTopMenu() {
+    const navMainTop = document.querySelector('nav#nav-main-top');
+    const customMenuPath = document.body.dataset.customMenu;
+    
+    if (!navMainTop || !customMenuPath) return;
+    
+    // Load menu data and render top menu
+    fetch(customMenuPath)
+        .then(response => response.json())
+        .then(data => {
+            // Handle new JSON format with menuData and menuPosition
+            const menuData = data.menuData || data;
+            renderTopMenu(navMainTop, menuData);
+        })
+        .catch(error => {
+            console.error('Failed to load top menu data:', error);
+        });
+    
+    // Set up search button toggle
+    initTopMenuSearch();
+}
+
+/**
+ * Render the top navigation menu
+ */
+function renderTopMenu(container, menuData) {
+    const ul = document.createElement('ul');
+    ul.className = 'top-menu-level';
+    
+    menuData.forEach(item => {
+        const li = document.createElement('li');
+        li.className = 'top-menu-item';
+        if (item.hasChildren || (item.children && item.children.length > 0)) {
+            li.classList.add('has-dropdown');
+        }
+        
+        // Create label (link or span)
+        const label = item.href 
+            ? document.createElement('a')
+            : document.createElement('span');
+        label.className = 'top-menu-label';
+        label.textContent = item.label;
+        if (item.href) {
+            label.href = item.href;
+        }
+        li.appendChild(label);
+        
+        // Create dropdown if has children
+        if (item.children && item.children.length > 0) {
+            const dropdown = createTopMenuDropdown(item.children);
+            li.appendChild(dropdown);
+        }
+        
+        ul.appendChild(li);
+    });
+    
+    container.appendChild(ul);
+}
+
+/**
+ * Create a dropdown menu for top navigation
+ */
+function createTopMenuDropdown(items) {
+    const ul = document.createElement('ul');
+    ul.className = 'top-menu-dropdown';
+    
+    items.forEach(item => {
+        const li = document.createElement('li');
+        li.className = 'dropdown-item';
+        if (item.hasChildren || (item.children && item.children.length > 0)) {
+            li.classList.add('has-flyout');
+        }
+        
+        // Create label
+        const label = item.href
+            ? document.createElement('a')
+            : document.createElement('span');
+        label.className = 'dropdown-label';
+        label.textContent = item.label;
+        if (item.href) {
+            label.href = item.href;
+        }
+        li.appendChild(label);
+        
+        // Add flyout indicator if has children
+        if (item.children && item.children.length > 0) {
+            const indicator = document.createElement('span');
+            indicator.className = 'flyout-indicator';
+            indicator.textContent = '▶';
+            label.appendChild(indicator);
+            
+            // Create flyout submenu
+            const flyout = createTopMenuFlyout(item.children);
+            li.appendChild(flyout);
+        }
+        
+        ul.appendChild(li);
+    });
+    
+    return ul;
+}
+
+/**
+ * Create a flyout submenu for nested items
+ */
+function createTopMenuFlyout(items) {
+    const ul = document.createElement('ul');
+    ul.className = 'top-menu-flyout';
+    
+    items.forEach(item => {
+        const li = document.createElement('li');
+        li.className = 'dropdown-item';
+        if (item.hasChildren || (item.children && item.children.length > 0)) {
+            li.classList.add('has-flyout');
+        }
+        
+        const label = item.href
+            ? document.createElement('a')
+            : document.createElement('span');
+        label.className = 'dropdown-label';
+        label.textContent = item.label;
+        if (item.href) {
+            label.href = item.href;
+        }
+        li.appendChild(label);
+        
+        // Recursive flyout for deeper levels
+        if (item.children && item.children.length > 0) {
+            const indicator = document.createElement('span');
+            indicator.className = 'flyout-indicator';
+            indicator.textContent = '▶';
+            label.appendChild(indicator);
+            
+            const flyout = createTopMenuFlyout(item.children);
+            li.appendChild(flyout);
+        }
+        
+        ul.appendChild(li);
+    });
+    
+    return ul;
+}
+
+/**
+ * Initialize search functionality for top menu mode
+ */
+function initTopMenuSearch() {
+    const searchButton = document.querySelector('nav#nav-global .search-button');
+    const searchInput = document.querySelector('#global-search');
+    const searchWrapper = searchInput?.closest('.search-wrapper');
+    const searchResults = document.querySelector('#search-results');
+    
+    if (!searchButton || !searchInput || !searchWrapper) return;
+    
+    // Create search overlay backdrop (just the dark background)
+    const backdrop = document.createElement('div');
+    backdrop.className = 'search-backdrop';
+    document.body.appendChild(backdrop);
+    
+    // Create container for search that floats above the nav
+    const floatingSearch = document.createElement('div');
+    floatingSearch.className = 'search-floating';
+    document.body.appendChild(floatingSearch);
+    
+    // Toggle search on button click
+    searchButton.addEventListener('click', () => {
+        backdrop.classList.add('active');
+        floatingSearch.classList.add('active');
+        
+        // Move the search wrapper into the floating container
+        floatingSearch.appendChild(searchWrapper);
+        
+        // Move search results into floating container too (if exists)
+        if (searchResults) {
+            floatingSearch.appendChild(searchResults);
+        }
+        
+        searchInput.value = '';
+        searchInput.focus();
+    });
+    
+    function closeSearch() {
+        backdrop.classList.remove('active');
+        floatingSearch.classList.remove('active');
+        
+        // Move search wrapper back to nav-center
+        const navCenter = document.querySelector('.nav-center');
+        if (navCenter && searchWrapper) {
+            navCenter.appendChild(searchWrapper);
+        }
+        // Move search results back too
+        if (searchResults && searchWrapper) {
+            searchWrapper.parentNode.appendChild(searchResults);
+        }
+    }
+    
+    // Close on backdrop click
+    backdrop.addEventListener('click', closeSearch);
+    
+    // Close on escape
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && backdrop.classList.contains('active')) {
+            closeSearch();
+        }
+    });
+    
+    // Close when a search result is clicked (navigation will happen)
+    if (searchResults) {
+        searchResults.addEventListener('click', (e) => {
+            if (e.target.closest('.search-result-item')) {
+                closeSearch();
+            }
+        });
+    }
+}
