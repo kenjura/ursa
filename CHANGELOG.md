@@ -1,3 +1,35 @@
+# 0.70.0
+2026-02-04
+
+- **Navigation Cache**: Dramatically improved navigation build time
+  - Navigation structure cached in `.ursa/nav-cache.json`
+  - Cache validated by file list hash + metadata file stats (index.md, config.json)
+  - Parallel stat operations for faster cache validation
+  - Result: Navigation build drops from ~9s to ~50ms on cached runs (99% improvement)
+
+# 0.69.0
+2026-02-04
+
+- **Image Processing Performance**: Dramatically improved image processing speed
+  - Persistent image cache: images are only re-processed when source file changes (mtime/size check)
+  - Parallel processing: 8 images processed concurrently instead of sequentially
+  - Smart preview skipping: images smaller than 800x800 skip preview generation (already small enough)
+  - Result: Image processing drops from ~23s to ~16ms on cached runs (99.9% improvement)
+
+# 0.68.0
+2026-02-04
+
+- **Build Performance Profiling**: Added comprehensive profiling to identify performance bottlenecks
+  - Each build phase is now timed with millisecond precision
+  - Visual bar chart report shows percentage of total build time per phase
+  - Phases tracked: Scan source files, Filter & classify, Build navigation, Load cache, Copy meta files, Process images, Process articles, Write search index, Write menu data, Process directories, Process static files, Auto-index generation, Finalization
+  - Report displayed at end of each build for performance analysis
+
+# 0.67.0
+2026-02-04
+
+- All images referenced in whitelisted documents should be processed and copied, even if the images themselves are not in the whitelist
+
 # 0.66.0
 2026-02-04
 

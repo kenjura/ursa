@@ -53,8 +53,9 @@ export function getAutoIndexConfig(metadata) {
 function matchFrontMatter(str) {
   // Only match YAML front matter at the start of the file
   // Must have --- at line start, content, then closing --- also at line start
-  // The (?=\n|$) ensures the closing --- is followed by newline or end of string
-  const match = str.match(/^---\n([\s\S]+?)\n---(?=\n|$)/);
+  // The (?=\r?\n|$) ensures the closing --- is followed by newline (Unix or Windows) or end of string
+  // Handle both Unix (\n) and Windows (\r\n) line endings
+  const match = str.match(/^---\r?\n([\s\S]+?)\r?\n---(?=\r?\n|$)/);
   if (!match || match.length < 2) return null;
   
   // Return null if the captured content is empty or only whitespace
@@ -64,10 +65,19 @@ function matchFrontMatter(str) {
 
 function matchAllFrontMatter(str) {
   // Only match YAML front matter at the start of the file
-  const match = str.match(/^---\n([\s\S]+?)\n---(?=\n|$)/);
+  // Handle both Unix (\n) and Windows (\r\n) line endings
+  const match = str.match(/^---\r?\n([\s\S]+?)\r?\n---(?=\r?\n|$)/);
   if (!match || match.length < 2) return null;
   
   // Check if there's actual content between the delimiters
   const content = match[1].trim();
-  return content.length > 0 ? match[0] + '\n' : null;
+  if (content.length === 0) return null;
+  
+  // Return the matched front matter plus the line ending that follows it
+  // Look for the actual line ending used after the closing ---
+  const afterMatch = str.slice(match[0].length);
+  const lineEndingMatch = afterMatch.match(/^(\r?\n)/);
+  const lineEnding = lineEndingMatch ? lineEndingMatch[1] : '';
+  
+  return match[0] + lineEnding;
 }

@@ -36,6 +36,16 @@ import { existsSync } from "fs";
 import { fileExists } from "../helper/fileExists.js";
 import { createWhitelistFilter } from "../helper/whitelistFilter.js";
 import { processAllImages, transformImageTags, clearImageCache, copyAllImagesFast } from "../helper/imageProcessor.js";
+import { extractImageReferences } from "../helper/imageExtractor.js";
+import {
+  loadNavCache,
+  saveNavCache,
+  hashFileList,
+  hashFileStats,
+  isNavCacheValid,
+  createNavCacheEntry,
+  restoreMap,
+} from "../helper/build/navCache.js";
 
 // Import build helpers from organized modules
 import {
@@ -59,6 +69,7 @@ import {
   generateAutoIndices,
   generateAutoIndexHtmlFromSource,
 } from "../helper/build/index.js";
+import { getProfiler } from "../helper/build/profiler.js";
 
 // Concurrency limiter for batch processing to avoid memory exhaustion
 const BATCH_SIZE = parseInt(process.env.URSA_BATCH_SIZE || '50', 10);
@@ -86,6 +97,9 @@ export async function generate({
   _clean = false,  // When true, ignore cache and regenerate all files
   _deferImages = false,  // When true, copy images without processing, return promise for background processing
 } = {}) {
+  // Initialize profiler for this build
+  const profiler = getProfiler(true);
+  
   console.log({ _source, _meta, _output, _whitelist, _exclude, _clean, _deferImages });
   const source = resolve(_source) + "/";
   const meta = resolve(_meta);
@@ -94,15 +108,26 @@ export async function generate({
 
   // Generate cache-busting timestamp for this build
   const cacheBustTimestamp = generateCacheBustTimestamp();
-  progress.log(`Cache-bust timestamp: ${cacheBustTimestamp}`);
+  progress.logTimed(`Cache-bust timestamp: ${cacheBustTimestamp}`);
 
   // Clear output directory when --clean is specified
   if (_clean) {
-    progress.log(`Clean build: clearing output directory ${output}`);
+    progress.startTimer('Clean');
+    progress.logTimed(`Clean build: clearing output directory ${output}`);
     await emptyDir(output);
+    progress.logTimed(`Clean complete [${progress.stopTimer('Clean')}]`);
   }
 
+  // Phase: Scan source files
+  profiler.startPhase('Scan source files');
+  progress.startTimer('Scan');
   const allSourceFilenamesUnfiltered = await recurse(source, [() => false]);
+  progress.logTimed(`Scanned ${allSourceFilenamesUnfiltered.length} files [${progress.stopTimer('Scan')}]`);
+  profiler.endPhase('Scan source files');
+  
+  // Phase: Filter and classify files
+  profiler.startPhase('Filter & classify');
+  progress.startTimer('Filter');
   
   // Apply include filter (existing functionality)
   const includeFilter = process.env.INCLUDE_FILTER
@@ -116,22 +141,15 @@ export async function generate({
     const excludeFilter = createExcludeFilter(excludedPaths, source);
     const beforeCount = allSourceFilenames.length;
     allSourceFilenames = allSourceFilenames.filter(excludeFilter);
-    progress.log(`Exclude filter applied: ${beforeCount - allSourceFilenames.length} files excluded`);
+    progress.logTimed(`Exclude filter applied: ${beforeCount - allSourceFilenames.length} files excluded`);
   }
   
   // Apply whitelist filter if specified
   if (_whitelist) {
     const whitelistFilter = await createWhitelistFilter(_whitelist, source);
     allSourceFilenames = allSourceFilenames.filter(whitelistFilter);
-    console.log(`Whitelist applied: ${allSourceFilenames.length} files after filtering`);
+    progress.logTimed(`Whitelist applied: ${allSourceFilenames.length} files after filtering`);
   }
-  // console.log(allSourceFilenames);
-
-  // if (source.substr(-1) !== "/") source += "/"; // warning: might not work in windows
-  // if (output.substr(-1) !== "/") output += "/";
-
-  const templates = await getTemplates(meta); // todo: error if no default template
-  // console.log({ templates });
 
   // Clear config cache at start of generation to pick up any changes
   clearConfigCache();
@@ -160,38 +178,100 @@ export async function generate({
       .filter(f => f.match(htmlExtensions) && !f.match(hiddenOrSystemDirs))
       .map(f => f.replace(source, '')) // Store relative paths for easy lookup
   );
-  progress.log(`Found ${existingHtmlFiles.size} existing HTML files in source`);
+  
+  progress.logTimed(`Classified: ${allSourceFilenamesThatAreArticles.length} articles, ${allSourceFilenamesThatAreDirectories.length} dirs, ${existingHtmlFiles.size} HTML [${progress.stopTimer('Filter')}]`);
+  profiler.endPhase('Filter & classify');
 
-  // Build set of valid internal paths for link validation (must be before menu)
-  // Pass directories to ensure folder links are valid (auto-index generates index.html for all folders)
-  const validPaths = buildValidPaths(allSourceFilenamesThatAreArticles, source, allSourceFilenamesThatAreDirectories);
-  progress.log(`Built ${validPaths.size} valid paths for link validation`);
+  // Phase: Build navigation and metadata
+  profiler.startPhase('Build navigation');
+  progress.startTimer('Navigation');
+  
+  // Check if we can use cached navigation
+  let validPaths, templates, menu, menuData, customMenus, footer, buildId;
+  let navCacheUsed = false;
+  
+  if (!_clean) {
+    const fileListHash = hashFileList(allSourceFilenames);
+    const fileStatsHash = await hashFileStats(allSourceFilenames);
+    const navCache = await loadNavCache(source);
+    
+    if (isNavCacheValid(navCache, fileListHash, fileStatsHash)) {
+      // Use cached navigation data
+      navCacheUsed = true;
+      validPaths = restoreMap(navCache.validPaths);
+      menuData = navCache.menuData;
+      menu = navCache.menuHtml;
+      customMenus = restoreMap(navCache.customMenus);
+      
+      // Templates and footer still need to be loaded (they depend on meta directory)
+      templates = await getTemplates(meta);
+      buildId = getAndIncrementBuildId(resolve(_source));
+      footer = await getFooter(source, _source, buildId);
+      
+      progress.logTimed(`Navigation loaded from cache: ${validPaths.size} paths, ${customMenus.size} custom menus [${progress.stopTimer('Navigation')}]`);
+    } else {
+      // Cache miss - build navigation from scratch
+      validPaths = buildValidPaths(allSourceFilenamesThatAreArticles, source, allSourceFilenamesThatAreDirectories);
+      templates = await getTemplates(meta);
+      
+      const menuResult = await getMenu(allSourceFilenames, source, validPaths);
+      menu = menuResult.html;
+      menuData = menuResult.menuData;
+      
+      customMenus = findAllCustomMenus(allSourceFilenames, source);
+      buildId = getAndIncrementBuildId(resolve(_source));
+      footer = await getFooter(source, _source, buildId);
+      
+      // Save to cache for next run
+      const cacheEntry = createNavCacheEntry(
+        fileListHash,
+        fileStatsHash,
+        menuData,
+        menu,
+        Array.from(validPaths.entries()),
+        Array.from(customMenus.entries())
+      );
+      await saveNavCache(source, cacheEntry);
+      
+      progress.logTimed(`Navigation built: ${validPaths.size} paths, ${customMenus.size} custom menus [${progress.stopTimer('Navigation')}]`);
+    }
+  } else {
+    // Clean build - ignore cache
+    validPaths = buildValidPaths(allSourceFilenamesThatAreArticles, source, allSourceFilenamesThatAreDirectories);
+    templates = await getTemplates(meta);
+    
+    const menuResult = await getMenu(allSourceFilenames, source, validPaths);
+    menu = menuResult.html;
+    menuData = menuResult.menuData;
+    
+    customMenus = findAllCustomMenus(allSourceFilenames, source);
+    buildId = getAndIncrementBuildId(resolve(_source));
+    footer = await getFooter(source, _source, buildId);
+    
+    progress.logTimed(`Navigation built (clean): ${validPaths.size} paths, ${customMenus.size} custom menus [${progress.stopTimer('Navigation')}]`);
+  }
+  
+  profiler.endPhase('Build navigation');
 
-  const menuResult = await getMenu(allSourceFilenames, source, validPaths);
-  const menu = menuResult.html;
-  const menuData = menuResult.menuData;
-
-  // Find all custom menus in the source tree
-  const customMenus = findAllCustomMenus(allSourceFilenames, source);
-  progress.log(`Found ${customMenus.size} custom menu(s)`);
-
-  // Get and increment build ID from .ursa.json
-  const buildId = getAndIncrementBuildId(resolve(_source));
-  progress.log(`Build #${buildId}`);
-
-  // Generate footer content
-  const footer = await getFooter(source, _source, buildId);
-
+  // Phase: Load cache
+  profiler.startPhase('Load cache');
+  progress.startTimer('Cache');
+  
   // Load content hash cache from .ursa folder in source directory
   let hashCache = new Map();
   if (!_clean) {
     hashCache = await loadHashCache(source);
-    progress.log(`Loaded ${hashCache.size} cached content hashes from .ursa folder`);
+    progress.logTimed(`Loaded ${hashCache.size} cached hashes [${progress.stopTimer('Cache')}]`);
   } else {
-    progress.log(`Clean build: ignoring cached hashes`);
+    progress.logTimed(`Clean build: ignoring cached hashes`);
+    progress.stopTimer('Cache');
   }
+  profiler.endPhase('Load cache');
 
-
+  // Phase: Copy meta/public files
+  profiler.startPhase('Copy meta files');
+  progress.startTimer('Meta');
+  
   // create public folder
   const pub = join(output, "public");
   await mkdir(pub, { recursive: true });
@@ -214,6 +294,9 @@ export async function generate({
     );
     await outputFile(jsFile, jsContent);
   }
+  
+  progress.logTimed(`Meta files copied and processed [${progress.stopTimer('Meta')}]`);
+  profiler.endPhase('Copy meta files');
 
   // Track errors for error report
   const errors = [];
@@ -229,11 +312,47 @@ export async function generate({
   // Track CSS files that have been copied to avoid duplicates
   const copiedCssFiles = new Set();
 
-  // Identify all image files
+  // Identify all image files from the filtered source list
   const imageExtensions = /\.(jpg|jpeg|png|gif|webp|svg|ico)/;
-  const allSourceFilenamesThatAreImages = allSourceFilenames.filter(
+  let allSourceFilenamesThatAreImages = allSourceFilenames.filter(
     (filename) => filename.match(imageExtensions) && !filename.match(hiddenOrSystemDirs)
   );
+  
+  // When using a whitelist, also include images referenced by whitelisted documents
+  // This ensures that images used in whitelisted articles are processed even if not explicitly whitelisted
+  if (_whitelist) {
+    progress.logTimed('Scanning whitelisted articles for image references...');
+    const referencedImages = new Set();
+    
+    for (const articlePath of allSourceFilenamesThatAreArticles) {
+      try {
+        const content = await readFile(articlePath, 'utf8');
+        const imageRefs = extractImageReferences(content, articlePath, source);
+        imageRefs.forEach(img => referencedImages.add(img));
+      } catch (e) {
+        // Ignore read errors - file might not exist or be unreadable
+      }
+    }
+    
+    // Get all images from the unfiltered source list that are referenced
+    const allImagesUnfiltered = allSourceFilenamesUnfiltered.filter(
+      (filename) => filename.match(imageExtensions) && !filename.match(hiddenOrSystemDirs)
+    );
+    
+    // Add referenced images that aren't already in the list
+    const additionalImages = allImagesUnfiltered.filter(
+      img => referencedImages.has(img) && !allSourceFilenamesThatAreImages.includes(img)
+    );
+    
+    if (additionalImages.length > 0) {
+      progress.logTimed(`Found ${additionalImages.length} additional images referenced by whitelisted documents`);
+      allSourceFilenamesThatAreImages = [...allSourceFilenamesThatAreImages, ...additionalImages];
+    }
+  }
+  
+  // Phase: Process images
+  profiler.startPhase('Process images');
+  progress.startTimer('Images');
   
   // Handle images based on deferred mode
   let imageMap = new Map();
@@ -241,7 +360,7 @@ export async function generate({
   
   if (_deferImages) {
     // Fast mode: just copy images without processing, defer preview generation
-    progress.log(`Copying ${allSourceFilenamesThatAreImages.length} images (preview generation deferred)...`);
+    progress.logTimed(`Copying ${allSourceFilenamesThatAreImages.length} images (preview generation deferred)...`);
     await copyAllImagesFast(
       allSourceFilenamesThatAreImages,
       source,
@@ -251,10 +370,11 @@ export async function generate({
       }
     );
     progress.done('Images (copy)', `${allSourceFilenamesThatAreImages.length} copied (previews deferred)`);
+    profiler.endPhase('Process images');
     
     // Create promise for background image processing (will be returned to caller)
     deferredImageProcessingPromise = (async () => {
-      progress.log(`\n🖼️  Starting deferred image preview generation...`);
+      progress.logTimed(`\n🖼️  Starting deferred image preview generation...`);
       const startTime = Date.now();
       const processedImageMap = await processAllImages(
         allSourceFilenamesThatAreImages,
@@ -275,7 +395,7 @@ export async function generate({
   } else {
     // Normal mode: process all images FIRST to build the preview image map
     // This is done before articles so we can transform img tags in the HTML
-    progress.log(`Processing ${allSourceFilenamesThatAreImages.length} images for preview generation...`);
+    progress.logTimed(`Processing ${allSourceFilenamesThatAreImages.length} images for preview generation...`);
     imageMap = await processAllImages(
       allSourceFilenamesThatAreImages,
       source,
@@ -284,16 +404,21 @@ export async function generate({
         progress.status('Images', `${current}/${total} ${path}`);
       }
     );
-    progress.done('Images', `${allSourceFilenamesThatAreImages.length} done (${imageMap.size} with previews)`);
+    progress.done('Images', `${allSourceFilenamesThatAreImages.length} done (${imageMap.size} with previews) [${progress.stopTimer('Images')}]`);
+    profiler.endPhase('Process images');
   }
 
+  // Phase: Process articles
+  profiler.startPhase('Process articles');
+  progress.startTimer('Articles');
+  
   // Track files that were regenerated (for incremental mode stats)
   let regeneratedCount = 0;
   let skippedCount = 0;
   let processedCount = 0;
   const totalArticles = allSourceFilenamesThatAreArticles.length;
 
-  progress.log(`Processing ${totalArticles} articles in batches of ${BATCH_SIZE}...`);
+  progress.logTimed(`Processing ${totalArticles} articles in batches of ${BATCH_SIZE}...`);
 
   // Single pass: process all articles with batched concurrency to limit memory usage
   await processBatched(allSourceFilenamesThatAreArticles, async (file) => {
@@ -538,8 +663,12 @@ export async function generate({
   });
 
   // Complete the articles status line
-  progress.done('Articles', `${totalArticles} done (${regeneratedCount} regenerated, ${skippedCount} unchanged)`);
+  progress.done('Articles', `${totalArticles} done (${regeneratedCount} regenerated, ${skippedCount} unchanged) [${progress.stopTimer('Articles')}]`);
+  profiler.endPhase('Process articles');
 
+  // Phase: Write search index
+  profiler.startPhase('Write search index');
+  progress.startTimer('Search index');
   // Write search index as a separate JSON file (not embedded in each page)
   const searchIndexPath = join(output, 'public', 'search-index.json');
   progress.log(`Writing search index with ${searchIndex.length} entries`);
@@ -553,7 +682,12 @@ export async function generate({
   const wordCount = Object.keys(fullTextIndex).length;
   progress.log(`Writing full-text index (${wordCount} unique words, ${(fullTextIndexJson.length / 1024).toFixed(1)} KB)`);
   await outputFile(fullTextIndexPath, fullTextIndexJson);
+  progress.done('Search index', `${searchIndex.length} entries, ${wordCount} words [${progress.stopTimer('Search index')}]`);
+  profiler.endPhase('Write search index');
 
+  // Phase: Write menu data
+  profiler.startPhase('Write menu data');
+  progress.startTimer('Menu data');
   // Write menu data as a separate JSON file (not embedded in each page)
   // This dramatically reduces HTML file sizes for large sites
   const menuDataPath = join(output, 'public', 'menu-data.json');
@@ -568,7 +702,12 @@ export async function generate({
     progress.log(`Writing custom menu: ${menuInfo.menuJsonPath}`);
     await outputFile(customMenuPath, customMenuJson);
   }
+  progress.done('Menu data', `${customMenus.size + 1} files [${progress.stopTimer('Menu data')}]`);
+  profiler.endPhase('Write menu data');
 
+  // Phase: Process directory indices
+  profiler.startPhase('Process directories');
+  progress.startTimer('Directories');
   // Process directory indices with batched concurrency
   const totalDirs = allSourceFilenamesThatAreDirectories.length;
   let processedDirs = 0;
@@ -634,11 +773,15 @@ export async function generate({
     }
   });
   
-  progress.done('Directories', `${totalDirs} done`);
+  progress.done('Directories', `${totalDirs} done [${progress.stopTimer('Directories')}]`);
+  profiler.endPhase('Process directories');
 
   // Clear directory index cache to free memory before processing static files
   dirIndexCache.clear();
 
+  // Phase: Process static files
+  profiler.startPhase('Process static files');
+  progress.startTimer('Static files');
   // Copy static HTML files (images were already processed above with preview generation)
   // Note: Images are processed before articles to enable preview transformation in HTML
   
@@ -702,12 +845,21 @@ export async function generate({
     }
   });
   
-  progress.done('Static files', `${totalStatic} done (${copiedStatic} copied)`);
+  progress.done('Static files', `${totalStatic} done (${copiedStatic} copied) [${progress.stopTimer('Static files')}]`);
+  profiler.endPhase('Process static files');
 
+  // Phase: Auto-index generation
+  profiler.startPhase('Auto-index generation');
+  progress.startTimer('Auto-index');
   // Automatic index generation for folders without index.html
   progress.log(`Checking for missing index files...`);
   await generateAutoIndices(output, allSourceFilenamesThatAreDirectories, source, templates, menu, footer, allSourceFilenamesThatAreArticles, copiedCssFiles, existingHtmlFiles, cacheBustTimestamp, progress);
+  progress.done('Auto-index', `checked ${allSourceFilenamesThatAreDirectories.length} directories [${progress.stopTimer('Auto-index')}]`);
+  profiler.endPhase('Auto-index generation');
 
+  // Phase: Finalization
+  profiler.startPhase('Finalization');
+  progress.startTimer('Finalization');
   // Save the hash cache to .ursa folder in source directory
   if (hashCache.size > 0) {
     await saveHashCache(source, hashCache);
@@ -762,6 +914,12 @@ export async function generate({
   } else {
     progress.log(`\n✅ Generation complete with no errors.\n`);
   }
+  
+  progress.done('Finalization', `complete [${progress.stopTimer('Finalization')}]`);
+  profiler.endPhase('Finalization');
+  
+  // Print profiler report
+  progress.log(profiler.report());
   
   // Return deferred image processing promise if in deferred mode
   // Caller can await this to know when image previews are ready

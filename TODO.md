@@ -1,3 +1,45 @@
+# 0.67.0
+
+## Performance Improvements
+
+Based on profiling of full docroot (no whitelist):
+- Process images: 54.4% (23.42s)
+- Build navigation: 21.4% (9.22s)
+- Process articles: 15.2% (6.56s)
+- Write search index: 5.7% (2.44s)
+- Process directories: 2.8% (1.19s)
+
+### Image Processing (54.4% - TOP PRIORITY)
+
+- [x] **Cache processed images**: Skip re-processing images that haven't changed (check mtime/size)
+- [x] **Parallel image processing**: Use worker threads or increase batch concurrency for CPU-bound sharp operations
+- [x] **Skip preview for small images**: Don't generate preview if original is already smaller than preview size
+- [x] **Lazy preview generation**: In serve mode, generate previews on-demand when first requested rather than upfront
+
+### Build Navigation (21.4% - HIGH PRIORITY)
+
+- [x] **Cache navigation structure**: Store nav tree in .ursa folder, only rebuild when file list changes
+- [x] **Incremental nav updates**: When single file changes, patch nav tree instead of full rebuild
+- [x] **Simplify path matching**: Profile `buildNavigation` to find slow regex/loops; consider trie structure
+
+### Process Articles (15.2% - MEDIUM PRIORITY)
+
+- [ ] **Parallel markdown parsing**: Use worker threads for CPU-bound markdown/wikitext conversion
+- [ ] **Lazy metadata transform**: Defer `getTransformedMetadata` until needed (it may read files)
+- [ ] **Stream large files**: For very large markdown files, use streaming instead of loading entire file
+
+### Search Index (5.7% - LOW PRIORITY)
+
+- [ ] **Incremental index updates**: Only re-index changed documents, merge with cached index
+- [ ] **Build index in background**: Start serving before search index is ready
+
+### General Optimizations
+
+- [ ] **Prioritize critical path**: In serve mode, generate requested document first, others in background
+- [ ] **Smarter caching**: Extend hash cache to cover more phases (nav, search index, etc.)
+- [ ] **Profile hot paths**: Add sub-phase timing within major phases to identify specific bottlenecks
+
+
 # 0.62.0
 
 - [x] Add support for auto-index in a defined index document, rather than only when index document is absent.

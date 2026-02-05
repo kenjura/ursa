@@ -224,7 +224,7 @@ export async function generateAutoIndices(output, directories, source, templates
       continue; // Don't overwrite existing source HTML
     }
     
-    // Skip if index.html already exists in output (e.g., created by previous run)
+    // Skip if index.html already exists in output (e.g., created by previous run or current run)
     if (existsSync(indexPath)) {
       continue;
     }
