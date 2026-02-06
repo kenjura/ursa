@@ -154,11 +154,11 @@ Here's a monster stat block:
 - [x] **Menu generation**: Include `.mdx` files in auto-menu generation
 - [x] **Valid paths**: Add `.mdx` source files to valid paths for link checking
 
-#### Phase 5: Error Handling and DX
-- [ ] **Compilation errors**: Display helpful error messages when MDX/component compilation fails
-- [ ] **Missing component errors**: Clear error when imported component doesn't exist
-- [ ] **TypeScript support**: Ensure TSX components compile without separate tsconfig
-- [ ] **Hot reload**: In dev mode, detect changes to both `.mdx` files and imported components
+#### Phase 5: Error Handling and DX ✅
+- [x] **Compilation errors**: Display helpful error messages when MDX/component compilation fails
+- [x] **Missing component errors**: Clear error when imported component doesn't exist
+- [x] **TypeScript support**: Ensure TSX components compile without separate tsconfig
+- [x] **Hot reload**: In dev mode, detect changes to both `.mdx` files and imported components
 
 #### Phase 6: Optional Enhancements
 - [ ] **Shared components**: Support a global `_components/` directory for site-wide components

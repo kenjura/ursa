@@ -55,11 +55,60 @@ export async function renderMDX({ source, filePath, sourceRoot }) {
 
     return { html, frontmatter: frontmatter || {} };
   } catch (error) {
-    // Wrap with context about which file failed
+    throw formatMDXError(error, filePath);
+  }
+}
+
+/**
+ * Format MDX compilation errors into user-friendly messages.
+ * Detects common failure patterns and provides actionable guidance.
+ */
+function formatMDXError(error, filePath) {
+  const msg = error.message || String(error);
+
+  // Missing component / module not found
+  const missingMatch = msg.match(/Could not resolve ["']([^"']+)["']/);
+  if (missingMatch) {
+    const importPath = missingMatch[1];
     const wrappedError = new Error(
-      `MDX compilation failed for ${filePath}: ${error.message}`
+      `MDX error in ${filePath}: Cannot resolve import "${importPath}". ` +
+      `Check that the file exists relative to the MDX file's directory.`
     );
     wrappedError.originalError = error;
-    throw wrappedError;
+    return wrappedError;
   }
+
+  // esbuild syntax / compilation errors
+  if (msg.includes('Build failed') || msg.includes('error:')) {
+    // Extract the most relevant error lines from esbuild output
+    const errorLines = msg.split('\n').filter(line => 
+      line.includes('error:') || line.includes('ERROR:') || line.match(/^\s+\d+\s*\|/)
+    ).slice(0, 6);
+    
+    const summary = errorLines.length > 0 
+      ? errorLines.join('\n')
+      : msg.slice(0, 300);
+
+    const wrappedError = new Error(
+      `MDX compilation failed for ${filePath}:\n${summary}`
+    );
+    wrappedError.originalError = error;
+    return wrappedError;
+  }
+
+  // React rendering errors (component threw during render)
+  if (msg.includes('is not a function') || msg.includes('is not defined') || msg.includes('Cannot read properties')) {
+    const wrappedError = new Error(
+      `MDX render error in ${filePath}: A component threw during server-side rendering.\n${msg.slice(0, 300)}`
+    );
+    wrappedError.originalError = error;
+    return wrappedError;
+  }
+
+  // Generic fallback
+  const wrappedError = new Error(
+    `MDX error in ${filePath}: ${msg.slice(0, 500)}`
+  );
+  wrappedError.originalError = error;
+  return wrappedError;
 }

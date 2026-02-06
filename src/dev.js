@@ -888,6 +888,7 @@ export async function dev({
     const isConfigChange = name && name.endsWith('config.json');
     const isCssChange = name && name.endsWith('.css');
     const isScriptChange = name && (name.endsWith('script.js') || name.endsWith('_script.js'));
+    const isComponentChange = name && /\.(tsx|jsx|ts)$/.test(name) && !name.endsWith('.d.ts');
     
     if (isMenuChange || isConfigChange) {
       // Clear path mapping caches
@@ -916,6 +917,15 @@ export async function dev({
       // Clear script cache so next render picks up changes
       devState.scriptPathMap.clear();
       console.log(`✅ Script cache cleared for ${name}`);
+    } else if (isComponentChange) {
+      // Component files (.tsx, .jsx, .ts) may be imported by MDX files
+      // Clear all MDX document caches so they re-compile with the updated component
+      for (const key of devState.documentCache.keys()) {
+        if (key.endsWith('.mdx')) {
+          devState.documentCache.delete(key);
+        }
+      }
+      console.log(`✅ MDX caches cleared for component change: ${name}`);
     }
     
     // Broadcast reload
