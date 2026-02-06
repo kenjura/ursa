@@ -169,6 +169,55 @@ yargs(hideBin(process.argv))
     }
   )
   .command(
+    'dev <source>',
+    'Start dev mode - serves documents on-demand without pre-processing (fast startup)',
+    (yargs) => {
+      return yargs
+        .positional('source', {
+          describe: 'Source directory containing markdown/wikitext files',
+          type: 'string',
+          demandOption: true
+        })
+        .option('meta', {
+          alias: 'm',
+          describe: 'Meta directory containing templates and styles (defaults to ursa package meta)',
+          type: 'string'
+        })
+        .option('output', {
+          alias: 'o', 
+          default: 'output',
+          describe: 'Output directory for generated files',
+          type: 'string'
+        })
+        .option('port', {
+          alias: 'p',
+          default: 8080,
+          describe: 'Port to serve on',
+          type: 'number'
+        });
+    },
+    async (argv) => {
+      const source = resolve(argv.source);
+      const meta = argv.meta ? resolve(argv.meta) : PACKAGE_META;
+      const output = resolve(argv.output);
+      const port = argv.port;
+      
+      try {
+        const { dev } = await import('../src/dev.js');
+        await dev({
+          _source: source,
+          _meta: meta,
+          _output: output,
+          port: port
+        });
+      } catch (error) {
+        console.error('Error starting dev mode:', error.message);
+        console.error(error);
+        process.exit(1);
+      }
+    }
+  )
+  .command(
     '$0 <source>',
     'Generate a static site from source files (default command)',
     (yargs) => {

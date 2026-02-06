@@ -4,6 +4,7 @@ import { readdir, readFile } from "fs/promises";
 import { basename, dirname, extname, join } from "path";
 import { outputFile } from "fs-extra";
 import { findStyleCss } from "../findStyleCss.js";
+import { findScriptJs } from "../findScriptJs.js";
 import { toTitleCase } from "./titleCase.js";
 import { addTimestampToHtmlStaticRefs } from "./cacheBust.js";
 import { isMetadataOnly, extractMetadata, getAutoIndexConfig } from "../metadataExtractor.js";
@@ -318,6 +319,19 @@ export async function generateAutoIndices(output, directories, source, templates
           // ignore CSS lookup errors
         }
         
+        // Find nearest script.js for this directory
+        let customScript = "";
+        try {
+          const sourceDir = dir.replace(outputNorm, sourceNorm);
+          const scriptPath = await findScriptJs(sourceDir);
+          if (scriptPath) {
+            const scriptContent = await readFile(scriptPath, 'utf8');
+            customScript = `<script>\n${scriptContent}\n</script>`;
+          }
+        } catch (e) {
+          // ignore script lookup errors
+        }
+        
         // Find custom menu for this directory
         let customMenuInfo = null;
         if (customMenus) {
@@ -336,6 +350,7 @@ export async function generateAutoIndices(output, directories, source, templates
           "${meta}": "{}",
           "${transformedMetadata}": "",
           "${styleLink}": styleLink,
+          "${customScript}": customScript,
           "${footer}": footer
         };
         for (const [key, value] of Object.entries(replacements)) {

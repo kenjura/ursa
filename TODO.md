@@ -27,7 +27,7 @@ For menu position 'top', the following is true:
 ## QOL Improvements
 - [ ] In serve mode, whenever a document changes, all of its images will be checked and re-processed if necessary. This ensures that changes to images are reflected immediately without needing to restart the serve command.
 
-### Dev Mode
+### Dev Mode ✅
 New command: `ursa dev`
 
 In this mode, ursa does not pre-process the docroot. Instead, it immediately starts a web server, which renders individual documents on demand. Every page load should:
@@ -36,12 +36,21 @@ In this mode, ursa does not pre-process the docroot. Instead, it immediately sta
 - Look up all linked documents to determine if they are active/inactive, to render the navigation correctly
 - Find the nearest menu.md in the document's path or parent tree, or else fall back to the standard auto-menu
 
-If the search feature is used, ursa will first check if the search index (prepared in the background, see below) is ready. If not, it will show a message that search is still being prepared and to check back later. Once the search index is ready, it will be used for search queries as normal.
+Some considerations for first-load performance:
+- Search index will not be built prior to first render. Afterward, the search index will be built in the background. If the user attempts to search before the index is ready, it will show a message that search is still being prepared and to check back later. Once the search index is ready, it will be used for search queries as normal. This does not require a hard refresh.
+- The main menu will not be pre-rendered, but built in the background after first render. When ready, it will be pushed to the client. Subsequent loads of the same document, or other documents in the same menu tree, will use the cached menu for first render, but will also do a quick check to see if anything changed.
+- Custom styles will be processed for first render, but after rendering (if not the first render), the server will check for any changes to stylesheets in the document's path or parent tree. If changes are detected, it will re-process the styles and push updates to the client.
 
 In the background, after the server is ready to serve, it does the following:
 - Process the docroot tree and cache it, so that:
   - Future renders can determine active/inactive without file system lookups
   - The search index can be built and cached for faster search results
+- Pre-scan for menu.md files and build a path → nearest menu mapping
+- Build the auto-menu navigation structure for fallback when no menu.md exists
+- Map directories to their nearest style.css for faster CSS lookups
+- Pre-load and cache templates from meta directory
+- Scan for config.json files that affect rendering (icons, hidden folders, etc.)
+- Optionally: start processing image previews for unvisited documents to pre-warm cache
 
 
 ## Performance Improvements
@@ -82,6 +91,83 @@ Based on profiling of full docroot (no whitelist):
 - [ ] **Prioritize critical path**: In serve mode, generate requested document first, others in background
 - [ ] **Smarter caching**: Extend hash cache to cover more phases (nav, search index, etc.)
 - [ ] **Profile hot paths**: Add sub-phase timing within major phases to identify specific bottlenecks
+
+
+## Custom Scripts ✅
+Much like menu.md and style.css, script.js files can be placed in any directory and will be applied to all documents in that directory and its subdirectories. They will be processed and copied to the output directory, and included in the generated HTML. This allows for custom çJavaScript to be easily added on a per-folder basis.
+
+These should be rendered using a simple script tag at the bottom of the body, with the exact contents of script.js.
+
+In the future, we may consider supporting multiple scripts (for instance, script.js could load ES modules using relative paths, and ursa could serve these with the correct MIME type and caching). But for now, we will just support a single script.js per folder.
+
+## MDX Support
+Files in the docroot with the `.mdx` extension will be processed as MDX files, using mdx-bundler with React SSR to produce static HTML output. This allows for embedding React/JSX components directly in documentation.
+
+### Example Usage
+```
+/campaigns/my-campaign/index.mdx
+/campaigns/my-campaign/components/StatBlock.tsx
+```
+
+**index.mdx:**
+```mdx
+---
+title: My Campaign
+---
+import { StatBlock } from './components/StatBlock.tsx'
+
+# Welcome to My Campaign
+
+Here's a monster stat block:
+
+<StatBlock name="Goblin" hp={7} ac={15} />
+```
+
+### Implementation Tasks
+
+#### Phase 1: Core MDX Rendering ✅
+- [x] **Install dependencies**: Add `mdx-bundler`, `esbuild`, `react`, `react-dom` to package.json
+- [x] **Create mdxRenderer.js**: New helper module that:
+  - Uses `bundleMDX()` to compile MDX source with component imports
+  - Uses `getMDXComponent()` to get the React component
+  - Uses `renderToStaticMarkup()` to produce static HTML
+  - Extracts frontmatter via mdx-bundler's built-in gray-matter support
+- [x] **Add `.mdx` to file type detection**: Update classification in generate.js and dev.js to recognize `.mdx` files as articles
+- [x] **Update fileRenderer.js**: Add case for `.mdx` that calls mdxRenderer
+
+#### Phase 2: Component Resolution
+- [ ] **Configure esbuild options**: Set up loaders for `.tsx`, `.ts`, `.jsx`, `.js`
+- [ ] **Set working directory**: Pass `cwd` to bundleMDX for relative import resolution
+- [ ] **Handle component paths**: Support imports from:
+  - Same directory: `./MyComponent.tsx`
+  - Components subfolder: `./components/MyComponent.tsx`
+  - Absolute paths from docroot: `/shared/components/MyComponent.tsx`
+
+#### Phase 3: Integration with Build Pipeline
+- [ ] **Update generate.js**: Process `.mdx` files in article batch processing
+- [ ] **Update dev.js**: Handle `.mdx` files in on-demand rendering
+- [ ] **Metadata extraction**: Ensure frontmatter from MDX files works with existing metadata pipeline
+- [ ] **Link validation**: Ensure internal links in MDX content are validated like MD files
+
+#### Phase 4: Search and Navigation
+- [ ] **Search indexing**: Include MDX content in full-text search index
+- [ ] **Menu generation**: Include `.mdx` files in auto-menu generation
+- [ ] **Valid paths**: Add `.mdx` source files to valid paths for link checking
+
+#### Phase 5: Error Handling and DX
+- [ ] **Compilation errors**: Display helpful error messages when MDX/component compilation fails
+- [ ] **Missing component errors**: Clear error when imported component doesn't exist
+- [ ] **TypeScript support**: Ensure TSX components compile without separate tsconfig
+- [ ] **Hot reload**: In dev mode, detect changes to both `.mdx` files and imported components
+
+#### Phase 6: Optional Enhancements
+- [ ] **Shared components**: Support a global `_components/` directory for site-wide components
+- [ ] **MDX plugins**: Allow remark/rehype plugins via config
+- [ ] **Client hydration opt-in**: For interactive components, optionally include React runtime and hydrate
+
+
+
+
 
 
 # 0.62.0

@@ -6,6 +6,9 @@ import { extractMetadata } from "./metadataExtractor.js";
 // Menu file names to look for (in order of priority)
 const MENU_FILE_NAMES = ['menu.md', 'menu.txt', '_menu.md', '_menu.txt'];
 
+// Token to mark where auto-generated menu should be inserted
+const MENU_TOKEN = '{menu}';
+
 // Source file extensions to check
 const SOURCE_EXTENSIONS = ['.md', '.txt'];
 
@@ -214,6 +217,61 @@ export function autoGenerateMenuFromFolder(folderPath, sourceRoot, depth = 2, is
 }
 
 /**
+ * Combine auto-generated menu with manual menu content from menu.md
+ * 
+ * The manual content can contain a {menu} token to specify where the auto-generated
+ * menu should be inserted. If no token is present, the manual content is appended
+ * after the auto-generated menu.
+ * 
+ * Example menu.md:
+ * ```
+ * ---
+ * auto-generate-menu: true
+ * menu-position: top
+ * ---
+ * 
+ * * [Custom Link 1](#)
+ * {menu}
+ * * [Custom Link 2](#)
+ * ```
+ * 
+ * @param {string} manualContent - The menu file content (without frontmatter)
+ * @param {string} menuDir - The directory where the menu file was found
+ * @param {string} sourceRoot - The root source directory
+ * @param {number} depth - How many levels deep to auto-generate
+ * @returns {Array} - Combined menu data array
+ */
+export function combineAutoAndManualMenu(manualContent, menuDir, sourceRoot, depth = 2) {
+  // Generate the auto menu
+  const autoMenuItems = autoGenerateMenuFromFolder(menuDir, sourceRoot, depth, true);
+  
+  // Check if manual content is empty or only whitespace
+  const trimmedContent = manualContent.trim();
+  if (!trimmedContent) {
+    return autoMenuItems;
+  }
+  
+  // Check if the content contains the {menu} token
+  const hasMenuToken = trimmedContent.includes(MENU_TOKEN);
+  
+  if (hasMenuToken) {
+    // Split content at the {menu} token
+    const [beforeToken, afterToken] = trimmedContent.split(MENU_TOKEN);
+    
+    // Parse each part
+    const beforeItems = beforeToken.trim() ? parseCustomMenu(beforeToken, menuDir, sourceRoot) : [];
+    const afterItems = afterToken.trim() ? parseCustomMenu(afterToken, menuDir, sourceRoot) : [];
+    
+    // Combine: before + auto + after
+    return [...beforeItems, ...autoMenuItems, ...afterItems];
+  } else {
+    // No token - append manual content after auto-generated menu
+    const manualItems = parseCustomMenu(trimmedContent, menuDir, sourceRoot);
+    return [...autoMenuItems, ...manualItems];
+  }
+}
+
+/**
  * Find a custom menu file in the given directory or any parent directory
  * @param {string} dirPath - The directory to start searching from
  * @param {string} sourceRoot - The root source directory (stop searching here)
@@ -314,7 +372,20 @@ export function parseCustomMenu(content, menuDir, sourceRoot) {
         }
       }
     }
-    // Try markdown format: - [Label](path)
+    // Try markdown format with asterisks: * [Label](path) or ** [Label](path)
+    else if (trimmedLine.match(/^\*+\s*\[/)) {
+      // Count asterisks for indent level
+      const asteriskMatch = trimmedLine.match(/^(\*+)/);
+      indent = asteriskMatch ? (asteriskMatch[1].length - 1) * 2 : 0; // Convert to space-equivalent
+      
+      // Parse the markdown link: * [Label](path)
+      const linkMatch = trimmedLine.match(/^\*+\s*\[([^\]]+)\]\(([^)]+)\)/);
+      if (linkMatch) {
+        label = linkMatch[1];
+        href = linkMatch[2];
+      }
+    }
+    // Try markdown format with dashes: - [Label](path)
     else if (trimmedLine.startsWith('-')) {
       // Calculate indentation level (count leading spaces/tabs before the dash)
       const leadingWhitespace = line.match(/^(\s*)/)[1];
@@ -336,20 +407,44 @@ export function parseCustomMenu(content, menuDir, sourceRoot) {
     // Resolve relative paths based on where the menu file was found
     // Resolve relative paths and check if source file exists
     let absoluteSourcePath = null;
-    if (href.startsWith('./') || href.startsWith('../') || !href.startsWith('/')) {
+    
+    // Preserve external URLs, anchor links, and special protocols as-is
+    const isExternalOrSpecial = href.startsWith('#') || 
+                                href.startsWith('http://') || 
+                                href.startsWith('https://') ||
+                                href.startsWith('mailto:') ||
+                                href.startsWith('tel:') ||
+                                href.startsWith('javascript:');
+    
+    if (isExternalOrSpecial) {
+      // Keep href as-is - it's an external link, anchor, or special protocol
+    } else if (href.startsWith('./') || href.startsWith('../') || !href.startsWith('/')) {
       // It's a relative path - resolve it relative to the menu directory
       absoluteSourcePath = resolve(menuDir, href);
       
-      // Check if the source file exists
-      const fileExists = sourceFileExists(absoluteSourcePath);
+      // Check if the path already has a source extension (.md, .txt)
+      const hrefExt = extname(href).toLowerCase();
+      const hasSourceExt = SOURCE_EXTENSIONS.includes(hrefExt);
+      
+      // If it has a source extension, check if that exact file exists
+      // Otherwise use sourceFileExists which tries multiple extensions
+      let fileExists = false;
+      if (hasSourceExt) {
+        fileExists = existsSync(absoluteSourcePath);
+      } else {
+        fileExists = sourceFileExists(absoluteSourcePath);
+      }
       
       if (fileExists) {
         // Convert to web-accessible path (relative to source root)
         href = '/' + relative(sourceRoot, absoluteSourcePath);
         // Normalize path separators for web
         href = href.replace(/\\/g, '/');
-        // Ensure it ends with .html if it doesn't have an extension
-        if (!href.match(/\.[a-z]+$/i)) {
+        // Convert source extensions to .html
+        if (hasSourceExt) {
+          href = href.replace(/\.(md|txt)$/i, '.html');
+        } else if (!href.match(/\.[a-z]+$/i)) {
+          // Ensure it ends with .html if it doesn't have an extension
           // Check if it's likely a folder (ends with /) or file
           if (href.endsWith('/')) {
             href = href + 'index.html';
@@ -410,7 +505,7 @@ export function getCustomMenuForFile(filePath, sourceRoot) {
   }
   
   // Extract frontmatter options
-  const { frontmatter } = extractMenuFrontmatter(customMenuInfo.content);
+  const { frontmatter, body } = extractMenuFrontmatter(customMenuInfo.content);
   const autoGenerate = frontmatter['auto-generate-menu'] === true || frontmatter['auto-generate-menu'] === 'true';
   const menuPosition = frontmatter['menu-position'] || 'side';
   const depth = parseInt(frontmatter['menu-depth'], 10) || 2;
@@ -418,12 +513,11 @@ export function getCustomMenuForFile(filePath, sourceRoot) {
   let menuData;
   
   if (autoGenerate) {
-    // Auto-generate menu from folder contents
-    menuData = autoGenerateMenuFromFolder(customMenuInfo.menuDir, sourceRoot, depth);
+    // Auto-generate menu and combine with manual menu content
+    menuData = combineAutoAndManualMenu(body, customMenuInfo.menuDir, sourceRoot, depth);
   } else {
     // Parse the custom menu content (excluding frontmatter)
-    const contentWithoutFrontmatter = customMenuInfo.content.replace(/^---[\s\S]*?---\s*/, '');
-    menuData = parseCustomMenu(contentWithoutFrontmatter, customMenuInfo.menuDir, sourceRoot);
+    menuData = parseCustomMenu(body, customMenuInfo.menuDir, sourceRoot);
   }
   
   return {

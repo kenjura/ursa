@@ -308,9 +308,11 @@ nav#nav-main-top a.top-menu-label:hover {
 /* Dropdown indicator for items with children */
 nav#nav-main-top .top-menu-item.has-dropdown > .top-menu-label::after {
   content: '▼';
-  font-size: 0.65em;
+  font-size: 0.4em;
   margin-left: 6px;
   opacity: 0.6;
+  position: relative;
+  top: -1px;
 }
 
 /* Dropdown menu (first level of children) */

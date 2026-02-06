@@ -27,6 +27,7 @@ import { getAndIncrementBuildId } from "../helper/ursaConfig.js";
 import { extractSections } from "../helper/sectionExtractor.js";
 import { renderFile, renderFileAsync, terminateParserPool } from "../helper/fileRenderer.js";
 import { findStyleCss } from "../helper/findStyleCss.js";
+import { findScriptJs } from "../helper/findScriptJs.js";
 import { buildFullTextIndex, buildIncrementalIndex, loadIndexCache, saveIndexCache } from "../helper/fullTextIndex.js";
 import { copy as copyDir, emptyDir, outputFile } from "fs-extra";
 import { basename, dirname, extname, join, parse, resolve } from "path";
@@ -78,9 +79,13 @@ const BATCH_SIZE = parseInt(process.env.URSA_BATCH_SIZE || '50', 10);
 // Cache for CSS path lookups to avoid repeated filesystem walks
 const cssPathCache = new Map();
 
-// Wrapper for clearWatchCache that passes cssPathCache
+// Cache for script path lookups to avoid repeated filesystem walks
+const scriptPathCache = new Map();
+
+// Wrapper for clearWatchCache that passes cssPathCache and scriptPathCache
 export function clearWatchCache() {
   clearWatchCacheBase(cssPathCache);
+  scriptPathCache.clear();
 }
 
 const progress = new ProgressReporter();
@@ -163,7 +168,7 @@ export async function generate({
   };
 
   // read all articles, process them, copy them to build
-  const articleExtensions = /\.(md|txt|yml)/;
+  const articleExtensions = /\.(md|mdx|txt|yml)/;
   const hiddenOrSystemDirs = /[\/\\]\.(?!\.)|[\/\\]node_modules[\/\\]/;  // Matches hidden folders (starting with .) or node_modules
   const allSourceFilenamesThatAreArticles = allSourceFilenames.filter(
     (filename) => filename.match(articleExtensions) && !filename.match(hiddenOrSystemDirs) && !isInHiddenFolder(filename)
@@ -453,7 +458,7 @@ export async function generate({
       const url = '/' + outputFilename.replace(output, '');
       
       // Generate URL path relative to output (for search index)
-      const relativePath = file.replace(source, '').replace(/\.(md|txt|yml)$/, '.html');
+      const relativePath = file.replace(source, '').replace(/\.(md|mdx|txt|yml)$/, '.html');
       const searchUrl = relativePath.startsWith('/') ? relativePath : '/' + relativePath;
       
       // Generate title from filename (in title case)
@@ -533,11 +538,13 @@ export async function generate({
         type,
         dirname: dir,
         basename: base,
+        filePath: file,
+        sourceRoot: source,
         useWorker: true
       });
 
       // Inject frontmatter table after first H1 (for markdown files with metadata)
-      if (type === '.md' && fileMeta) {
+      if ((type === '.md' || type === '.mdx') && fileMeta) {
         body = injectFrontmatterTable(body, fileMeta);
       }
 
@@ -592,6 +599,26 @@ export async function generate({
         console.error(e);
       }
 
+      // Find nearest script.js or _script.js up the tree and inline its contents
+      // Use cache to avoid repeated filesystem walks for same directory
+      let customScript = "";
+      try {
+        const dirKey = (dir === "/" || dir === "") ? _source : resolve(_source, dir);
+        let scriptPath = scriptPathCache.get(dirKey);
+        if (scriptPath === undefined) {
+          scriptPath = await findScriptJs(dirKey);
+          scriptPathCache.set(dirKey, scriptPath); // Cache null results too
+        }
+        if (scriptPath) {
+          const scriptContent = await readFile(scriptPath, 'utf8');
+          // Inline the script content in a script tag
+          customScript = `<script>\n${scriptContent}\n</script>`;
+        }
+      } catch (e) {
+        // ignore
+        console.error(e);
+      }
+
       const requestedTemplateName = fileMeta && fileMeta.template;
       const template =
         templates[requestedTemplateName] || templates[DEFAULT_TEMPLATE_NAME];
@@ -619,11 +646,12 @@ export async function generate({
         "${transformedMetadata}": lazyTransformedMeta,
         "${body}": body,
         "${styleLink}": styleLink,
+        "${customScript}": customScript,
         "${searchIndex}": "[]", // Placeholder - search index written separately as JSON file
         "${footer}": footer
       };
       // Single-pass replacement using regex alternation
-      const pattern = /\$\{(title|menu|meta|transformedMetadata|body|styleLink|searchIndex|footer)\}/g;
+      const pattern = /\$\{(title|menu|meta|transformedMetadata|body|styleLink|customScript|searchIndex|footer)\}/g;
       let finalHtml = template.replace(pattern, (match) => replacements[match] ?? match);
 
       // If this page has a custom menu, add data attributes to body
@@ -1025,7 +1053,7 @@ export async function regenerateSingleFile(changedFile, {
   const output = resolve(_output) + "/";
   
   // Check if this is an article file we can regenerate
-  const articleExtensions = /\.(md|txt|yml)$/;
+  const articleExtensions = /\.(md|mdx|txt|yml)$/;
   if (!changedFile.match(articleExtensions)) {
     return { success: false, message: `Not an article file: ${changedFile}` };
   }
@@ -1068,16 +1096,29 @@ export async function regenerateSingleFile(changedFile, {
     // Calculate the document's URL path
     const docUrlPath = '/' + dir + base + '.html';
     
-    // Render body
-    let body = renderFile({
-      fileContents: rawBody,
-      type,
-      dirname: dir,
-      basename: base,
-    });
+    // Render body (use async for .mdx, sync for .md/.txt)
+    let body;
+    if (type === '.mdx') {
+      body = await renderFileAsync({
+        fileContents: rawBody,
+        type,
+        dirname: dir,
+        basename: base,
+        filePath: changedFile,
+        sourceRoot: source,
+        useWorker: false
+      });
+    } else {
+      body = renderFile({
+        fileContents: rawBody,
+        type,
+        dirname: dir,
+        basename: base,
+      });
+    }
     
-    // Inject frontmatter table for markdown files
-    if (type === '.md' && fileMeta) {
+    // Inject frontmatter table for markdown/mdx files
+    if ((type === '.md' || type === '.mdx') && fileMeta) {
       body = injectFrontmatterTable(body, fileMeta);
     }
 

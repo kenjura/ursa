@@ -26,6 +26,7 @@
   "dependencies": {
     "compression": "^1.7.4",
     "directory-tree": "^3.3.2",
+    "esbuild": "^0.27.3",
     "express": "^4.18.2",
     "fs-extra": "^10.1.0",
     "markdown-it": "^12.3.2",
@@ -33,8 +34,11 @@
     "markdown-it-deflist": "^2.1.0",
     "markdown-it-front-matter": "^0.2.3",
     "markdown-it-sup": "^1.0.0",
+    "mdx-bundler": "^10.1.1",
     "node-watch": "^0.7.3",
     "object-to-xml": "^2.0.0",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
     "sharp": "^0.33.2",
     "ws": "^8.19.0",
     "yaml": "^2.1.3",
@@ -67,6 +71,9 @@
     "README.md",
     "CHANGELOG.md"
   ],
+  "pnpm": {
+    "onlyBuiltDependencies": ["esbuild"]
+  },
   "publishConfig": {
     "access": "public",
     "registry": "https://registry.npmjs.org/"

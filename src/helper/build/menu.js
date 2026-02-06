@@ -1,7 +1,7 @@
 // Menu helpers for build
 import { getAutomenu } from "../automenu.js";
 import { renderFile } from "../fileRenderer.js";
-import { findCustomMenu, parseCustomMenu, buildCustomMenuHtml, getCustomMenuForFile as getCustomMenuFromFile, extractMenuFrontmatter, autoGenerateMenuFromFolder } from "../customMenu.js";
+import { findCustomMenu, parseCustomMenu, buildCustomMenuHtml, getCustomMenuForFile as getCustomMenuFromFile, extractMenuFrontmatter, combineAutoAndManualMenu } from "../customMenu.js";
 import { dirname, relative, resolve } from "path";
 import { readFileSync } from "fs";
 
@@ -54,16 +54,16 @@ export function findAllCustomMenus(allSourceFilenames, source) {
         });
       } else {
         // Fallback to direct parsing - also handles auto-generate
-        const { frontmatter } = extractMenuFrontmatter(menuInfo.content);
+        const { frontmatter, body } = extractMenuFrontmatter(menuInfo.content);
         const autoGenerate = frontmatter['auto-generate-menu'] === true || frontmatter['auto-generate-menu'] === 'true';
         
         let menuData;
         if (autoGenerate) {
+          // Auto-generate menu and combine with manual content
           const depth = parseInt(frontmatter['menu-depth'], 10) || 2;
-          menuData = autoGenerateMenuFromFolder(menuInfo.menuDir, source, depth, true);
+          menuData = combineAutoAndManualMenu(body, menuInfo.menuDir, source, depth);
         } else {
-          const contentWithoutFrontmatter = menuInfo.content.replace(/^---[\s\S]*?---\s*/, '');
-          menuData = parseCustomMenu(contentWithoutFrontmatter, menuInfo.menuDir, source);
+          menuData = parseCustomMenu(body, menuInfo.menuDir, source);
         }
         
         customMenus.set(menuInfo.menuDir, {
