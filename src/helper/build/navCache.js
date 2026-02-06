@@ -29,6 +29,7 @@ export async function hashFileStats(files) {
   const relevantFiles = files.filter(f => {
     const base = basename(f).toLowerCase();
     return base === 'index.md' || 
+           base === 'index.mdx' ||
            base === 'index.txt' || 
            base === 'index.yml' ||
            base === 'config.json' ||

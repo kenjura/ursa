@@ -14,7 +14,7 @@ const DOCUMENT_ICON = '📄';
 const HOME_ICON = '🏠';
 
 // Index file extensions to check for folder links
-const INDEX_EXTENSIONS = ['.md', '.txt', '.yml', '.yaml'];
+const INDEX_EXTENSIONS = ['.md', '.mdx', '.txt', '.yml', '.yaml'];
 
 // Convert filename to display name (e.g., "foo-bar" -> "Foo Bar")
 function toDisplayName(filename) {
@@ -453,7 +453,7 @@ export async function OLDgetAutomenu(source) {
     return 0;
   });
   const menuItems = sortedFilenames
-    .filter((filename) => filename.indexOf(".md") > -1)
+    .filter((filename) => /\.(md|mdx|txt)$/.test(filename))
     .filter((filename) => filename.indexOf("menu.") === -1)
     .map((filename) => {
       const depthPrefix = filename

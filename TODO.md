@@ -143,11 +143,11 @@ Here's a monster stat block:
   - Components subfolder: `./components/MyComponent.tsx`
   - Absolute paths from docroot: `/shared/components/MyComponent.tsx`
 
-#### Phase 3: Integration with Build Pipeline
-- [ ] **Update generate.js**: Process `.mdx` files in article batch processing
-- [ ] **Update dev.js**: Handle `.mdx` files in on-demand rendering
-- [ ] **Metadata extraction**: Ensure frontmatter from MDX files works with existing metadata pipeline
-- [ ] **Link validation**: Ensure internal links in MDX content are validated like MD files
+#### Phase 3: Integration with Build Pipeline ✅
+- [x] **Update generate.js**: Process `.mdx` files in article batch processing
+- [x] **Update dev.js**: Handle `.mdx` files in on-demand rendering
+- [x] **Metadata extraction**: Ensure frontmatter from MDX files works with existing metadata pipeline
+- [x] **Link validation**: Ensure internal links in MDX content are validated like MD files
 
 #### Phase 4: Search and Navigation
 - [ ] **Search indexing**: Include MDX content in full-text search index

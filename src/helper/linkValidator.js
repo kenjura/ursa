@@ -214,29 +214,29 @@ function resolveHref(href, validPaths, currentDocPath = null) {
   // Check if the href already has an extension
   const ext = extname(hrefWithoutHash);
   if (ext) {
-    // Special handling for .md links - always convert to .html
+    // Special handling for .md/.mdx links - always convert to .html
     // This ensures links work even if the target file is created after serve starts
-    if (ext.toLowerCase() === '.md') {
-      // Remove .md and convert to .html
-      const pathWithoutMd = normalized.slice(0, -3); // Remove '.md'
-      const htmlPath = pathWithoutMd + '.html';
+    if (ext.toLowerCase() === '.md' || ext.toLowerCase() === '.mdx') {
+      // Remove source extension and convert to .html
+      const pathWithoutExt = normalized.slice(0, -ext.length);
+      const htmlPath = pathWithoutExt + '.html';
       
       // Check if .html version exists in validPaths for canonical path
       if (validPaths.has(htmlPath.toLowerCase())) {
         const canonicalPath = validPaths.get(htmlPath.toLowerCase());
-        debugTries.push(`${normalized} (.md → .html) → ${canonicalPath} ✓`);
+        debugTries.push(`${normalized} (${ext} → .html) → ${canonicalPath} ✓`);
         return { resolvedHref: canonicalPath + hash, inactive: false, debug: debugTries.join(' | ') };
       }
       // Also check without extension
-      if (validPaths.has(pathWithoutMd.toLowerCase())) {
-        const canonicalPath = validPaths.get(pathWithoutMd.toLowerCase());
-        debugTries.push(`${normalized} (.md → resolved) → ${canonicalPath} ✓`);
+      if (validPaths.has(pathWithoutExt.toLowerCase())) {
+        const canonicalPath = validPaths.get(pathWithoutExt.toLowerCase());
+        debugTries.push(`${normalized} (${ext} → resolved) → ${canonicalPath} ✓`);
         return { resolvedHref: canonicalPath + hash, inactive: false, debug: debugTries.join(' | ') };
       }
-      // File doesn't exist yet, but still convert .md to .html optimistically
+      // File doesn't exist yet, but still convert to .html optimistically
       // (the target file may be created later during serve)
-      const resolvedHtmlPath = absoluteHref.replace(/\.md$/i, '.html');
-      debugTries.push(`${normalized} (.md → .html optimistic) → ${resolvedHtmlPath}`);
+      const resolvedHtmlPath = absoluteHref.replace(/\.(md|mdx)$/i, '.html');
+      debugTries.push(`${normalized} (${ext} → .html optimistic) → ${resolvedHtmlPath}`);
       return { resolvedHref: resolvedHtmlPath + hash, inactive: false, debug: debugTries.join(' | ') };
     }
     // Has extension but doesn't exist (or is not .md)

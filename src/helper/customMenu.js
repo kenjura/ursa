@@ -10,7 +10,7 @@ const MENU_FILE_NAMES = ['menu.md', 'menu.txt', '_menu.md', '_menu.txt'];
 const MENU_TOKEN = '{menu}';
 
 // Source file extensions to check
-const SOURCE_EXTENSIONS = ['.md', '.txt'];
+const SOURCE_EXTENSIONS = ['.md', '.mdx', '.txt'];
 
 // Index file names for folder links
 const INDEX_NAMES = ['index', 'home'];

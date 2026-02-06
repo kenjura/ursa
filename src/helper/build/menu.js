@@ -40,7 +40,7 @@ export function findAllCustomMenus(allSourceFilenames, source) {
     const menuInfo = findCustomMenu(dir, source);
     if (menuInfo && !customMenus.has(menuInfo.menuDir)) {
       // Use the enhanced getCustomMenuForFile that handles frontmatter
-      const parsedMenu = getCustomMenuFromFile(dir + '/index.md', source);
+      const parsedMenu = getCustomMenuFromFile(dir + '/index.md', source) || getCustomMenuFromFile(dir + '/index.mdx', source);
       
       // If getCustomMenuFromFile found the same menu, use its parsed data
       if (parsedMenu && parsedMenu.menuDir === menuInfo.menuDir) {

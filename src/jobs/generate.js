@@ -489,7 +489,7 @@ export async function generate({
 
       // Skip metadata-only index files - they exist only to provide folder metadata
       // The auto-index system will generate the actual index.html for these folders
-      if (base === 'index' && type === '.md' && isMetadataOnly(rawBody)) {
+      if (base === 'index' && (type === '.md' || type === '.mdx') && isMetadataOnly(rawBody)) {
         progress.log(`ℹ️  Skipping metadata-only ${shortFile} - auto-index will generate listing`);
         skippedCount++;
         return;
@@ -687,7 +687,7 @@ export async function generate({
       const jsonOutputFilename = outputFilename.replace(".html", ".json");
       
       // Extract sections for markdown files
-      const sections = type === '.md' ? extractSections(rawBody) : [];
+      const sections = (type === '.md' || type === '.mdx') ? extractSections(rawBody) : [];
       
       // Use lazy metadata for JSON output - may have been computed above for HTML
       const jsonTransformedMeta = await getTransformedMeta();
@@ -1205,7 +1205,7 @@ export async function regenerateSingleFile(changedFile, {
     
     // JSON output
     const jsonOutputFilename = outputFilename.replace(".html", ".json");
-    const sections = type === '.md' ? extractSections(rawBody) : [];
+    const sections = (type === '.md' || type === '.mdx') ? extractSections(rawBody) : [];
     const jsonObject = {
       name: base,
       url,

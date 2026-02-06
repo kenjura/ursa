@@ -352,7 +352,7 @@ export async function serve({
     }
     
     // Try fast single-file regeneration for article files
-    const isArticle = name && /\.(md|txt|yml)$/.test(name);
+    const isArticle = name && /\.(md|mdx|txt|yml)$/.test(name);
     if (isArticle) {
       console.log(`\n⚡ Fast regeneration: ${name}`);
       isRegenerating = true;
