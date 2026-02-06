@@ -265,7 +265,7 @@ export async function serve({
       // Skip .ursa folder (contains hash cache that gets updated during generation)
       if (/[\/\\]\.ursa[\/\\]?/.test(f)) return skip;
       // Watch article files, config files, and static assets
-      return /\.(js|json|css|html|md|txt|yml|yaml|jpg|jpeg|png|gif|webp|svg|ico|woff|woff2|ttf|eot|pdf|mp3|mp4|webm|ogg)$/i.test(f);
+      return /\.(js|json|css|html|md|mdx|txt|yml|yaml|tsx|ts|jsx|jpg|jpeg|png|gif|webp|svg|ico|woff|woff2|ttf|eot|pdf|mp3|mp4|webm|ogg)$/i.test(f);
     }
   }, async (evt, name) => {
     // Skip if we're already regenerating
