@@ -168,7 +168,7 @@ export async function generate({
   };
 
   // read all articles, process them, copy them to build
-  const articleExtensions = /\.(md|mdx|txt|yml)/;
+  const articleExtensions = /\.(md|mdx|txt|yml)$/;
   const hiddenOrSystemDirs = /[\/\\]\.(?!\.)|[\/\\]node_modules[\/\\]/;  // Matches hidden folders (starting with .) or node_modules
   const allSourceFilenamesThatAreArticles = allSourceFilenames.filter(
     (filename) => filename.match(articleExtensions) && !filename.match(hiddenOrSystemDirs) && !isInHiddenFolder(filename)

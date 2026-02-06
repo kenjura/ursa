@@ -175,7 +175,10 @@ class ParserWorkerPool {
     
     const worker = this.getAvailableWorker();
     if (worker) {
-      return worker.execute(task);
+      // Trigger queue processing when this task completes, so queued tasks
+      // get dispatched to the now-free worker
+      worker.execute(task).finally(() => this.processQueue());
+      return task.promise;
     } else {
       // Queue the task
       this.taskQueue.push(task);
