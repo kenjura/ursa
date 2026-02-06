@@ -135,10 +135,10 @@ Here's a monster stat block:
 - [x] **Add `.mdx` to file type detection**: Update classification in generate.js and dev.js to recognize `.mdx` files as articles
 - [x] **Update fileRenderer.js**: Add case for `.mdx` that calls mdxRenderer
 
-#### Phase 2: Component Resolution
-- [ ] **Configure esbuild options**: Set up loaders for `.tsx`, `.ts`, `.jsx`, `.js`
-- [ ] **Set working directory**: Pass `cwd` to bundleMDX for relative import resolution
-- [ ] **Handle component paths**: Support imports from:
+#### Phase 2: Component Resolution ✅
+- [x] **Configure esbuild options**: Set up loaders for `.tsx`, `.ts`, `.jsx`, `.js`
+- [x] **Set working directory**: Pass `cwd` to bundleMDX for relative import resolution
+- [x] **Handle component paths**: Support imports from:
   - Same directory: `./MyComponent.tsx`
   - Components subfolder: `./components/MyComponent.tsx`
   - Absolute paths from docroot: `/shared/components/MyComponent.tsx`
