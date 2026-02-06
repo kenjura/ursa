@@ -149,10 +149,10 @@ Here's a monster stat block:
 - [x] **Metadata extraction**: Ensure frontmatter from MDX files works with existing metadata pipeline
 - [x] **Link validation**: Ensure internal links in MDX content are validated like MD files
 
-#### Phase 4: Search and Navigation
-- [ ] **Search indexing**: Include MDX content in full-text search index
-- [ ] **Menu generation**: Include `.mdx` files in auto-menu generation
-- [ ] **Valid paths**: Add `.mdx` source files to valid paths for link checking
+#### Phase 4: Search and Navigation ✅
+- [x] **Search indexing**: Include MDX content in full-text search index
+- [x] **Menu generation**: Include `.mdx` files in auto-menu generation
+- [x] **Valid paths**: Add `.mdx` source files to valid paths for link checking
 
 #### Phase 5: Error Handling and DX
 - [ ] **Compilation errors**: Display helpful error messages when MDX/component compilation fails
