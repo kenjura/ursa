@@ -160,10 +160,10 @@ Here's a monster stat block:
 - [x] **TypeScript support**: Ensure TSX components compile without separate tsconfig
 - [x] **Hot reload**: In dev mode, detect changes to both `.mdx` files and imported components
 
-#### Phase 6: Optional Enhancements
-- [ ] **Shared components**: Support a global `_components/` directory for site-wide components
-- [ ] **MDX plugins**: Allow remark/rehype plugins via config
-- [ ] **Client hydration opt-in**: For interactive components, optionally include React runtime and hydrate
+#### Phase 6: Optional Enhancements ✅
+- [x] **Shared components**: Support a global `_components/` directory for site-wide components
+- [ ] **MDX plugins**: Allow remark/rehype plugins via config (future)
+- [ ] **Client hydration opt-in**: For interactive components, optionally include React runtime and hydrate (future)
 
 
 

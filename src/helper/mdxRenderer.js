@@ -2,13 +2,47 @@ import { bundleMDX } from "mdx-bundler";
 import { getMDXComponent } from "mdx-bundler/client/index.js";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { dirname } from "path";
+import { dirname, join, resolve } from "path";
+import { existsSync } from "fs";
+
+/**
+ * Find _components directories by walking up from the MDX file to the source root.
+ * Returns paths from most specific (nearest) to most general (root).
+ * @param {string} startDir - Directory of the MDX file
+ * @param {string} [sourceRoot] - Source root to stop searching at
+ * @returns {string[]} Array of absolute paths to _components directories
+ */
+function findComponentDirs(startDir, sourceRoot) {
+  const dirs = [];
+  let current = resolve(startDir);
+  const root = sourceRoot ? resolve(sourceRoot) : null;
+
+  while (true) {
+    const candidate = join(current, '_components');
+    if (existsSync(candidate)) {
+      dirs.push(candidate);
+    }
+    
+    // Stop if we've reached the source root or filesystem root
+    if (root && current === root) break;
+    const parent = dirname(current);
+    if (parent === current) break; // filesystem root
+    current = parent;
+  }
+  
+  return dirs;
+}
 
 /**
  * Render an MDX file to static HTML.
  * 
  * Uses mdx-bundler to compile MDX source (with component imports resolved via esbuild),
  * then renders the resulting React component to static HTML using react-dom/server.
+ * 
+ * Supports a `_components/` directory convention: any `_components/` folder found in
+ * the MDX file's directory or any parent directory (up to sourceRoot) will be added
+ * as an esbuild resolve directory, enabling imports like:
+ *   import { MyComponent } from '_components/MyComponent.tsx'
  *
  * @param {Object} options
  * @param {string} options.source - Raw MDX file contents
@@ -18,6 +52,7 @@ import { dirname } from "path";
  */
 export async function renderMDX({ source, filePath, sourceRoot }) {
   const cwd = dirname(filePath);
+  const componentDirs = findComponentDirs(cwd, sourceRoot);
 
   const esbuildOptions = (options) => {
     // Enable loaders for TypeScript/JSX component files
@@ -31,6 +66,15 @@ export async function renderMDX({ source, filePath, sourceRoot }) {
     // Set target for modern Node.js
     options.target = "es2020";
     options.platform = "node";
+    
+    // Add _components directories as resolve paths so imports like
+    // '_components/Foo.tsx' resolve without relative path prefixes
+    if (componentDirs.length > 0) {
+      // Add parent directories of _components so 'import from "_components/X"' works
+      const parentDirs = componentDirs.map(d => dirname(d));
+      options.nodePaths = [...(options.nodePaths || []), ...parentDirs];
+    }
+    
     return options;
   };
 
