@@ -122,6 +122,23 @@ function formatMDXError(error, filePath) {
     return wrappedError;
   }
 
+  // Unclosed tag / paragraph boundary errors (very common with HTML-in-MDX)
+  const unclosedMatch = msg.match(/Expected a closing tag for `<(\w+)>`.*before the end of `(\w+)`/);
+  if (unclosedMatch) {
+    const [, tag, context] = unclosedMatch;
+    const lineMatch = msg.match(/(\d+):(\d+)[-–](\d+):(\d+)/);
+    const lineInfo = lineMatch ? ` (line ${lineMatch[1]})` : '';
+    
+    const wrappedError = new Error(
+      `MDX compilation failed for ${filePath}:\n` +
+      `Unclosed <${tag}> tag${lineInfo}. ` +
+      `In MDX, HTML tags that contain content across line breaks must use JSX block syntax. ` +
+      `Either put the <${tag}>...</${tag}> on a single line, or ensure the opening tag is on its own line with content indented below.`
+    );
+    wrappedError.originalError = error;
+    return wrappedError;
+  }
+
   // esbuild syntax / compilation errors
   if (msg.includes('Build failed') || msg.includes('error:')) {
     // Extract the most relevant error lines from esbuild output

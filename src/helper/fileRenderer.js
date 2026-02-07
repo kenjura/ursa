@@ -67,9 +67,32 @@ export async function renderFileAsync({ fileContents, type, dirname, basename, f
   }
 
   // MDX uses mdx-bundler + React SSR (always async, no worker support)
+  // Falls back to markdown rendering if MDX compilation fails
   if (type === ".mdx") {
-    const result = await renderMDX({ source: fileContents, filePath, sourceRoot });
-    return result.html;
+    try {
+      const result = await renderMDX({ source: fileContents, filePath, sourceRoot });
+      return result.html;
+    } catch (mdxError) {
+      // Extract a concise error description for the warning banner
+      const errorMsg = mdxError.message || String(mdxError);
+      const shortPath = filePath?.split('/').slice(-3).join('/') || 'unknown file';
+      
+      // Extract the actionable part of the error (skip the "MDX compilation failed for <path>:" preamble)
+      const lines = errorMsg.split('\n').filter(l => l.trim());
+      const actionableLine = lines.length > 1 ? lines.slice(1).join(' ').trim() : lines[0];
+      const errorDetail = actionableLine.slice(0, 300);
+
+      console.warn(`⚠️  MDX compilation failed for ${shortPath}, falling back to Markdown rendering`);
+      console.warn(`   ${errorDetail}`);
+
+      // Render as markdown instead (handles raw HTML fine, just no custom components)
+      const markdownHtml = markdownToHtml(fileContents);
+      const warningBanner = `<div style="background:#fef3cd;border:1px solid #ffc107;color:#856404;padding:0.75rem 1rem;margin-bottom:1rem;border-radius:4px;font-size:0.875rem;">`
+        + `<strong>⚠️ MDX compilation error</strong> — this page was rendered as Markdown (custom components like &lt;CharacterCard&gt; will not appear).<br>`
+        + `<code style="font-size:0.8rem;word-break:break-all;">${errorDetail.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</code>`
+        + `</div>`;
+      return warningBanner + markdownHtml;
+    }
   }
   
   return undefined;
