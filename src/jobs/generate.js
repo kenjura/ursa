@@ -980,6 +980,7 @@ export async function generate({
   watchModeCache.output = output;
   watchModeCache.hashCache = hashCache;
   watchModeCache.imageMap = imageMap;
+  watchModeCache.customMenus = customMenus;
   watchModeCache.lastFullBuild = Date.now();
   watchModeCache.isInitialized = true;
   progress.log(`Watch cache initialized for fast single-file regeneration`);
@@ -1069,7 +1070,7 @@ export async function regenerateSingleFile(changedFile, {
   }
   
   try {
-    const { templates, menu, footer, validPaths, hashCache, cacheBustTimestamp, imageMap } = watchModeCache;
+    const { templates, menu, footer, validPaths, hashCache, cacheBustTimestamp, imageMap, customMenus } = watchModeCache;
     
     const rawBody = await readFile(changedFile, "utf8");
     const type = parse(changedFile).ext;
@@ -1171,6 +1172,22 @@ export async function regenerateSingleFile(changedFile, {
       return { success: false, message: `Template not found: ${requestedTemplateName || DEFAULT_TEMPLATE_NAME}` };
     }
     
+    // Find nearest script.js or _script.js and inline its contents
+    let customScript = "";
+    try {
+      const dirKey = (dir === "/" || dir === "") ? _source : resolve(_source, dir);
+      const scriptPath = await findScriptJs(dirKey);
+      if (scriptPath) {
+        const scriptContent = await readFile(scriptPath, 'utf8');
+        customScript = `<script>\n${scriptContent}\n</script>`;
+      }
+    } catch (e) {
+      // ignore
+    }
+
+    // Check if this file has a custom menu
+    const customMenuInfo = customMenus ? getCustomMenuForFile(changedFile, source, customMenus) : null;
+
     // Build final HTML
     let finalHtml = template;
     const replacements = {
@@ -1180,11 +1197,21 @@ export async function regenerateSingleFile(changedFile, {
       "${transformedMetadata}": transformedMetadata,
       "${body}": body,
       "${styleLink}": styleLink,
+      "${customScript}": customScript,
       "${searchIndex}": "[]",
       "${footer}": footer
     };
     for (const [key, value] of Object.entries(replacements)) {
       finalHtml = finalHtml.replace(key, value);
+    }
+
+    // If this page has a custom menu, add data attributes to body
+    if (customMenuInfo) {
+      const menuPosition = customMenuInfo.menuPosition || 'side';
+      finalHtml = finalHtml.replace(
+        /<body([^>]*)>/,
+        `<body$1 data-custom-menu="${customMenuInfo.menuJsonPath}" data-menu-position="${menuPosition}">`
+      );
     }
     
     // Resolve relative URLs in raw HTML elements (img src, etc.)
