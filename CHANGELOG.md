@@ -1,3 +1,23 @@
+# 0.72.0
+2026-02-07
+
+- MDX support: Ursa can now process .mdx files with embedded JSX components
+  - MDX files are parsed and rendered to HTML with React components
+  - Custom components can be imported and used within MDX content
+  - MDX documents are fully integrated with Ursa's build and serve processes, including hot reloading in dev mode
+  - This allows for rich interactive content while still benefiting from Ursa's static site generation features
+
+# 0.71.0
+2026-02-05
+
+- 'Dev mode': new mode similar to serve, but only generates documents on-demand to save time.
+  - When running `ursa dev`, the server starts immediately without a full build
+  - Documents are generated on-the-fly when requested, with caching for subsequent requests
+  - Ideal for development with large sites where full builds are slow
+  - Still supports hot reloading and file watching for dynamic updates
+- Custom menus can now include auto-generated menus in addition to custom content
+- Custom menus are displayed on the top bar instead of the side
+
 # 0.70.0
 2026-02-04
 
