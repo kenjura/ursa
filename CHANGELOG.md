@@ -1,3 +1,8 @@
+# 0.73.0
+2026-02-07
+
+- fixed build pipeline blocker
+
 # 0.72.0
 2026-02-07
 

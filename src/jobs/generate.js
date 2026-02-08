@@ -1027,6 +1027,9 @@ export async function generate({
   // Print profiler report
   progress.log(profiler.report());
   
+  // Terminate worker pool so threads don't keep the process alive
+  await terminateParserPool();
+
   // Return deferred processing promises if in deferred mode
   // Caller can await these to know when background processing is complete
   return {
