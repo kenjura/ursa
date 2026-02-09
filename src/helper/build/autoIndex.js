@@ -10,6 +10,34 @@ import { addTimestampToHtmlStaticRefs } from "./cacheBust.js";
 import { isMetadataOnly, extractMetadata, getAutoIndexConfig } from "../metadataExtractor.js";
 import { getCustomMenuForFile } from "./menu.js";
 
+// Document extensions for checking if a folder has content
+const SOURCE_DOC_EXTENSIONS = ['.md', '.mdx', '.txt', '.yml', '.html'];
+const OUTPUT_DOC_EXTENSIONS = ['.html'];
+
+/**
+ * Recursively check if a directory contains any document files.
+ * @param {string} dir - Directory path to check
+ * @param {string[]} extensions - File extensions that count as documents
+ * @returns {Promise<boolean>} True if the directory (or any subdirectory) contains at least one document
+ */
+async function directoryHasDocuments(dir, extensions) {
+  try {
+    const children = await readdir(dir, { withFileTypes: true });
+    for (const child of children) {
+      if (child.name.startsWith('.')) continue;
+      const fullPath = join(dir, child.name);
+      if (child.isDirectory()) {
+        if (child.name === 'img') continue;
+        if (await directoryHasDocuments(fullPath, extensions)) return true;
+      } else {
+        const ext = extname(child.name).toLowerCase();
+        if (extensions.includes(ext)) return true;
+      }
+    }
+  } catch (e) { /* ignore */ }
+  return false;
+}
+
 /**
  * Generate auto-index HTML content for a directory from the OUTPUT folder
  * (used by fallback auto-index generation after all files are generated)
@@ -50,6 +78,11 @@ export async function generateAutoIndexHtml(dir, depth = 1, currentDepth = 0, pa
     
     for (const child of filteredChildren) {
       const isDir = child.isDirectory();
+      // Skip directories that contain no documents
+      if (isDir) {
+        const childDir = join(dir, child.name);
+        if (!await directoryHasDocuments(childDir, OUTPUT_DOC_EXTENSIONS)) continue;
+      }
       const name = isDir ? child.name : child.name.replace('.html', '');
       // Use pathPrefix to ensure hrefs are correct relative to the document root
       const childPath = pathPrefix ? `${pathPrefix}/${child.name}` : child.name;
@@ -99,11 +132,11 @@ export async function generateAutoIndexHtmlFromSource(sourceDir, depth = 1, curr
         // Skip hidden files
         if (child.name.startsWith('.')) return false;
         // Skip index files (we're generating into the index)
-        if (child.name.match(/^index\.(md|txt|yml|html)$/i)) return false;
+        if (child.name.match(/^index\.(md|mdx|txt|yml|html)$/i)) return false;
         // Skip img folders (contain images, not content)
         if (child.isDirectory() && child.name === 'img') return false;
-        // Include directories and article files (md, txt, yml, html)
-        return child.isDirectory() || child.name.match(/\.(md|txt|yml|html)$/i);
+        // Include directories and article files (md, mdx, txt, yml, html)
+        return child.isDirectory() || child.name.match(/\.(md|mdx|txt|yml|html)$/i);
       })
       .sort((a, b) => {
         // Directories first, then files, alphabetically within each group
@@ -120,6 +153,11 @@ export async function generateAutoIndexHtmlFromSource(sourceDir, depth = 1, curr
     
     for (const child of filteredChildren) {
       const isDir = child.isDirectory();
+      // Skip directories that contain no documents
+      if (isDir) {
+        const childDir = join(sourceDir, child.name);
+        if (!await directoryHasDocuments(childDir, SOURCE_DOC_EXTENSIONS)) continue;
+      }
       // Get name without extension for display
       const ext = isDir ? '' : extname(child.name);
       const nameWithoutExt = isDir ? child.name : basename(child.name, ext);
@@ -262,23 +300,29 @@ export async function generateAutoIndices(output, directories, source, templates
         const children = await readdir(dir, { withFileTypes: true });
         
         // Filter to only include relevant files and folders
-        const items = children
-          .filter(child => {
-            // Skip hidden files and index alternates we just checked
-            if (child.name.startsWith('.')) return false;
-            if (child.name === 'index.html') return false;
-            // Include directories and html files
-            return child.isDirectory() || child.name.endsWith('.html');
-          })
-          .map(child => {
-            const isDir = child.isDirectory();
-            const name = isDir ? child.name : child.name.replace('.html', '');
-            // For directories, link to /folder/index.html; for files, use the filename directly
-            const href = isDir ? `${child.name}/index.html` : child.name;
-            const displayName = toTitleCase(name);
-            const icon = isDir ? '📁' : '📄';
-            return `<li>${icon} <a href="${href}">${displayName}</a></li>`;
-          });
+        const filteredItems = children.filter(child => {
+          // Skip hidden files and index alternates we just checked
+          if (child.name.startsWith('.')) return false;
+          if (child.name === 'index.html') return false;
+          // Include directories and html files
+          return child.isDirectory() || child.name.endsWith('.html');
+        });
+
+        // Build items, skipping directories with no documents
+        const items = [];
+        for (const child of filteredItems) {
+          const isDir = child.isDirectory();
+          if (isDir) {
+            const childDir = join(dir, child.name);
+            if (!await directoryHasDocuments(childDir, OUTPUT_DOC_EXTENSIONS)) continue;
+          }
+          const name = isDir ? child.name : child.name.replace('.html', '');
+          // For directories, link to /folder/index.html; for files, use the filename directly
+          const href = isDir ? `${child.name}/index.html` : child.name;
+          const displayName = toTitleCase(name);
+          const icon = isDir ? '📁' : '📄';
+          items.push(`<li>${icon} <a href="${href}">${displayName}</a></li>`);
+        }
         
         if (items.length === 0) {
           // Empty folder, skip generating index

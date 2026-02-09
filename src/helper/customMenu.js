@@ -20,6 +20,29 @@ const FOLDER_ICON = '📁';
 const DOCUMENT_ICON = '📄';
 
 /**
+ * Recursively check if a folder contains any document files.
+ * @param {string} dirPath - Directory to check
+ * @returns {boolean} True if the folder (or any subfolder) contains at least one document
+ */
+function folderHasDocuments(dirPath) {
+  try {
+    const entries = readdirSync(dirPath, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.name.startsWith('.') || entry.name.startsWith('_')) continue;
+      const fullPath = join(dirPath, entry.name);
+      if (entry.isDirectory()) {
+        if (entry.name === 'img') continue;
+        if (folderHasDocuments(fullPath)) return true;
+      } else {
+        const ext = extname(entry.name);
+        if (SOURCE_EXTENSIONS.includes(ext)) return true;
+      }
+    }
+  } catch (e) { /* ignore */ }
+  return false;
+}
+
+/**
  * Extract frontmatter from menu file content
  * @param {string} content - Menu file content
  * @returns {{frontmatter: object, body: string}} - Parsed frontmatter and remaining body
@@ -155,6 +178,9 @@ export function autoGenerateMenuFromFolder(folderPath, sourceRoot, depth = 2, is
       const relativePath = '/' + relative(sourceRoot, fullPath).replace(/\\/g, '/');
       
       if (entry.isDirectory()) {
+        // Skip folders that contain no documents (recursively)
+        if (!folderHasDocuments(fullPath)) continue;
+
         // Check for index file to get label
         let label = null;
         for (const ext of SOURCE_EXTENSIONS) {

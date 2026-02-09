@@ -1,3 +1,9 @@
+# 0.74.0
+2026-02-08
+
+- added a feature to skip preview generation and swapping on a per-image basis. You can use the data-no-preview tag in html, and the ?no-preview query parameter in markdown or wikitext images.
+- when building automenus and autoindex pages, folders with no md/mdx/txt/html documents anywhere in their tree will not be shown.
+
 # 0.73.0
 2026-02-07
 

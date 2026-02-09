@@ -232,10 +232,28 @@ function resolveHref(rawHref, validPaths) {
   return { href: rawHref, inactive: true, debug: debugTries.join(' | ') };
 }
 
+/**
+ * Recursively check if a directory-tree node contains any document files.
+ * @param {object} treeNode - A node from the directory-tree package
+ * @param {string[]} docExtensions - Extensions that count as documents
+ * @returns {boolean}
+ */
+function treeHasDocuments(treeNode, docExtensions) {
+  if (!treeNode.children) {
+    // Leaf node (file) — check its extension
+    return docExtensions.includes(extname(treeNode.path));
+  }
+  // Directory — recurse into children
+  return treeNode.children.some(child => treeHasDocuments(child, docExtensions));
+}
+
 // Build a flat tree structure with path info for JS navigation
 // Set includeDebug=false to exclude debug fields and reduce JSON size
 function buildMenuData(tree, source, validPaths, parentPath = '', includeDebug = true) {
   const items = [];
+  
+  // Document extensions that count as "real content"
+  const DOC_EXTENSIONS = ['.md', '.mdx', '.txt', '.html'];
   
   // Files to hide from menu by default
   const hiddenFiles = ['config.json', 'style.css', 'footer.md'];
@@ -268,6 +286,11 @@ function buildMenuData(tree, source, validPaths, parentPath = '', includeDebug =
     // Check if this folder is hidden via config.json
     if (hasChildren && isFolderHidden(item.path, source)) {
       continue; // Skip hidden folders
+    }
+    
+    // Skip folders that contain no document files (recursively)
+    if (hasChildren && !treeHasDocuments(item, DOC_EXTENSIONS)) {
+      continue;
     }
     
     // Get folder config for custom label and icon (deprecated for labels, still used for icons/hidden)
