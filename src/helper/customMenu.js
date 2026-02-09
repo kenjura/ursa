@@ -18,6 +18,41 @@ const INDEX_NAMES = ['index', 'home'];
 // Default icons
 const FOLDER_ICON = '📁';
 const DOCUMENT_ICON = '📄';
+const HOME_ICON = '🏠';
+
+/**
+ * Collapse single-document folders into direct links.
+ * If a folder's only children are index-like files (no sub-folders),
+ * collapse it to a direct link using the folder's label and the first child's href.
+ * @param {Array} items - Menu items
+ * @returns {Array} - Processed menu items
+ */
+function collapseSingleDocFolders(items) {
+  return items.map(item => {
+    if (!item.hasChildren || !item.children || item.children.length === 0) return item;
+    
+    // Recurse first so nested single-doc folders are collapsed bottom-up
+    item.children = collapseSingleDocFolders(item.children);
+    
+    // Check if all children are non-folder items (i.e., no child has children)
+    const hasSubfolders = item.children.some(c => c.hasChildren);
+    if (!hasSubfolders && item.children.length > 0) {
+      // All children are leaf files — if there's only one, collapse to a direct link
+      // For index-like content (single child), collapse the folder entirely
+      if (item.children.length === 1) {
+        const onlyChild = item.children[0];
+        return {
+          ...item,
+          hasChildren: false,
+          children: [],
+          href: onlyChild.href || item.href,
+        };
+      }
+    }
+    
+    return item;
+  });
+}
 
 /**
  * Recursively check if a folder contains any document files.
@@ -147,19 +182,7 @@ export function autoGenerateMenuFromFolder(folderPath, sourceRoot, depth = 10, i
     return items;
   }
   
-  // Home item to be added at the start (after sorting other items)
-  let homeItem = null;
-  if (isRoot) {
-    const relativePath = '/' + relative(sourceRoot, folderPath).replace(/\\/g, '/');
-    homeItem = {
-      label: 'Home',
-      path: 'home',
-      href: relativePath + '/index.html',
-      hasChildren: false,
-      icon: `<span class="menu-icon">${DOCUMENT_ICON}</span>`,
-      children: [],
-    };
-  }
+  // (Home item is built at the end for root level, after partitioning)
   
   try {
     const entries = readdirSync(folderPath, { withFileTypes: true });
@@ -236,12 +259,28 @@ export function autoGenerateMenuFromFolder(folderPath, sourceRoot, depth = 10, i
     console.error(`Error reading folder ${folderPath}:`, e);
   }
   
-  // Add Home item at the very start (after sorting)
-  if (homeItem) {
-    items.unshift(homeItem);
+  // Post-process: collapse single-doc folders into direct links
+  const processedItems = collapseSingleDocFolders(items);
+  
+  if (isRoot) {
+    // Partition top-level items: files go under Home, folders stay at top level
+    const topLevelFolders = processedItems.filter(item => item.hasChildren);
+    const topLevelFiles = processedItems.filter(item => !item.hasChildren);
+    
+    const relativePath = '/' + relative(sourceRoot, folderPath).replace(/\\/g, '/');
+    const homeItem = {
+      label: 'Home',
+      path: 'home',
+      href: relativePath + '/index.html',
+      hasChildren: topLevelFiles.length > 0,
+      icon: `<span class="menu-icon">${HOME_ICON}</span>`,
+      children: topLevelFiles,
+    };
+    
+    return [homeItem, ...topLevelFolders];
   }
   
-  return items;
+  return processedItems;
 }
 
 /**
