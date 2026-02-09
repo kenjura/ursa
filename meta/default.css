@@ -54,7 +54,7 @@ nav#nav-global {
   left: 0;
   width: 100vw;
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: 1fr var(--article-width) 1fr;
   align-items: center;
   padding: 0 8px;
   box-sizing: border-box;
@@ -76,8 +76,7 @@ nav#nav-global {
 
   /* Center container for search and top menu */
   .nav-center {
-    width: var(--article-width);
-    max-width: calc(100% - 16px);
+    width: calc(var(--article-width) + 38px);
     justify-self: center;
     position: relative;
   }
@@ -269,7 +268,7 @@ body[data-menu-position="top"] article#main-content {
 
 /* Update nav-global grid to accommodate top menu - keep search+avatar together on right */
 body[data-menu-position="top"] nav#nav-global {
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: 1fr var(--article-width) 1fr;
 }
 
 /* Top-level menu list */
@@ -285,11 +284,13 @@ nav#nav-main-top .top-menu-level {
 nav#nav-main-top .top-menu-item {
   position: relative;
   padding: 0;
+  margin: 0;
 }
 
 nav#nav-main-top .top-menu-label {
   display: block;
-  padding: 8px 16px;
+  padding: 0px 16px;
+  line-height: var(--global-nav-height);
   color: var(--text-color);
   text-decoration: none;
   white-space: nowrap;
@@ -311,8 +312,7 @@ nav#nav-main-top .top-menu-item.has-dropdown > .top-menu-label::after {
   font-size: 0.4em;
   margin-left: 6px;
   opacity: 0.6;
-  position: relative;
-  top: -1px;
+  vertical-align: bottom;
 }
 
 /* Dropdown menu (first level of children) */
@@ -328,7 +328,7 @@ nav#nav-main-top .top-menu-dropdown {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
   list-style: none;
   margin: 0;
-  padding: 4px 0;
+  padding: 0;
   z-index: 1005;
 }
 
@@ -374,7 +374,7 @@ nav#nav-main-top .top-menu-flyout {
   display: none;
   position: absolute;
   left: 100%;
-  top: 0;
+  top: -1px;
   min-width: 200px;
   background-color: var(--bg-color);
   border: 1px solid var(--nav-top-bg);
@@ -382,7 +382,7 @@ nav#nav-main-top .top-menu-flyout {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
   list-style: none;
   margin: 0;
-  padding: 4px 0;
+  padding: 0;
   z-index: 1006;
 }
 
@@ -834,19 +834,31 @@ footer#site-footer {
   nav#nav-toc {
     display: none !important;
   }
+  
+  /* On mobile, hide the top menu and show search inline instead */
+  body[data-menu-position="top"] nav#nav-main-top {
+    display: none !important;
+  }
+  body[data-menu-position="top"] nav#nav-global input#global-search {
+    display: block;
+  }
+  body[data-menu-position="top"] nav#nav-global .search-button {
+    display: none;
+  }
+  
   nav#nav-main {
     display: none !important;
     position: fixed;
     top: var(--global-nav-height);
     left: 0;
     width: 100vw;
-    height: 100vh;
+    height: calc(100vh - var(--global-nav-height));
     max-width: none;
     background: var(--bg-color);
     z-index: 1000;
     overflow-y: auto;
     margin: 0;
-    padding: calc(var(--global-nav-height) + 1rem) 0 2rem 0;
+    padding: 0;
     transform: none; /* Reset desktop transform */
   }
   nav#nav-main.active {
@@ -856,6 +868,52 @@ footer#site-footer {
     display: none !important;
     transform: none;
   }
+  
+  /* Mobile menu list styles */
+  nav#nav-main .mobile-menu-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  
+  nav#nav-main .mobile-menu-item {
+    border-bottom: 1px solid rgba(128, 128, 128, 0.15);
+  }
+  
+  nav#nav-main .mobile-menu-label {
+    display: block;
+    padding: 14px 20px;
+    color: var(--text-color);
+    text-decoration: none;
+    font-size: 1rem;
+  }
+  
+  nav#nav-main a.mobile-menu-label:hover {
+    background-color: rgba(128, 128, 128, 0.1);
+  }
+  
+  nav#nav-main span.mobile-menu-label {
+    opacity: 0.5;
+  }
+  
+  /* Indent deeper levels */
+  nav#nav-main .mobile-menu-depth-1 .mobile-menu-label { padding-left: 40px; font-size: 0.95rem; }
+  nav#nav-main .mobile-menu-depth-2 .mobile-menu-label { padding-left: 56px; font-size: 0.9rem; }
+  nav#nav-main .mobile-menu-depth-3 .mobile-menu-label { padding-left: 72px; font-size: 0.85rem; }
+  nav#nav-main .mobile-menu-depth-4 .mobile-menu-label { padding-left: 88px; font-size: 0.85rem; }
+  
+  /* Current page highlight in mobile menu */
+  nav#nav-main .mobile-menu-current .mobile-menu-label {
+    font-weight: 600;
+    background-color: rgba(0, 255, 255, 0.1);
+  }
+  
+  /* Home item styling */
+  nav#nav-main .mobile-menu-home .mobile-menu-label {
+    font-weight: 600;
+    border-bottom: 2px solid rgba(128, 128, 128, 0.25);
+  }
+
   /* Override desktop indentation for mobile */
   nav#nav-main > ul > li > ul > li > .menu-item-row,
   nav#nav-main > ul > li > ul > li > ul > li > .menu-item-row,

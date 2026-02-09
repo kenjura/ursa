@@ -48,7 +48,7 @@ export function findAllCustomMenus(allSourceFilenames, source) {
           menuPath: menuInfo.path,
           menuDir: menuInfo.menuDir,
           menuData: parsedMenu.menuData,
-          menuPosition: parsedMenu.menuPosition || 'side',
+          menuPosition: parsedMenu.menuPosition || 'top',
           // The URL path for the menu JSON file
           menuJsonPath: '/public/custom-menu-' + getMenuId(menuInfo.menuDir, source) + '.json',
         });
@@ -70,7 +70,7 @@ export function findAllCustomMenus(allSourceFilenames, source) {
           menuPath: menuInfo.path,
           menuDir: menuInfo.menuDir,
           menuData,
-          menuPosition: frontmatter['menu-position'] || 'side',
+          menuPosition: frontmatter['menu-position'] || 'top',
           // The URL path for the menu JSON file
           menuJsonPath: '/public/custom-menu-' + getMenuId(menuInfo.menuDir, source) + '.json',
         });
@@ -112,7 +112,7 @@ export function getCustomMenuForFile(filePath, source, customMenus) {
       return {
         menuJsonPath: menuInfo.menuJsonPath,
         menuDir: relative(source, menuInfo.menuDir) || '',
-        menuPosition: menuInfo.menuPosition || 'side',
+        menuPosition: menuInfo.menuPosition || 'top',
       };
     }
     const parentDir = dirname(currentDir);

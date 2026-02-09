@@ -555,7 +555,7 @@ export function getCustomMenuForFile(filePath, sourceRoot) {
   // Extract frontmatter options
   const { frontmatter, body } = extractMenuFrontmatter(customMenuInfo.content);
   const autoGenerate = frontmatter['auto-generate-menu'] === true || frontmatter['auto-generate-menu'] === 'true';
-  const menuPosition = frontmatter['menu-position'] || 'side';
+  const menuPosition = frontmatter['menu-position'] || 'top';
   const depth = parseInt(frontmatter['menu-depth'], 10) || 10;
   
   let menuData;

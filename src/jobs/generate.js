@@ -654,12 +654,18 @@ export async function generate({
       const pattern = /\$\{(title|menu|meta|transformedMetadata|body|styleLink|customScript|searchIndex|footer)\}/g;
       let finalHtml = template.replace(pattern, (match) => replacements[match] ?? match);
 
-      // If this page has a custom menu, add data attributes to body
+      // Add menu data attributes to body
       if (customMenuInfo) {
-        const menuPosition = customMenuInfo.menuPosition || 'side';
+        const menuPosition = customMenuInfo.menuPosition || 'top';
         finalHtml = finalHtml.replace(
           /<body([^>]*)>/,
           `<body$1 data-custom-menu="${customMenuInfo.menuJsonPath}" data-menu-position="${menuPosition}">`
+        );
+      } else {
+        // No custom menu — default to top menu
+        finalHtml = finalHtml.replace(
+          /<body([^>]*)>/,
+          `<body$1 data-menu-position="top">`
         );
       }
 
@@ -802,7 +808,7 @@ export async function generate({
     // Include menuPosition in the JSON so client knows how to render
     const customMenuJson = JSON.stringify({
       menuData: menuInfo.menuData,
-      menuPosition: menuInfo.menuPosition || 'side',
+      menuPosition: menuInfo.menuPosition || 'top',
     });
     progress.log(`Writing custom menu: ${menuInfo.menuJsonPath}`);
     await outputFile(customMenuPath, customMenuJson);
@@ -1210,10 +1216,16 @@ export async function regenerateSingleFile(changedFile, {
 
     // If this page has a custom menu, add data attributes to body
     if (customMenuInfo) {
-      const menuPosition = customMenuInfo.menuPosition || 'side';
+      const menuPosition = customMenuInfo.menuPosition || 'top';
       finalHtml = finalHtml.replace(
         /<body([^>]*)>/,
         `<body$1 data-custom-menu="${customMenuInfo.menuJsonPath}" data-menu-position="${menuPosition}">`
+      );
+    } else {
+      // No custom menu — default to top menu
+      finalHtml = finalHtml.replace(
+        /<body([^>]*)>/,
+        `<body$1 data-menu-position="top">`
       );
     }
     

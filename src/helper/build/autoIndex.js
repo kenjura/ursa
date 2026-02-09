@@ -401,12 +401,18 @@ export async function generateAutoIndices(output, directories, source, templates
           finalHtml = finalHtml.replace(key, value);
         }
         
-        // Add custom menu data attributes if applicable
+        // Add menu data attributes to body
         if (customMenuInfo) {
-          const menuPosition = customMenuInfo.menuPosition || 'side';
+          const menuPosition = customMenuInfo.menuPosition || 'top';
           finalHtml = finalHtml.replace(
             /<body([^>]*)>/,
             `<body$1 data-custom-menu="${customMenuInfo.menuJsonPath}" data-menu-position="${menuPosition}">`
+          );
+        } else {
+          // No custom menu — default to top menu
+          finalHtml = finalHtml.replace(
+            /<body([^>]*)>/,
+            `<body$1 data-menu-position="top">`
           );
         }
         

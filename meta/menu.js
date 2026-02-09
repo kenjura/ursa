@@ -5,13 +5,14 @@
  * Each column represents one level of the folder hierarchy.
  * 
  * Also supports top menu position for horizontal navigation with dropdowns.
+ * Top menu is the default; side menu is used only when explicitly set.
  */
 document.addEventListener('DOMContentLoaded', () => {
     const navMain = document.querySelector('nav#nav-main');
     const navMainTop = document.querySelector('nav#nav-main-top');
-    const menuPosition = document.body.dataset.menuPosition || 'side';
+    const menuPosition = document.body.dataset.menuPosition || 'top';
     
-    // If menu position is top, handle differently
+    // If menu position is top (default), handle differently
     if (menuPosition === 'top') {
         initTopMenu();
         return;
@@ -541,27 +542,173 @@ document.addEventListener('DOMContentLoaded', () => {
 
 /**
  * Initialize top menu (horizontal navigation with dropdowns)
+ * Also handles: home button on desktop, hamburger → mobile side menu
  */
 function initTopMenu() {
     const navMainTop = document.querySelector('nav#nav-main-top');
+    const navMain = document.querySelector('nav#nav-main');
+    const globalNav = document.querySelector('nav#nav-global');
+    const menuButton = globalNav?.querySelector('.menu-button');
     const customMenuPath = document.body.dataset.customMenu;
     
-    if (!navMainTop || !customMenuPath) return;
+    if (!navMainTop) return;
     
-    // Load menu data and render top menu
-    fetch(customMenuPath)
+    // Determine which URL to load — custom menu or default auto-menu
+    const menuUrl = customMenuPath || '/public/menu-data.json';
+    
+    // Load menu data and render both top menu and mobile menu
+    fetch(menuUrl)
         .then(response => response.json())
         .then(data => {
-            // Handle new JSON format with menuData and menuPosition
             const menuData = data.menuData || data;
             renderTopMenu(navMainTop, menuData);
+            buildMobileMenu(menuData, navMain);
         })
         .catch(error => {
             console.error('Failed to load top menu data:', error);
         });
     
+    // Set up home button (desktop) / hamburger (mobile)
+    setupMenuButton(menuButton, navMain);
+    
     // Set up search button toggle
     initTopMenuSearch();
+}
+
+/**
+ * Set up the menu button:
+ * - Desktop: shows 🏠 (home icon), navigates to "/" on click
+ * - Mobile: shows ☰ (hamburger), toggles mobile side menu on click
+ */
+function setupMenuButton(menuButton, navMain) {
+    if (!menuButton) return;
+    
+    const isMobile = () => window.matchMedia('(max-width: 50rem)').matches;
+    
+    function updateButtonIcon() {
+        if (isMobile()) {
+            const isActive = navMain?.classList.contains('active');
+            menuButton.textContent = isActive ? '✕' : '☰';
+            menuButton.setAttribute('aria-label', isActive ? 'Close menu' : 'Menu');
+        } else {
+            menuButton.textContent = '🏠';
+            menuButton.setAttribute('aria-label', 'Home');
+        }
+    }
+    
+    // Set initial icon
+    updateButtonIcon();
+    
+    // Update icon on resize
+    window.addEventListener('resize', updateButtonIcon);
+    
+    menuButton.addEventListener('click', (e) => {
+        e.stopPropagation();
+        
+        if (isMobile()) {
+            // Mobile: toggle side menu
+            if (navMain) {
+                const isNowActive = navMain.classList.toggle('active');
+                menuButton.textContent = isNowActive ? '✕' : '☰';
+                menuButton.setAttribute('aria-label', isNowActive ? 'Close menu' : 'Menu');
+            }
+        } else {
+            // Desktop: navigate to home
+            window.location.href = '/';
+        }
+    });
+    
+    // Close mobile menu on outside click
+    document.addEventListener('click', (e) => {
+        if (isMobile() && navMain?.classList.contains('active') &&
+            !navMain.contains(e.target) && !menuButton.contains(e.target)) {
+            navMain.classList.remove('active');
+            updateButtonIcon();
+        }
+    });
+    
+    // Close mobile menu on Escape
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && isMobile() && navMain?.classList.contains('active')) {
+            navMain.classList.remove('active');
+            updateButtonIcon();
+            menuButton.focus();
+        }
+    });
+}
+
+/**
+ * Build the mobile side menu from the same data as the top menu.
+ * Repurposes #nav-main as a vertical list with a "Home" link at top.
+ */
+function buildMobileMenu(menuData, navMain) {
+    if (!navMain) return;
+    
+    // Clear existing content
+    navMain.innerHTML = '';
+    
+    const ul = document.createElement('ul');
+    ul.className = 'mobile-menu-list';
+    
+    // Add "Home" item at the top
+    const homeLi = document.createElement('li');
+    homeLi.className = 'mobile-menu-item mobile-menu-home';
+    const homeLink = document.createElement('a');
+    homeLink.href = '/';
+    homeLink.className = 'mobile-menu-label';
+    homeLink.textContent = '🏠 Home';
+    homeLi.appendChild(homeLink);
+    ul.appendChild(homeLi);
+    
+    // Build menu items recursively
+    buildMobileMenuItems(menuData, ul, 0);
+    
+    navMain.appendChild(ul);
+}
+
+/**
+ * Recursively build mobile menu items as a flat indented list
+ */
+function buildMobileMenuItems(items, parentUl, depth) {
+    for (const item of items) {
+        const li = document.createElement('li');
+        li.className = 'mobile-menu-item';
+        if (depth > 0) {
+            li.classList.add('mobile-menu-depth-' + Math.min(depth, 4));
+        }
+        
+        const el = item.href
+            ? document.createElement('a')
+            : document.createElement('span');
+        el.className = 'mobile-menu-label';
+        el.textContent = item.label;
+        if (item.href) el.href = item.href;
+        
+        // Highlight current page
+        if (item.href && isCurrentTopMenuPage(item.href)) {
+            li.classList.add('mobile-menu-current');
+        }
+        
+        li.appendChild(el);
+        parentUl.appendChild(li);
+        
+        // Recurse into children
+        if (item.children && item.children.length > 0) {
+            buildMobileMenuItems(item.children, parentUl, depth + 1);
+        }
+    }
+}
+
+/**
+ * Check if an href matches the current page
+ */
+function isCurrentTopMenuPage(href) {
+    if (!href || href === '#') return false;
+    const current = decodeURIComponent(window.location.pathname)
+        .replace(/\/index\.html$/, '').replace(/\.html$/, '').replace(/\/$/, '');
+    const target = decodeURIComponent(href)
+        .replace(/\/index\.html$/, '').replace(/\.html$/, '').replace(/\/$/, '');
+    return current === target;
 }
 
 /**

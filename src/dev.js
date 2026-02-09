@@ -478,16 +478,28 @@ async function wrapInTemplate(body, title, fileMeta, urlPath, sourcePath) {
   const pattern = /\$\{(title|menu|meta|transformedMetadata|body|styleLink|customScript|searchIndex|footer)\}/g;
   let finalHtml = template.replace(pattern, (match) => replacements[match] ?? match);
   
-  // Check for custom menu
+  // Add menu data attributes to body
   if (sourcePath && customMenus) {
     const customMenuInfo = getCustomMenuForFile(sourcePath, source, customMenus);
     if (customMenuInfo) {
-      const menuPosition = customMenuInfo.menuPosition || 'side';
+      const menuPosition = customMenuInfo.menuPosition || 'top';
       finalHtml = finalHtml.replace(
         /<body([^>]*)>/,
         `<body$1 data-custom-menu="${customMenuInfo.menuJsonPath}" data-menu-position="${menuPosition}">`
       );
+    } else {
+      // No custom menu — default to top menu
+      finalHtml = finalHtml.replace(
+        /<body([^>]*)>/,
+        `<body$1 data-menu-position="top">`
+      );
     }
+  } else {
+    // No custom menus at all — default to top menu
+    finalHtml = finalHtml.replace(
+      /<body([^>]*)>/,
+      `<body$1 data-menu-position="top">`
+    );
   }
   
   // Resolve relative URLs
@@ -568,7 +580,7 @@ async function buildBackgroundCaches() {
       const customMenuPath = join(output, menuInfo.menuJsonPath);
       const customMenuJson = JSON.stringify({
         menuData: menuInfo.menuData,
-        menuPosition: menuInfo.menuPosition || 'side',
+        menuPosition: menuInfo.menuPosition || 'top',
       });
       await outputFile(customMenuPath, customMenuJson);
     }
@@ -732,13 +744,13 @@ export async function dev({
     if (url.startsWith('/public/custom-menu-') && url.endsWith('.json')) {
       // Find the menuDir from the cached customMenus by matching the JSON path
       let menuDir = null;
-      let menuPosition = 'side';
+      let menuPosition = 'top';
       
       if (devState.customMenus) {
         for (const [dir, menuInfo] of devState.customMenus) {
           if (menuInfo.menuJsonPath === url) {
             menuDir = dir;
-            menuPosition = menuInfo.menuPosition || 'side';
+            menuPosition = menuInfo.menuPosition || 'top';
             break;
           }
         }
