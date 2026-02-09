@@ -750,7 +750,7 @@ export async function dev({
         if (menuInfo) {
           const { frontmatter, body } = extractMenuFrontmatter(menuInfo.content);
           const autoGenerate = frontmatter['auto-generate-menu'] === true || frontmatter['auto-generate-menu'] === 'true';
-          const depth = parseInt(frontmatter['menu-depth'], 10) || 2;
+          const depth = parseInt(frontmatter['menu-depth'], 10) || 10;
           menuPosition = frontmatter['menu-position'] || menuPosition;
           
           let menuData;

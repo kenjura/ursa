@@ -136,11 +136,11 @@ function getMenuLabelFromFile(filePath) {
  * Similar to the main automenu but for custom menu contexts
  * @param {string} folderPath - Absolute path to folder
  * @param {string} sourceRoot - Root source directory
- * @param {number} depth - How deep to recurse (default: 2)
+ * @param {number} depth - How deep to recurse (default: 10)
  * @param {boolean} isRoot - Whether this is the root level (adds Home item)
  * @returns {Array} - Menu items array
  */
-export function autoGenerateMenuFromFolder(folderPath, sourceRoot, depth = 2, isRoot = true) {
+export function autoGenerateMenuFromFolder(folderPath, sourceRoot, depth = 10, isRoot = true) {
   const items = [];
   
   if (depth <= 0 || !existsSync(folderPath)) {
@@ -267,7 +267,7 @@ export function autoGenerateMenuFromFolder(folderPath, sourceRoot, depth = 2, is
  * @param {number} depth - How many levels deep to auto-generate
  * @returns {Array} - Combined menu data array
  */
-export function combineAutoAndManualMenu(manualContent, menuDir, sourceRoot, depth = 2) {
+export function combineAutoAndManualMenu(manualContent, menuDir, sourceRoot, depth = 10) {
   // Generate the auto menu
   const autoMenuItems = autoGenerateMenuFromFolder(menuDir, sourceRoot, depth, true);
   
@@ -534,7 +534,7 @@ export function getCustomMenuForFile(filePath, sourceRoot) {
   const { frontmatter, body } = extractMenuFrontmatter(customMenuInfo.content);
   const autoGenerate = frontmatter['auto-generate-menu'] === true || frontmatter['auto-generate-menu'] === 'true';
   const menuPosition = frontmatter['menu-position'] || 'side';
-  const depth = parseInt(frontmatter['menu-depth'], 10) || 2;
+  const depth = parseInt(frontmatter['menu-depth'], 10) || 10;
   
   let menuData;
   

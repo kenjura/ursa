@@ -60,7 +60,7 @@ export function findAllCustomMenus(allSourceFilenames, source) {
         let menuData;
         if (autoGenerate) {
           // Auto-generate menu and combine with manual content
-          const depth = parseInt(frontmatter['menu-depth'], 10) || 2;
+          const depth = parseInt(frontmatter['menu-depth'], 10) || 10;
           menuData = combineAutoAndManualMenu(body, menuInfo.menuDir, source, depth);
         } else {
           menuData = parseCustomMenu(body, menuInfo.menuDir, source);
