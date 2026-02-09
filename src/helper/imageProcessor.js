@@ -464,8 +464,32 @@ export function transformImageTags(html, imageMap, docUrlPath = '/') {
       const lastAClose = precedingHtml.lastIndexOf('</a>');
       const isInsideAnchor = lastAOpen > lastAClose;
       
+      // Detect per-image no-preview flag:
+      //   Markdown: ![alt](image.jpg?no-preview)  →  ?no-preview in src
+      //   HTML:     <img data-no-preview src="...">  →  data-no-preview attribute
+      const noPreviewQuery = /[?&]no-preview(?:&|$)/.test(src);
+      const noPreviewAttr = /data-no-preview/.test(before + after);
+      const noPreview = noPreviewQuery || noPreviewAttr;
+      
+      // Strip ?no-preview from src so it doesn't appear in output
+      let cleanSrc = src;
+      if (noPreviewQuery) {
+        cleanSrc = cleanSrc
+          .replace(/[?&]no-preview(?=&|$)/, (m) => m[0] === '?' ? '?' : '')
+          .replace(/\?&/, '?')
+          .replace(/\?$/, '');
+      }
+      
+      // Strip data-no-preview attribute from output
+      let cleanBefore = before;
+      let cleanAfter = after;
+      if (noPreviewAttr) {
+        cleanBefore = cleanBefore.replace(/\s*data-no-preview(?:="[^"]*")?\s*/g, ' ');
+        cleanAfter = cleanAfter.replace(/\s*data-no-preview(?:="[^"]*")?\s*/g, ' ');
+      }
+      
       // Normalize src path for lookup
-      let lookupPath = src;
+      let lookupPath = cleanSrc;
       // Remove query strings for lookup
       const queryIndex = lookupPath.indexOf('?');
       if (queryIndex !== -1) {
@@ -490,22 +514,28 @@ export function transformImageTags(html, imageMap, docUrlPath = '/') {
       
       const imageInfo = imageMap.get(lookupPath);
       
-      // Determine full-size URL (use original from imageInfo, or fallback to src)
-      const fullSizeUrl = imageInfo ? imageInfo.original : src;
+      // Determine full-size URL (use original from imageInfo, or fallback to cleaned src)
+      const fullSizeUrl = imageInfo ? imageInfo.original : cleanSrc;
       
-      // Determine the src to use (preview if available, otherwise original)
-      let newSrc = src;
-      if (imageInfo && imageInfo.preview !== imageInfo.original) {
+      // Determine the src to use (preview if available and not suppressed)
+      let newSrc = cleanSrc;
+      if (!noPreview && imageInfo && imageInfo.preview !== imageInfo.original) {
         // Preserve any existing query string (like cache busting) on preview
-        const querySuffix = queryIndex !== -1 ? src.substring(queryIndex) : '';
+        const querySuffix = queryIndex !== -1 ? cleanSrc.substring(queryIndex) : '';
         newSrc = imageInfo.preview + querySuffix;
       }
       
       // Build the new img tag
-      const imgTag = `<img${before}src="${newSrc}"${after}>`;
+      const imgTag = `<img${cleanBefore}src="${newSrc}"${cleanAfter}>`;
       
       // If already inside an anchor tag, just return the updated img tag
       if (isInsideAnchor) {
+        return imgTag;
+      }
+      
+      // If no-preview is set, the image is intentionally full-size — skip the
+      // click-to-view-original wrapper since it would be redundant.
+      if (noPreview) {
         return imgTag;
       }
       
