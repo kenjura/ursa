@@ -109,6 +109,20 @@ function isIndexFile(baseName) {
   return baseName.toLowerCase() === 'index';
 }
 
+/**
+ * Check if a file acts as the "index" for its parent folder.
+ * This is true for actual index files (index.md) and also for files
+ * whose name matches their parent folder (e.g. Arcanist/Arcanist.md).
+ * @param {string} filePath - Full path to the file
+ * @returns {boolean}
+ */
+function isFolderNamedFile(filePath) {
+  const ext = extname(filePath);
+  const fileBase = basename(filePath, ext).toLowerCase();
+  const parentBase = basename(dirname(filePath)).toLowerCase();
+  return fileBase === parentBase;
+}
+
 function hasIndexFile(dirPath) {
   for (const ext of INDEX_EXTENSIONS) {
     const indexPath = join(dirPath, `index${ext}`);
@@ -299,7 +313,7 @@ function buildMenuData(tree, source, validPaths, parentPath = '', includeDebug =
     // Determine the label - prefer menu-label from frontmatter
     let label;
     let sortKey;
-    const isIndex = !hasChildren && isIndexFile(baseName);
+    const isIndex = !hasChildren && (isIndexFile(baseName) || isFolderNamedFile(item.path));
     
     if (hasChildren) {
       // For folders, get label from index.md frontmatter, then config.json, then folder name
@@ -309,7 +323,12 @@ function buildMenuData(tree, source, validPaths, parentPath = '', includeDebug =
     } else {
       // For files, check frontmatter for menu-label
       const fileLabel = getMenuLabelFromFile(item.path);
-      label = fileLabel || toDisplayName(baseName);
+      if (isIndex) {
+        // Index files (index.md or foldername.md) default to "Home" label
+        label = fileLabel || 'Home';
+      } else {
+        label = fileLabel || toDisplayName(baseName);
+      }
       // Get sort key from file's frontmatter, fall back to baseName (not transformed label)
       // This ensures menu-sort-as values can match original filenames consistently
       const fileSortKey = getMenuSortAsFromFile(item.path);
@@ -370,7 +389,7 @@ function buildMenuData(tree, source, validPaths, parentPath = '', includeDebug =
     items.push(menuItem);
   }
   
-  // Sort: folders first, then index files, then alphabetically by sortKey
+  // Sort: folders first (a-z), then index files, then other files (a-z)
   return items.sort((a, b) => {
     // Folders always come first
     if (a.hasChildren && !b.hasChildren) return -1;
@@ -378,10 +397,43 @@ function buildMenuData(tree, source, validPaths, parentPath = '', includeDebug =
     // Index files come before other files (after folders)
     if (a.isIndex && !b.isIndex) return -1;
     if (b.isIndex && !a.isIndex) return 1;
-    // Alphabetical sort by sortKey (menu-sort-as or label)
-    if (a.sortKey > b.sortKey) return 1;
-    if (a.sortKey < b.sortKey) return -1;
+    // Alphabetical sort by sortKey (case-insensitive)
+    const aKey = (a.sortKey || '').toLowerCase();
+    const bKey = (b.sortKey || '').toLowerCase();
+    if (aKey > bKey) return 1;
+    if (aKey < bKey) return -1;
     return 0;
+  });
+}
+
+/**
+ * Post-process menu data to collapse single-document folders.
+ * When a folder contains only an index file (index.md) or a foldername-matching
+ * file (e.g. Arcanist/Arcanist.md) and no other children, the folder is replaced
+ * with a direct link to that document using the folder's label.
+ */
+function collapseSingleDocFolders(items) {
+  return items.map(item => {
+    if (!item.hasChildren || !item.children) return item;
+    
+    // Recurse first so nested single-doc folders are collapsed bottom-up
+    item.children = collapseSingleDocFolders(item.children);
+    
+    // Check if the only child(ren) are index-like files (no sub-folders)
+    const nonIndexChildren = item.children.filter(c => !c.isIndex);
+    if (nonIndexChildren.length === 0 && item.children.length > 0) {
+      // All children are index files — collapse to a single link
+      const indexChild = item.children[0];
+      return {
+        ...item,
+        hasChildren: false,
+        children: undefined,
+        href: indexChild.href || item.href,
+        isIndex: false,
+      };
+    }
+    
+    return item;
   });
 }
 
@@ -391,18 +443,33 @@ export async function getAutomenu(source, validPaths) {
   });
   
   // Build menu data WITHOUT debug fields for smaller JSON
-  const menuData = buildMenuData(tree, source, validPaths, '', false);
+  let menuData = buildMenuData(tree, source, validPaths, '', false);
+  
+  // Post-process: collapse single-document folders into direct links
+  menuData = collapseSingleDocFolders(menuData);
   
   // Get root config for openMenuItems setting
   const rootConfig = getRootConfig(source);
   const openMenuItems = rootConfig?.openMenuItems || [];
   
-  // Add home item with resolved href
+  // Partition top-level items: files go under Home, folders stay at top level
+  const topLevelFolders = menuData.filter(item => item.hasChildren);
+  const topLevelFiles = menuData.filter(item => !item.hasChildren);
+  
+  // Build Home item with top-level files as children
   const homeResolved = resolveHref('/', validPaths);
-  const fullMenuData = [
-    { label: 'Home', path: '', href: homeResolved.href, hasChildren: false, icon: `<span class="menu-icon">${HOME_ICON}</span>` },
-    ...menuData
-  ];
+  const homeItem = {
+    label: 'Home',
+    path: '',
+    href: homeResolved.href,
+    hasChildren: topLevelFiles.length > 0,
+    icon: `<span class="menu-icon">${HOME_ICON}</span>`,
+  };
+  if (topLevelFiles.length > 0) {
+    homeItem.children = topLevelFiles;
+  }
+  
+  const fullMenuData = [homeItem, ...topLevelFolders];
   
   // Embed the openMenuItems config as JSON (small, safe to embed)
   const menuConfigScript = `<script type="application/json" id="menu-config">${JSON.stringify({ openMenuItems })}</script>`;

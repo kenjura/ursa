@@ -208,6 +208,8 @@ export function autoGenerateMenuFromFolder(folderPath, sourceRoot, depth = 10, i
         const baseName = basename(entry.name, ext);
         // Skip index files (they're represented by the folder)
         if (INDEX_NAMES.includes(baseName.toLowerCase())) continue;
+        // Skip foldername-matching files (e.g. Arcanist/Arcanist.md — represented by the folder)
+        if (baseName.toLowerCase() === basename(folderPath).toLowerCase()) continue;
         
         // Get label from frontmatter or filename
         const label = getMenuLabelFromFile(fullPath) || toDisplayName(baseName);
@@ -223,11 +225,11 @@ export function autoGenerateMenuFromFolder(folderPath, sourceRoot, depth = 10, i
       }
     }
     
-    // Sort: folders first, then alphabetically
+    // Sort: folders first (a-z), then files (a-z), case-insensitive
     items.sort((a, b) => {
       if (a.hasChildren && !b.hasChildren) return -1;
       if (!a.hasChildren && b.hasChildren) return 1;
-      return a.label.localeCompare(b.label);
+      return a.label.localeCompare(b.label, undefined, { sensitivity: 'base' });
     });
     
   } catch (e) {
