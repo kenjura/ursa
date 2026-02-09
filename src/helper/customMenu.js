@@ -448,15 +448,31 @@ export function parseCustomMenu(content, menuDir, sourceRoot) {
       // It's a relative path - resolve it relative to the menu directory
       absoluteSourcePath = resolve(menuDir, href);
       
-      // Check if the path already has a source extension (.md, .txt)
+      // Check if the path already has a source extension (.md, .txt, .mdx)
       const hrefExt = extname(href).toLowerCase();
       const hasSourceExt = SOURCE_EXTENSIONS.includes(hrefExt);
+      const hasOutputExt = hrefExt === '.html';
       
       // If it has a source extension, check if that exact file exists
+      // If it has .html extension, strip it and look for corresponding source file
       // Otherwise use sourceFileExists which tries multiple extensions
       let fileExists = false;
       if (hasSourceExt) {
         fileExists = existsSync(absoluteSourcePath);
+      } else if (hasOutputExt) {
+        // Strip .html and look for source files (the user linked to the output path)
+        const withoutHtml = absoluteSourcePath.replace(/\.html$/, '');
+        for (const ext of SOURCE_EXTENSIONS) {
+          if (existsSync(withoutHtml + ext)) {
+            absoluteSourcePath = withoutHtml + ext;
+            fileExists = true;
+            break;
+          }
+        }
+        // Also check if it's a directory with an index file (e.g., index.html → index.md)
+        if (!fileExists) {
+          fileExists = sourceFileExists(withoutHtml);
+        }
       } else {
         fileExists = sourceFileExists(absoluteSourcePath);
       }
@@ -467,8 +483,8 @@ export function parseCustomMenu(content, menuDir, sourceRoot) {
         // Normalize path separators for web
         href = href.replace(/\\/g, '/');
         // Convert source extensions to .html
-        if (hasSourceExt) {
-          href = href.replace(/\.(md|txt)$/i, '.html');
+        if (hasSourceExt || existsSync(absoluteSourcePath) && SOURCE_EXTENSIONS.includes(extname(absoluteSourcePath).toLowerCase())) {
+          href = href.replace(/\.(md|mdx|txt)$/i, '.html');
         } else if (!href.match(/\.[a-z]+$/i)) {
           // Ensure it ends with .html if it doesn't have an extension
           // Check if it's likely a folder (ends with /) or file
@@ -480,8 +496,14 @@ export function parseCustomMenu(content, menuDir, sourceRoot) {
           }
         }
       } else {
-        // Source file doesn't exist - this is a non-navigable menu item
-        href = null;
+        // Source file doesn't exist - preserve href as-is so it still renders
+        // as a clickable (though possibly broken) link rather than plain text.
+        // If the href was relative, resolve it to an absolute web path.
+        const resolvedAbsolute = resolve(menuDir, href.startsWith('./') || href.startsWith('../') ? href : './' + href);
+        const resolvedRelative = relative(sourceRoot, resolvedAbsolute);
+        href = '/' + resolvedRelative.replace(/\\/g, '/');
+        // Convert source extensions to .html for web paths
+        href = href.replace(/\.(md|mdx|txt)$/i, '.html');
       }
     }
     
