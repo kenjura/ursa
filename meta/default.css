@@ -867,6 +867,39 @@ article#main-content {
   }
 }
 
+/* Breadcrumb navigation */
+.breadcrumbs {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0;
+  font-size: 0.8rem;
+  margin-bottom: 0.25rem;
+  color: var(--text-color);
+  opacity: 0.55;
+}
+
+.breadcrumb-link {
+  color: var(--text-color);
+  text-decoration: none;
+  transition: opacity 0.15s ease;
+}
+
+.breadcrumb-link:hover {
+  opacity: 1;
+  text-decoration: underline;
+}
+
+.breadcrumb-sep {
+  margin: 0 0.4em;
+  opacity: 0.4;
+  font-size: 0.85em;
+}
+
+.breadcrumb-current {
+  font-weight: 500;
+}
+
 /* Footer styles */
 footer#site-footer {
   width: var(--article-width);

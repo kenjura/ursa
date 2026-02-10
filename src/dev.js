@@ -28,6 +28,7 @@ import { buildFullTextIndex } from "./helper/fullTextIndex.js";
 import { getAutomenu } from "./helper/automenu.js";
 import { renderFile } from "./helper/fileRenderer.js";
 import { processImage } from "./helper/imageProcessor.js";
+import { generateBreadcrumbs } from "./helper/breadcrumbs.js";
 import { extractImageReferences } from "./helper/imageExtractor.js";
 import { recurse } from "./helper/recursive-readdir.js";
 import { isFolderHidden, clearConfigCache } from "./helper/folderConfig.js";
@@ -383,6 +384,12 @@ async function renderDocument(urlPath) {
   if (!body || !body.trimStart().startsWith('<h1')) {
     const h1Title = fileMeta?.title || title;
     body = `<h1>${h1Title}</h1>\n` + (body || '');
+  }
+
+  // Inject breadcrumbs before the H1
+  const breadcrumbs = generateBreadcrumbs(dir, base, fileMeta);
+  if (breadcrumbs) {
+    body = breadcrumbs + body;
   }
   
   // Inject frontmatter table for markdown/mdx files

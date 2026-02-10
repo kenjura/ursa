@@ -39,6 +39,7 @@ import { createWhitelistFilter } from "../helper/whitelistFilter.js";
 import { processAllImages, transformImageTags, clearImageCache, copyAllImagesFast } from "../helper/imageProcessor.js";
 import { extractImageReferences } from "../helper/imageExtractor.js";
 import { checkFileSize, readFileStreaming, formatFileSize } from "../helper/streamingReader.js";
+import { generateBreadcrumbs } from "../helper/breadcrumbs.js";
 import {
   loadNavCache,
   saveNavCache,
@@ -549,6 +550,12 @@ export async function generate({
       if (!body || !body.trimStart().startsWith('<h1')) {
         const h1Title = fileMeta?.title || title;
         body = `<h1>${h1Title}</h1>\n` + (body || '');
+      }
+
+      // Inject breadcrumbs before the H1
+      const breadcrumbs = generateBreadcrumbs(dir, base, fileMeta);
+      if (breadcrumbs) {
+        body = breadcrumbs + body;
       }
 
       // Inject frontmatter table after first H1 (for markdown files with metadata)
@@ -1140,6 +1147,12 @@ export async function regenerateSingleFile(changedFile, {
     if (!body || !body.trimStart().startsWith('<h1')) {
       const h1Title = fileMeta?.title || title;
       body = `<h1>${h1Title}</h1>\n` + (body || '');
+    }
+
+    // Inject breadcrumbs before the H1
+    const breadcrumbs = generateBreadcrumbs(dir, base, fileMeta);
+    if (breadcrumbs) {
+      body = breadcrumbs + body;
     }
     
     // Inject frontmatter table for markdown/mdx files
