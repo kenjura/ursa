@@ -462,7 +462,9 @@ export async function generate({
       const searchUrl = relativePath.startsWith('/') ? relativePath : '/' + relativePath;
       
       // Generate title from filename (in title case)
-      const title = toTitleCase(base);
+      // For index/home files, use parent folder name instead
+      const titleBase = (base === 'index' || base === 'home') ? basename(dirname(file)) : base;
+      const title = toTitleCase(titleBase || base);
       
       // Always add to search index (lightweight: title + path only, content added lazily)
       searchIndex.push({
@@ -1099,8 +1101,9 @@ export async function regenerateSingleFile(changedFile, {
       .replace(parse(changedFile).ext, ".html");
     const url = '/' + outputFilename.replace(output, '');
     
-    // Title from filename
-    const title = toTitleCase(base);
+    // Title from filename (for index/home, use parent folder name)
+    const titleBase = (base === 'index' || base === 'home') ? basename(dirname(changedFile)) : base;
+    const title = toTitleCase(titleBase || base);
     
     // Extract metadata
     const fileMeta = extractMetadata(rawBody);

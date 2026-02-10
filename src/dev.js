@@ -358,8 +358,9 @@ async function renderDocument(urlPath) {
     const sourceDir = dirname(sourcePath);
     const autoIndexHtml = await generateAutoIndexHtmlFromSource(sourceDir, 2);
     if (autoIndexHtml) {
-      // Wrap in template and return
-      return await wrapInTemplate(autoIndexHtml, 'Index', null, urlPath, sourcePath);
+      // Wrap in template and return — use parent folder name for title
+      const indexTitle = toTitleCase(basename(dirname(sourcePath)) || 'Index');
+      return await wrapInTemplate(autoIndexHtml, indexTitle, null, urlPath, sourcePath);
     }
   }
   
@@ -376,8 +377,9 @@ async function renderDocument(urlPath) {
   
   const fileMeta = extractMetadata(rawBody);
 
-  // Inject default H1 if body doesn't start with one
-  const title = toTitleCase(base);
+  // Title from filename (for index/home, use parent folder name)
+  const titleBase = (base === 'index' || base === 'home') ? basename(dirname(sourcePath)) : base;
+  const title = toTitleCase(titleBase || base);
   if (!body || !body.trimStart().startsWith('<h1')) {
     const h1Title = fileMeta?.title || title;
     body = `<h1>${h1Title}</h1>\n` + (body || '');
@@ -633,7 +635,8 @@ async function buildBackgroundCaches() {
         const ext = extname(article);
         const base = basename(article, ext);
         const relativePath = article.replace(source, '').replace(/\.(md|txt|yml)$/, '.html');
-        const title = toTitleCase(base);
+        const titleBase = (base === 'index' || base === 'home') ? basename(dirname(article)) : base;
+        const title = toTitleCase(titleBase || base);
         
         searchIndex.push({
           title,
