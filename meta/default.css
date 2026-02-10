@@ -17,6 +17,8 @@ body {
     --bg-color: #121212;
     --text-color: #f2f2f2;
     --nav-top-bg: #242424;
+    --widget-bg: #242424;
+    --widget-border: #3a3a3a;
   }
 }
 
@@ -25,6 +27,8 @@ body {
     --bg-color: white;
     --text-color: black;
     --nav-top-bg: #f2f2f2;
+    --widget-bg: #f2f2f2;
+    --widget-border: #ddd;
   }
 }
 
@@ -120,17 +124,254 @@ nav#nav-global {
   .search-clear-button.hidden {
     display: none;
   }
+}
 
-  .avatar {
-    font-size: 1.5rem;
-    line-height: 1;
-    padding: 8px;
+/* ==========================================
+   WIDGET SYSTEM STYLES
+   Right-side nav widgets (TOC, Search, Profile)
+   ========================================== */
+
+/* Widget bar in the nav right column */
+nav#nav-global .nav-right-controls {
+  display: flex;
+  align-items: center;
+  justify-self: end;
+  gap: 0;
+}
+
+.widget-bar {
+  display: flex;
+  align-items: center;
+  gap: 0;
+}
+
+.widget-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: var(--text-color);
+  font-size: 1.1rem;
+  width: var(--global-nav-height);
+  height: var(--global-nav-height);
+  cursor: pointer;
+  opacity: 0.7;
+  transition: opacity 0.15s ease, background-color 0.15s ease;
+}
+
+.widget-button:hover {
+  opacity: 1;
+  background-color: rgba(128, 128, 128, 0.15);
+}
+
+.widget-button.active {
+  opacity: 1;
+  background-color: var(--widget-bg);
+}
+
+.widget-icon {
+  pointer-events: none;
+}
+
+/* Widget dropdown panel */
+.widget-dropdown {
+  position: fixed;
+  top: var(--global-nav-height);
+  right: 0;
+  width: min(420px, 100vw);
+  max-height: calc(100vh - var(--global-nav-height));
+  overflow-y: auto;
+  background: var(--widget-bg);
+  border-left: 1px solid var(--widget-border);
+  border-bottom: 1px solid var(--widget-border);
+  box-shadow: -2px 4px 12px rgba(0, 0, 0, 0.2);
+  z-index: 1100;
+  transition: opacity 0.15s ease;
+}
+
+.widget-dropdown.hidden {
+  display: none;
+}
+
+/* Widget content panels — only the active one is visible */
+.widget-content {
+  display: none;
+}
+
+.widget-content.active {
+  display: block;
+}
+
+/* --- TOC Widget --- */
+#widget-content-toc {
+  padding: 0.5rem 0;
+
+  ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+
+    li {
+      margin-bottom: 0.15rem;
+      padding: 0;
+
+      > a {
+        text-decoration: none;
+        color: var(--text-color);
+        opacity: 0.75;
+        display: block;
+        padding: 0.3rem 1rem;
+        border-left: 2px solid transparent;
+        transition: all 0.2s ease;
+        font-size: 0.9rem;
+      }
+
+      > a:hover {
+        opacity: 1;
+        border-left-color: var(--text-color);
+        background-color: rgba(128, 128, 128, 0.1);
+      }
+
+      > a.active {
+        opacity: 1;
+        border-left-color: aqua;
+        background-color: rgba(0, 255, 255, 0.1);
+      }
+
+      /* Indent nested headings */
+      &.toc-h1 > a {
+        padding-left: 1rem;
+        font-weight: 600;
+      }
+      
+      &.toc-h2 > a {
+        padding-left: 1.5rem;
+        font-size: 0.85rem;
+      }
+      
+      &.toc-h3 > a {
+        padding-left: 2rem;
+        font-size: 0.8rem;
+      }
+    }
   }
-  
-  /* When avatar is standalone (not in container), align to end */
-  > .avatar {
-    justify-self: end;
-  }
+}
+
+/* --- Search Widget --- */
+.widget-search-wrapper {
+  padding: 0.5rem;
+}
+
+.widget-search-input {
+  width: 100%;
+  height: 40px;
+  border-radius: 5px;
+  background: rgba(0, 0, 0, 0.15);
+  color: var(--text-color);
+  border: 1px solid var(--widget-border);
+  padding: 0 1rem;
+  box-sizing: border-box;
+  font-size: 1rem;
+}
+
+.widget-search-input:focus {
+  outline: none;
+  border-color: aqua;
+  box-shadow: 0 0 0 2px rgba(0, 255, 255, 0.2);
+}
+
+.widget-search-results {
+  max-height: calc(100vh - var(--global-nav-height) - 80px);
+  overflow-y: auto;
+}
+
+.widget-search-results .search-result-item {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--widget-border);
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.widget-search-results .search-result-item:last-child {
+  border-bottom: none;
+}
+
+.widget-search-results .search-result-item:hover,
+.widget-search-results .search-result-item.selected {
+  background-color: rgba(128, 128, 128, 0.15);
+}
+
+.widget-search-results .search-result-title {
+  font-weight: 600;
+  margin-bottom: 2px;
+  color: var(--text-color);
+  font-size: 0.9rem;
+}
+
+.widget-search-results .search-result-path {
+  font-size: 0.8rem;
+  color: var(--text-color);
+  opacity: 0.6;
+}
+
+.widget-search-results .search-result-message {
+  padding: 12px;
+  text-align: center;
+  color: var(--text-color);
+  opacity: 0.6;
+  font-style: italic;
+  font-size: 0.85rem;
+}
+
+.widget-search-results .search-section-header {
+  padding: 6px 12px;
+  font-size: 0.7em;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-color);
+  opacity: 0.5;
+  background-color: rgba(128, 128, 128, 0.1);
+  border-bottom: 1px solid var(--widget-border);
+}
+
+/* --- Profile Widget --- */
+.widget-profile-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 2rem 1rem;
+  text-align: center;
+  color: var(--text-color);
+  opacity: 0.7;
+}
+
+.widget-profile-avatar {
+  font-size: 3rem;
+  margin-bottom: 1rem;
+}
+
+.widget-profile-placeholder p {
+  margin: 0.5rem 0;
+  font-size: 0.9rem;
+}
+
+.widget-profile-signin {
+  margin-top: 0.5rem;
+  padding: 8px 24px;
+  background: var(--nav-top-bg);
+  border: 1px solid var(--widget-border);
+  color: var(--text-color);
+  border-radius: 4px;
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.widget-profile-note {
+  font-size: 0.75rem;
+  opacity: 0.5;
+  font-style: italic;
 }
 
 /* Search functionality styles */
@@ -245,14 +486,9 @@ body[data-menu-position="top"] nav#nav-main-top {
   align-items: center;
 }
 
-/* Hide search input when top menu is present - it moves to a button */
-body[data-menu-position="top"] nav#nav-global input#global-search {
+/* Hide inline search when top menu is present — widget handles search */
+body[data-menu-position="top"] nav#nav-global .search-wrapper-inline {
   display: none;
-}
-
-/* Show search button instead when top menu is active */
-body[data-menu-position="top"] nav#nav-global .search-button {
-  display: inline-flex;
 }
 
 /* Hide side nav when top menu is active */
@@ -315,15 +551,15 @@ nav#nav-main-top .top-menu-item.has-dropdown > .top-menu-label::after {
   vertical-align: bottom;
 }
 
-/* Dropdown menu (first level of children) */
+/* Use widget-bg for dropdown/flyout backgrounds (shared CSS var) */
 nav#nav-main-top .top-menu-dropdown {
   display: none;
   position: absolute;
   top: 100%;
   left: 0;
   min-width: 200px;
-  background-color: var(--bg-color);
-  border: 1px solid var(--nav-top-bg);
+  background-color: var(--widget-bg);
+  border: 1px solid var(--widget-border);
   border-radius: 4px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
   list-style: none;
@@ -376,8 +612,8 @@ nav#nav-main-top .top-menu-flyout {
   left: 100%;
   top: -1px;
   min-width: 200px;
-  background-color: var(--bg-color);
-  border: 1px solid var(--nav-top-bg);
+  background-color: var(--widget-bg);
+  border: 1px solid var(--widget-border);
   border-radius: 4px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
   list-style: none;
@@ -389,91 +625,6 @@ nav#nav-main-top .top-menu-flyout {
 /* Show flyout on hover */
 nav#nav-main-top .dropdown-item.has-flyout:hover > .top-menu-flyout {
   display: block;
-}
-
-/* Search button and avatar container (shown when top menu is active) */
-nav#nav-global .nav-right-controls {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  justify-self: end;
-}
-
-nav#nav-global .search-button {
-  display: none;
-  align-items: center;
-  justify-content: center;
-  background: none;
-  border: none;
-  color: var(--text-color);
-  font-size: 1.25rem;
-  padding: 8px 12px;
-  cursor: pointer;
-  opacity: 0.8;
-  transition: opacity 0.2s ease;
-}
-
-nav#nav-global .search-button:hover {
-  opacity: 1;
-}
-
-/* Search backdrop - just the dark overlay */
-body[data-menu-position="top"] .search-backdrop {
-  display: none;
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.7);
-  z-index: 1010;
-}
-
-body[data-menu-position="top"] .search-backdrop.active {
-  display: block;
-}
-
-/* Floating search container - positioned above nav */
-body[data-menu-position="top"] .search-floating {
-  display: none;
-  position: fixed;
-  top: 80px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: min(600px, calc(100vw - 32px));
-  z-index: 1020;
-}
-
-body[data-menu-position="top"] .search-floating.active {
-  display: block;
-}
-
-/* Style the search wrapper when inside floating container */
-body[data-menu-position="top"] .search-floating .search-wrapper {
-  width: 100%;
-}
-
-body[data-menu-position="top"] .search-floating #global-search {
-  width: 100%;
-  height: 48px;
-  font-size: 1.25rem;
-  padding: 0 16px;
-  border: 2px solid var(--nav-top-bg);
-  border-radius: 8px;
-  background: var(--bg-color);
-  color: var(--text-color);
-}
-
-/* Search results inside floating container */
-body[data-menu-position="top"] .search-floating .search-results {
-  position: relative;
-  top: 4px;
-  max-height: 60vh;
-  overflow-y: auto;
-  background: var(--bg-color);
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
 }
 
 nav#nav-main {
@@ -707,62 +858,6 @@ nav#nav-main {
   }
 }
 
-/* Table of Contents - Right side navigation */
-nav#nav-toc {
-  position: fixed;
-  top: calc(var(--global-nav-height));
-  right: 0;
-  max-width: calc(50vw - var(--article-width) / 2 - 2rem);
-  max-height: calc(100vh - var(--global-nav-height));
-  overflow-y: auto;
-  z-index: 100;
-  padding: 0.5rem 0;
-
-  ul {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-
-    li {
-      margin-bottom: 0.25rem;
-      padding: 0;
-
-      > a {
-        text-decoration: none;
-        color: var(--text-color);
-        opacity: 0.7;
-        display: block;
-        padding: 0.25rem 0.5rem;
-        border-left: 2px solid transparent;
-        transition: all 0.3s ease;
-        font-size: 0.9rem;
-      }
-
-      > a:hover {
-        opacity: 1;
-        border-left-color: var(--text-color);
-      }
-
-      > a.active {
-        opacity: 1;
-        border-left-color: aqua;
-        background-color: rgba(0, 255, 255, 0.1);
-      }
-
-      /* Indent nested headings */
-      &.toc-h2 > a {
-        padding-left: 1rem;
-        font-size: 0.85rem;
-      }
-      
-      &.toc-h3 > a {
-        padding-left: 1.5rem;
-        font-size: 0.8rem;
-      }
-    }
-  }
-}
-
 article#main-content {
   width: var(--article-width);
   margin: calc(var(--global-nav-height) + 16px) auto 0 auto;
@@ -831,19 +926,23 @@ footer#site-footer {
   h1 {
     font-size: 1.5rem;
   }
-  nav#nav-toc {
-    display: none !important;
-  }
   
   /* On mobile, hide the top menu and show search inline instead */
   body[data-menu-position="top"] nav#nav-main-top {
     display: none !important;
   }
-  body[data-menu-position="top"] nav#nav-global input#global-search {
-    display: block;
+  body[data-menu-position="top"] nav#nav-global .search-wrapper-inline {
+    display: block !important;
   }
-  body[data-menu-position="top"] nav#nav-global .search-button {
-    display: none;
+  
+  /* Hide widget buttons on mobile — they're accessible via the inline search and mobile menu */
+  .widget-bar {
+    display: none !important;
+  }
+  
+  /* Hide widget dropdown on mobile */
+  .widget-dropdown {
+    display: none !important;
   }
   
   nav#nav-main {

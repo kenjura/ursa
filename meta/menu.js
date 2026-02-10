@@ -570,9 +570,6 @@ function initTopMenu() {
     
     // Set up home button (desktop) / hamburger (mobile)
     setupMenuButton(menuButton, navMain);
-    
-    // Set up search button toggle
-    initTopMenuSearch();
 }
 
 /**
@@ -832,75 +829,4 @@ function createTopMenuFlyout(items) {
     return ul;
 }
 
-/**
- * Initialize search functionality for top menu mode
- */
-function initTopMenuSearch() {
-    const searchButton = document.querySelector('nav#nav-global .search-button');
-    const searchInput = document.querySelector('#global-search');
-    const searchWrapper = searchInput?.closest('.search-wrapper');
-    const searchResults = document.querySelector('#search-results');
-    
-    if (!searchButton || !searchInput || !searchWrapper) return;
-    
-    // Create search overlay backdrop (just the dark background)
-    const backdrop = document.createElement('div');
-    backdrop.className = 'search-backdrop';
-    document.body.appendChild(backdrop);
-    
-    // Create container for search that floats above the nav
-    const floatingSearch = document.createElement('div');
-    floatingSearch.className = 'search-floating';
-    document.body.appendChild(floatingSearch);
-    
-    // Toggle search on button click
-    searchButton.addEventListener('click', () => {
-        backdrop.classList.add('active');
-        floatingSearch.classList.add('active');
-        
-        // Move the search wrapper into the floating container
-        floatingSearch.appendChild(searchWrapper);
-        
-        // Move search results into floating container too (if exists)
-        if (searchResults) {
-            floatingSearch.appendChild(searchResults);
-        }
-        
-        searchInput.value = '';
-        searchInput.focus();
-    });
-    
-    function closeSearch() {
-        backdrop.classList.remove('active');
-        floatingSearch.classList.remove('active');
-        
-        // Move search wrapper back to nav-center
-        const navCenter = document.querySelector('.nav-center');
-        if (navCenter && searchWrapper) {
-            navCenter.appendChild(searchWrapper);
-        }
-        // Move search results back too
-        if (searchResults && searchWrapper) {
-            searchWrapper.parentNode.appendChild(searchResults);
-        }
-    }
-    
-    // Close on backdrop click
-    backdrop.addEventListener('click', closeSearch);
-    
-    // Close on escape
-    document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape' && backdrop.classList.contains('active')) {
-            closeSearch();
-        }
-    });
-    
-    // Close when a search result is clicked (navigation will happen)
-    if (searchResults) {
-        searchResults.addEventListener('click', (e) => {
-            if (e.target.closest('.search-result-item')) {
-                closeSearch();
-            }
-        });
-    }
-}
+// (Search functionality is now handled by widgets.js)

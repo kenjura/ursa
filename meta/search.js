@@ -157,12 +157,6 @@ class GlobalSearch {
     
     this.searchInput.addEventListener('blur', (e) => {
       // Delay hiding to allow click on results
-      // Check if we're inside the floating search container (top menu mode)
-      const floatingSearch = this.searchInput.closest('.search-floating');
-      if (floatingSearch && floatingSearch.classList.contains('active')) {
-        // In floating mode, don't auto-hide on blur - let the backdrop click handle it
-        return;
-      }
       setTimeout(() => {
         this.hideResults();
       }, 150);
@@ -170,11 +164,6 @@ class GlobalSearch {
     
     // Click outside to close
     document.addEventListener('click', (e) => {
-      // If inside floating search container, don't close on internal clicks
-      const floatingSearch = this.searchInput.closest('.search-floating');
-      if (floatingSearch && floatingSearch.contains(e.target)) {
-        return;
-      }
       if (!this.searchInput.contains(e.target) && !this.searchResults.contains(e.target)) {
         this.hideResults();
       }
@@ -185,8 +174,13 @@ class GlobalSearch {
       // Check for Cmd+P (Mac) or Ctrl+P (Windows/Linux)
       if ((e.metaKey || e.ctrlKey) && e.key === 'p') {
         e.preventDefault();
-        this.searchInput.focus();
-        this.searchInput.select();
+        // If widget system is available, open the search widget
+        if (window.widgetManager) {
+          window.widgetManager.open('search');
+        } else {
+          this.searchInput.focus();
+          this.searchInput.select();
+        }
       }
     });
   }

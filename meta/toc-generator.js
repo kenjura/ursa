@@ -1,15 +1,19 @@
 // Table of Contents Generator
 document.addEventListener('DOMContentLoaded', () => {
-    const tocNav = document.getElementById('nav-toc');
+    // Generate TOC into widget panel if available, otherwise fallback to nav-toc
+    const tocTarget = document.getElementById('widget-content-toc') || document.getElementById('nav-toc');
     const article = document.querySelector('article#main-content');
     
-    if (!tocNav || !article) return;
+    if (!tocTarget || !article) return;
     
     // Find all headings in the article
     const headings = article.querySelectorAll('h1, h2, h3');
     
     if (headings.length === 0) {
-        tocNav.style.display = 'none';
+        // Hide the TOC widget button if no headings
+        const tocButton = document.querySelector('.widget-button[data-widget="toc"]');
+        if (tocButton) tocButton.style.display = 'none';
+        tocTarget.style.display = 'none';
         return;
     }
     
@@ -39,7 +43,9 @@ document.addEventListener('DOMContentLoaded', () => {
         tocList.appendChild(listItem);
     });
     
-    tocNav.appendChild(tocList);
+    // Add an id=toc wrapper for the toc.js sentinel-based highlighter
+    tocList.id = 'toc';
+    tocTarget.appendChild(tocList);
     
     // Handle TOC link clicks for smooth scrolling
     function handleTocClick(e) {
@@ -84,13 +90,13 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Update TOC active state
     function updateTocActiveState(activeHeading) {
-        const tocLinks = tocNav.querySelectorAll('a');
+        const tocLinks = tocTarget.querySelectorAll('a');
         tocLinks.forEach(link => {
             link.classList.remove('active');
         });
         
         if (activeHeading) {
-            const activeLink = tocNav.querySelector(`a[href="#${activeHeading.id}"]`);
+            const activeLink = tocTarget.querySelector(`a[href="#${activeHeading.id}"]`);
             if (activeLink) {
                 activeLink.classList.add('active');
             }

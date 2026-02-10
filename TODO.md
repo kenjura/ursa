@@ -1,3 +1,30 @@
+# 0.75.0 - navigation overhaul
+
+## Top Menu
+- [ ] Top menu is now the default option. For sites with no menu.md, or with a handwritten menu.md that doesn't specify left menu, use the new top menu (#nav-main-top) to render the menu.
+- [ ] In desktop mode, replace the hamburger icon in the top left of the viewport with a "home" icon, which navigates to the root page ("/"). This allows users to "back out" of a custom menu.
+- [ ] On small screens (viewport width < css var article-width), the top menu should disappear. The home icon (previously hamburger) in the top left should once again be a hamburger icon, which opens a vertically-oriented side menu containing the same menu items as the top menu, with a "root" item at the very beginning which goes to. This allows access to the menu on mobile devices, while keeping the desktop experience optimized for wide screens.
+- [ ] When rendering a custom menu in a folder that is not root...TBD
+- [ ] Files in the top-level folder should not be top-level menu items. Instead, they should be children of the "home" item in the menu.
+- [ ] When a folder has only an index.md (or {foldername}.md) and no other files, it should be rendered as a single menu item linking to that document, rather than a folder with a child item.
+- [ ] Submenus should show all folders (a-z) before all files (a-z).
+- [ ] Whenever an index page appears in a menu, it should be sorted before all other filenames, regardless of alphabetical order, and the label (if not overridden) should be "Home" rather than Index.
+
+## Default Header
+- [ ] When a document does not begin with an H1, the title of the document (from frontmatter or filename) should be rendered as a default H1 header at the top of the article. 
+
+## Top Nav Container changes
+Instead of the TOC being a special element that just happens to be in the top right, and search being displaced by the new top menu, there is a new, consistent approach:
+- The right column of the top nav has various widgets (profile, search, TOC, possibly more).
+- When a widget is selected, it appears in a dropdown below the top nav, anchored to the right side. Only one widget can be open at a time. Clicking the widget icon toggles the dropdown. The dropdown should have a max height and scroll if content exceeds it.
+- The widget's background should be the same as the top nav submenu background (both of which should use a css var for this value), and should use similar text styling as well
+- TOC widget: works as it does today, although the markup will be in a different position and the background is changed as described above.
+- Search widget: when opened, it shows the search bar. When there is sufficient text in the input, search results are visible; this is true whether the user just entered them, or if they re-open the widget after previously entering text. The search results dropdown should have the same styling as the current implementation, but they should be in widget container rather than the current special floating container.
+- Profile widget: auth isn't yet implemented, so this should be a placeholder.
+- Other widget ideas:
+  - Talk widget: shows a forum-style threaded conversation page for the current article, similar to Wikipedia
+  - Edit widget: allows editing of the page. This requires auth, and probably should be a UI on top of the git repo, rather than something like Wikipedia which is just writing db records.
+
 # 0.67.0
 
 
