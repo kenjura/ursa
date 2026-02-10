@@ -15,10 +15,10 @@ export function generateBreadcrumbs(dir, base, fileMeta) {
   // All path segments leading to the current page
   const allSegments = isIndexFile ? segments : [...segments, base];
 
-  // No breadcrumbs for root-level pages (need at least 2 segments for a meaningful trail)
-  if (allSegments.length < 2) return '';
+  // No breadcrumbs for root-level pages (need at least 1 segment beyond root)
+  if (allSegments.length < 1) return '';
 
-  const parts = [];
+  const parts = [`<a class="breadcrumb-link" href="/">Home</a>`];
   let href = '/';
 
   for (let i = 0; i < allSegments.length; i++) {
