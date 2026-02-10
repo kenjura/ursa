@@ -9,6 +9,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     for (let i = 0; i < children.length; i++) {
         const el = children[i];
+        // Skip breadcrumb nav — it stays outside sections
+        if (el.classList && el.classList.contains('breadcrumbs')) continue;
         if (el.tagName === 'H1' && currentSection.childNodes.length > 0) {
             sections.push(currentSection);
             currentSection = document.createElement('section');
@@ -20,9 +22,17 @@ document.addEventListener('DOMContentLoaded', () => {
         sections.push(currentSection);
     }
 
+    // Preserve breadcrumb nav before clearing
+    const breadcrumbs = article.querySelector('.breadcrumbs');
+
     // Remove all existing children
     while (article.firstChild) {
         article.removeChild(article.firstChild);
+    }
+
+    // Re-insert breadcrumbs at the top, outside any section
+    if (breadcrumbs) {
+        article.appendChild(breadcrumbs);
     }
 
     // Append new sections

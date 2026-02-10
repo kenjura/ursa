@@ -9,6 +9,7 @@ import { toTitleCase } from "./titleCase.js";
 import { addTimestampToHtmlStaticRefs } from "./cacheBust.js";
 import { isMetadataOnly, extractMetadata, getAutoIndexConfig } from "../metadataExtractor.js";
 import { getCustomMenuForFile } from "./menu.js";
+import { generateBreadcrumbs } from "../breadcrumbs.js";
 
 // Document extensions for checking if a folder has content
 const SOURCE_DOC_EXTENSIONS = ['.md', '.mdx', '.txt', '.yml', '.html'];
@@ -330,7 +331,13 @@ export async function generateAutoIndices(output, directories, source, templates
         }
         
         const folderDisplayName = dir === outputNorm ? 'Home' : toTitleCase(folderName);
-        const indexHtml = `<h1>${folderDisplayName}</h1>\n<ul class="auto-index">\n${items.join('\n')}\n</ul>`;
+
+        // Generate breadcrumbs for auto-index pages
+        const relDir = dir.replace(outputNorm, '').replace(/^\//, '');
+        const breadcrumbDir = relDir ? relDir + '/' : '/';
+        const breadcrumbHtml = generateBreadcrumbs(breadcrumbDir, 'index', null);
+
+        const indexHtml = `${breadcrumbHtml}<h1>${folderDisplayName}</h1>\n<ul class="auto-index">\n${items.join('\n')}\n</ul>`;
         
         const template = templates["default-template"];
         if (!template) {
