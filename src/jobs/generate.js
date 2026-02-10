@@ -543,6 +543,12 @@ export async function generate({
         useWorker: true
       });
 
+      // Inject default H1 if body doesn't start with one
+      if (!body || !body.trimStart().startsWith('<h1')) {
+        const h1Title = fileMeta?.title || title;
+        body = `<h1>${h1Title}</h1>\n` + (body || '');
+      }
+
       // Inject frontmatter table after first H1 (for markdown files with metadata)
       if ((type === '.md' || type === '.mdx') && fileMeta) {
         body = injectFrontmatterTable(body, fileMeta);
@@ -640,7 +646,7 @@ export async function generate({
       // Build final HTML with all replacements in a single regex pass
       // This avoids creating 8 intermediate strings
       const replacements = {
-        "${title}": title,
+        "${title}": fileMeta?.title || title,
         "${menu}": menu,
         "${meta}": JSON.stringify(fileMeta),
         "${transformedMetadata}": lazyTransformedMeta,
@@ -1126,6 +1132,12 @@ export async function regenerateSingleFile(changedFile, {
         basename: base,
       });
     }
+
+    // Inject default H1 if body doesn't start with one
+    if (!body || !body.trimStart().startsWith('<h1')) {
+      const h1Title = fileMeta?.title || title;
+      body = `<h1>${h1Title}</h1>\n` + (body || '');
+    }
     
     // Inject frontmatter table for markdown/mdx files
     if ((type === '.md' || type === '.mdx') && fileMeta) {
@@ -1200,7 +1212,7 @@ export async function regenerateSingleFile(changedFile, {
     // Build final HTML
     let finalHtml = template;
     const replacements = {
-      "${title}": title,
+      "${title}": fileMeta?.title || title,
       "${menu}": menu,
       "${meta}": JSON.stringify(fileMeta),
       "${transformedMetadata}": transformedMetadata,

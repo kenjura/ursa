@@ -375,6 +375,13 @@ async function renderDocument(urlPath) {
   });
   
   const fileMeta = extractMetadata(rawBody);
+
+  // Inject default H1 if body doesn't start with one
+  const title = toTitleCase(base);
+  if (!body || !body.trimStart().startsWith('<h1')) {
+    const h1Title = fileMeta?.title || title;
+    body = `<h1>${h1Title}</h1>\n` + (body || '');
+  }
   
   // Inject frontmatter table for markdown/mdx files
   if ((type === '.md' || type === '.mdx') && fileMeta) {
@@ -401,7 +408,6 @@ async function renderDocument(urlPath) {
   // Process images in this document
   body = await processDocumentImages(body, sourcePath);
   
-  const title = toTitleCase(base);
   const html = await wrapInTemplate(body, title, fileMeta, urlPath, sourcePath);
   
   // Cache rendered document
@@ -463,7 +469,7 @@ async function wrapInTemplate(body, title, fileMeta, urlPath, sourcePath) {
   
   // Build replacements
   const replacements = {
-    "${title}": title,
+    "${title}": fileMeta?.title || title,
     "${menu}": menu,
     "${meta}": JSON.stringify(fileMeta || {}),
     "${transformedMetadata}": "",
