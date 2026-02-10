@@ -1,3 +1,11 @@
+# 0.75.0
+2026-02-10
+
+- Top Menu changes: the top menu is now the default first-level navigation. Top-left nav is either root, or 'hamburger' on smaller screens.
+  - Right column is now a standardized widget zone, with TOC, Search, and Profile widgets implemented.
+- Default header: documents without an initial H1 will now have their title rendered as an H1 header at the top of the article. Index/home pages will default to the parent folder name if not overridden.
+- Breadcrumbs: added breadcrumbs to the top of each article for easier navigation and context
+
 # 0.74.0
 2026-02-08
 
