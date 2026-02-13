@@ -1149,6 +1149,8 @@ export async function generate({
  * @param {string} options._meta - Meta directory
  * @param {string} options._output - Output directory
  * @param {string} [options.reason] - Reason for regeneration (for logging)
+ * @param {string[]} [options.priorityPaths] - Document paths to regenerate first (e.g. client-viewed docs)
+ * @param {function} [options.onPriorityComplete] - Callback after priority paths are done (receives { regenerated, failed })
  * @returns {Promise<{success: boolean, message: string, regenerated: number, failed: number}>}
  */
 export async function regenerateAffectedDocuments(documentPaths, {
@@ -1156,6 +1158,8 @@ export async function regenerateAffectedDocuments(documentPaths, {
   _meta,
   _output,
   reason = "dependency change",
+  priorityPaths = [],
+  onPriorityComplete = null,
 } = {}) {
   const startTime = Date.now();
 
@@ -1167,8 +1171,6 @@ export async function regenerateAffectedDocuments(documentPaths, {
     return { success: true, message: "No documents to regenerate", regenerated: 0, failed: 0 };
   }
 
-  console.log(`🔄 Regenerating ${documentPaths.length} documents (${reason})`);
-
   // Generate a fresh cache-bust timestamp for this invalidation pass
   const newTimestamp = generateCacheBustTimestamp();
   watchModeCache.cacheBustTimestamp = newTimestamp;
@@ -1176,7 +1178,44 @@ export async function regenerateAffectedDocuments(documentPaths, {
   let regenerated = 0;
   let failed = 0;
 
-  for (const docPath of documentPaths) {
+  // Separate priority paths from the rest
+  const prioritySet = new Set(priorityPaths.map(p => resolve(p)));
+  const priorityDocs = documentPaths.filter(p => prioritySet.has(resolve(p)));
+  const remainingDocs = documentPaths.filter(p => !prioritySet.has(resolve(p)));
+
+  if (priorityDocs.length > 0) {
+    console.log(`🔄 Regenerating ${priorityDocs.length} priority documents first, then ${remainingDocs.length} remaining (${reason})`);
+  } else {
+    console.log(`🔄 Regenerating ${documentPaths.length} documents (${reason})`);
+  }
+
+  // Process priority documents first
+  for (const docPath of priorityDocs) {
+    try {
+      const result = await regenerateSingleFile(docPath, { _source, _meta, _output });
+      if (result.success) {
+        regenerated++;
+      } else {
+        console.warn(`  ⚠️  ${docPath}: ${result.message}`);
+        failed++;
+      }
+    } catch (e) {
+      console.error(`  ❌ ${docPath}: ${e.message}`);
+      failed++;
+    }
+  }
+
+  // Notify caller that priority docs are done (so server can reload those clients immediately)
+  if (priorityDocs.length > 0 && onPriorityComplete) {
+    try {
+      onPriorityComplete({ regenerated, failed, priorityDocs });
+    } catch (e) {
+      console.error(`  ⚠️ onPriorityComplete callback error: ${e.message}`);
+    }
+  }
+
+  // Process remaining documents
+  for (const docPath of remainingDocs) {
     try {
       const result = await regenerateSingleFile(docPath, { _source, _meta, _output });
       if (result.success) {

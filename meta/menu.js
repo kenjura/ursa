@@ -11,7 +11,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const navMain = document.querySelector('nav#nav-main');
     const navMainTop = document.querySelector('nav#nav-main-top');
     const menuPosition = document.body.dataset.menuPosition || 'top';
-    
+
     // If menu position is top (default), handle differently
     if (menuPosition === 'top') {
         initTopMenu();

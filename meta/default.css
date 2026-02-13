@@ -152,6 +152,35 @@ nav#nav-global .nav-right-controls {
   gap: 0;
 }
 
+/* Ursa update indicator (loading spinner in nav bar) */
+.ursa-update-indicator {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: var(--global-nav-height);
+  height: var(--global-nav-height);
+  opacity: 0.7;
+}
+.ursa-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(128, 128, 128, 0.3);
+  border-top-color: rgba(128, 128, 128, 0.8);
+  border-radius: 50%;
+  animation: ursa-spin 0.8s linear infinite;
+}
+.ursa-update-gray .ursa-spinner {
+  border-color: rgba(128, 128, 128, 0.3);
+  border-top-color: rgba(128, 128, 128, 0.8);
+}
+.ursa-update-green .ursa-spinner {
+  border-color: rgba(76, 175, 80, 0.3);
+  border-top-color: rgba(76, 175, 80, 0.9);
+}
+@keyframes ursa-spin {
+  to { transform: rotate(360deg); }
+}
+
 .widget-button {
   display: flex;
   align-items: center;

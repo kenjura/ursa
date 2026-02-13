@@ -3,19 +3,16 @@
 QOL:
 - When 'serve' encounters an occupied port 8080, prompt the user to find an available port instead of just exiting with an error. Will check open ports and find the closest port to 8080, then ask the user if they want to use it.
 
+Meta cleanup:
+- Templates should have their own folder, including default
+- All static files for a template should be in the template's folder, and probably in the right subfolder (e.g. public/default.css should be in templates/default/public/default.css or something like that).
+- Template filenames should be templates/{templateName}/index.html
+- Ursa should throw a warning if it finds orphaned static files in meta that aren't referenced by a template
+
 Static assets revamp:
-- Meta
-  - All scripts and stylesheets referenced by a template should be bundled together into a single CSS file and a single JS file per template. Use esbuild or similar for bundling and minification. This will reduce the number of requests and ensure that all template assets are loaded together.
-- Documents
-  - style.css and script.js files should be external
-  - in serve mode, a document can have multiple style.css and script.js from multiple levels; this should be separate tags so individual ones can be invalidated
-  - in generate mode, these should be bundled together into a single CSS file and a single JS file per folder
-    - why folder? well, /foo may have style.css and script.js, and /foo/bar may have its own style.css and script.js. Every document in foo/bar includes both scripts and both stylesheets, but documents in foo only include the foo ones.
-    - it is true that foo.bundle.js and foo-bar.bundle.js will duplicate code (foo-bar is a superset of foo), but the point is that every page load has the minimum number of requests (1 CSS and 1 JS)
-  - future optimization: bundle document and meta scripts/styles together. This sounds complicated compared to the expected return
-- Bundling logic:
-  - In serve mode, minification without obfuscation is fine, as serve is often used to debug stylesheets and scripts.
-  - In generate mode, we can do full bundling and minification for optimal performance. Map files can be generated for debugging if needed.
+- Revamped the building of static assets (stylesheets and scripts). The new logic is:
+  - All meta scripts and stylesheets should be bundled together into a single CSS file and a single JS file for the entire site. This applies to build mode; in dev mode, they are served individually for easier debugging and regeneration.
+  - Bundle-able document files (style.css, script.js, menu.md) will be bundled together on a per-folder basis. Each document will include the bundles from its own folder and all parent folders (where they exist).
 
 Regeneration revamp:
 - Existing logic:
@@ -35,6 +32,26 @@ Regeneration revamp:
       - Find all documents that reference that static file
       - Regenerate the html (even if the source md/mdx/txt file is unchanged) for those documents to update the cache-busting query string for the static file reference
 - This should catch all the various edge cases that previously required restarting the server or doing a full regeneration.
+- Regeneration priority order:
+  - When regeneration is triggered, check for connected WebSocket clients and get their current URL.
+  - If their current URL is affected by the change (document, static asset, template, anything), prioritize the necessary documents and assets to serve that URL before all others, and when they are regenerated, send the push notification to reload.
+  - After that, regenerate the rest of the affected documents in the background.
+  - In cases of rapid changing of files, do the following:
+    - Debounce all file system change events within a short time window (e.g. 500ms); wait for at least 500ms of no changes before starting regeneration. This helps in cases where a script or bot is making many changes to many files.
+  - When a change is detected, before any complex processing, send a ping to WebSocket-connected clients that an update is in progress, but it isn't known yet if it will affect their page.
+  - When it is determined that a change will affect the current page of a connected client, send another push to let the client know.
+  - Handle the above two notifications in the UI thus:
+    - When updates start, add a subtle loading indicator to the right of all left widgets, such as <Loader color="gray" />
+    - If it turns out the update doesn't need a refresh, remove the indicator.
+    - If it does need a refresh, change the indicator to a <Loader color="green" />.
+    - When the hot refresh actually happens, the indicator shouldn't be there anymore.
+- Cache changes (under consideration):
+  - Before the cache was implemented, every file change triggered a complete regeneration of the entire site. This was slow, obviously. First, an in-memory cache was added to speed up the regeneration of unchanged files. But since the watcher back then missed a lot of regeneration cases (such as all meta changes), killing 'serve' and restarting it was quite common. Thus, the cache was persisted to disk, so that even in the case of a full regeneration (such as after a restart), unchanged files would still be skipped. This has worked fairly well, but for the invalidation edge cases described above (already fixed).
+  - However, considering that we now have a robust regeneration system that can handle all edge cases and push updates to the client, we may want to consider removing the cache entirely. The cache adds complexity and can sometimes get into a bad state, requiring manual deletion. With the new regeneration system, we could keep the cache in-memory, and rarely will the user need to kill 'serve' and restart just to get an update (ideally, never). In-memory cache is even faster than disk, so this might be a better experience overall.
+- Regeneration cases still unhandled:
+  - User updates Ursa itself (e.g. npm update) while serve is active. I mean, this shouldn't be very common outside of Ursa devs, but's determine:
+    - Does the current system actually catch the meta changes?
+
 
 
 Top Menu improvements:
