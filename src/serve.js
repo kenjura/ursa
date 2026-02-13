@@ -1,13 +1,16 @@
 import express from "express";
 import compression from "compression";
 import watch from "node-watch";
-import { generate, regenerateSingleFile, clearWatchCache } from "./jobs/generate.js";
+import { generate, regenerateSingleFile, regenerateAffectedDocuments, clearWatchCache } from "./jobs/generate.js";
 import { join, resolve, dirname, basename } from "path";
 import fs from "fs";
 import { promises } from "fs";
-import { outputFile } from "fs-extra";
+import { copy as copyDir, outputFile } from "fs-extra";
 import { processImage } from "./helper/imageProcessor.js";
 import { watchModeCache } from "./helper/build/watchCache.js";
+import { dependencyTracker } from "./helper/dependencyTracker.js";
+import { bundleMetaTemplateAssets, clearMetaBundleCache } from "./helper/assetBundler.js";
+import { getTemplates } from "./helper/build/templates.js";
 import { WebSocketServer } from "ws";
 import { createServer } from "http";
 import { resolvePort } from "./helper/portUtils.js";
@@ -236,28 +239,72 @@ export async function serve({
   console.log("   Meta:", metaDir, "(full rebuild)");
   console.log("\nPress Ctrl+C to stop the server\n");
   
-  // Meta changes trigger full rebuild (templates, CSS, etc. affect all pages)
+  // Meta changes: use dependency tracker for selective rebuild when possible
   watch(metaDir, { recursive: true, filter: /\.(js|json|css|html|md|txt|yml|yaml)$/ }, async (evt, name) => {
-    console.log(`Meta files changed! Event: ${evt}, File: ${name}`);
-    console.log("Full rebuild required (meta files affect all pages)...");
-    clearWatchCache(); // Clear cache since templates/CSS may have changed
+    if (isRegenerating) {
+      console.log(`⏳ Skipping meta change ${name} (regeneration in progress)`);
+      return;
+    }
+    
+    console.log(`\n🎨 Meta files changed: ${name}`);
+    isRegenerating = true;
+    
     try {
-      // Use deferred images and search index for meta rebuilds too
-      const result = await generate({ _source: sourceDir, _meta: metaDir, _output: outputDir, _whitelist, _exclude, _clean: true, _deferImages: true, _deferSearchIndex: true });
-      console.log("HTML regeneration complete.");
+      // Always reload templates and re-copy meta files when meta changes
+      // (regenerateSingleFile uses watchModeCache.templates which would be stale otherwise)
+      const pub = join(outputDir, 'public');
+      clearMetaBundleCache();
+      await copyDir(metaDir, pub);
+      const freshTemplates = await getTemplates(metaDir);
+      const bundledTemplates = await bundleMetaTemplateAssets(freshTemplates, metaDir, pub, { minify: true, sourcemap: false });
+      console.log('🔄 Reloaded and re-bundled meta templates');
+
+      if (watchModeCache.isInitialized) {
+        // Update the watch cache with new templates
+        watchModeCache.templates = bundledTemplates;
+
+        const plan = dependencyTracker.getMetaInvalidationPlan(name, metaDir);
+        
+        if (plan.requiresFullRebuild) {
+          // Unknown meta change → full rebuild
+          console.log(`📦 ${plan.reason}`);
+          clearWatchCache();
+          const result = await generate({ _source: sourceDir, _meta: metaDir, _output: outputDir, _whitelist, _exclude, _clean: true, _deferImages: true, _deferSearchIndex: true });
+          console.log("HTML regeneration complete.");
+          if (result && result.deferredImageProcessing) {
+            result.deferredImageProcessing.then(() => console.log("Image preview generation complete.")).catch(e => console.error("Image processing error:", e.message));
+          }
+          if (result && result.deferredSearchIndex) {
+            result.deferredSearchIndex.then(() => console.log("Search index generation complete.")).catch(e => console.error("Search index error:", e.message));
+          }
+        } else if (plan.affectedDocuments.length > 0) {
+          // Selective rebuild: regenerate only affected documents with fresh templates
+          console.log(`📄 ${plan.reason}`);
+          await regenerateAffectedDocuments(plan.affectedDocuments, {
+            _source: sourceDir, _meta: metaDir, _output: outputDir,
+            reason: plan.reason,
+          });
+        } else {
+          console.log(`ℹ️  ${plan.reason} — no documents affected`);
+        }
+      } else {
+        // Cache not initialized — fall back to full rebuild
+        console.log("Full rebuild required (cache not initialized)...");
+        clearWatchCache();
+        const result = await generate({ _source: sourceDir, _meta: metaDir, _output: outputDir, _whitelist, _exclude, _clean: true, _deferImages: true, _deferSearchIndex: true });
+        console.log("HTML regeneration complete.");
+        if (result && result.deferredImageProcessing) {
+          result.deferredImageProcessing.then(() => console.log("Image preview generation complete.")).catch(e => console.error("Image processing error:", e.message));
+        }
+        if (result && result.deferredSearchIndex) {
+          result.deferredSearchIndex.then(() => console.log("Search index generation complete.")).catch(e => console.error("Search index error:", e.message));
+        }
+      }
       broadcastReload(name);
-      if (result && result.deferredImageProcessing) {
-        result.deferredImageProcessing.then(() => {
-          console.log("Image preview generation complete.");
-        }).catch(e => console.error("Image processing error:", e.message));
-      }
-      if (result && result.deferredSearchIndex) {
-        result.deferredSearchIndex.then(() => {
-          console.log("Search index generation complete.");
-        }).catch(e => console.error("Search index error:", e.message));
-      }
     } catch (error) {
-      console.error("Error during regeneration:", error.message);
+      console.error("Error during meta regeneration:", error.message);
+    } finally {
+      isRegenerating = false;
     }
   });
 
@@ -278,8 +325,11 @@ export async function serve({
       return;
     }
     
-    // CSS files: just copy the file (no longer embedded in HTML)
+    // CSS files: copy the changed file, then regenerate affected documents
+    // so their cache-busting query strings update to reflect the change
     const isCssChange = name && name.endsWith('.css');
+    // script.js changes: regenerate affected documents
+    const isScriptJsChange = name && basename(name) === 'script.js';
     // Menu/config changes need full rebuild
     const isMenuChange = name && (name.includes('_menu') || name.includes('menu.'));
     const isConfigChange = name && (name.includes('_config') || name.includes('.ursa'));
@@ -288,15 +338,61 @@ export async function serve({
       console.log(`\n🎨 CSS change detected: ${name}`);
       isRegenerating = true;
       try {
-        const result = await copyCssFile(name, sourceDir + '/', outputDir + '/');
-        if (result.success) {
-          console.log(`✅ ${result.message}`);
-          broadcastReload(name);
-        } else {
-          console.log(`⚠️ ${result.message}`);
+        // First, copy the changed CSS to output
+        const copyResult = await copyCssFile(name, sourceDir + '/', outputDir + '/');
+        if (copyResult.success) {
+          console.log(`✅ ${copyResult.message}`);
         }
+        
+        // Then, regenerate affected documents so cache-bust timestamps update
+        if (watchModeCache.isInitialized) {
+          const plan = dependencyTracker.getInvalidationPlan(name, sourceDir);
+          if (plan.requiresFullRebuild) {
+            console.log(`📦 ${plan.reason} — full rebuild required`);
+            clearWatchCache();
+            await generate({ _source: sourceDir, _meta: metaDir, _output: outputDir, _whitelist, _exclude, _clean: true, _deferImages: true, _deferSearchIndex: true });
+          } else if (plan.affectedDocuments.length > 0) {
+            console.log(`📄 ${plan.reason}`);
+            await regenerateAffectedDocuments(plan.affectedDocuments, {
+              _source: sourceDir, _meta: metaDir, _output: outputDir,
+              reason: plan.reason,
+            });
+          }
+        }
+        broadcastReload(name);
       } catch (error) {
-        console.error("Error copying CSS:", error.message);
+        console.error("Error handling CSS change:", error.message);
+      } finally {
+        isRegenerating = false;
+      }
+      return;
+    }
+    
+    if (isScriptJsChange) {
+      console.log(`\n📜 Script.js change detected: ${name}`);
+      isRegenerating = true;
+      try {
+        // Copy the changed script to output
+        const relativePath = name.replace(sourceDir + '/', '').replace(sourceDir, '');
+        const outputPath = join(outputDir, relativePath);
+        const content = await readFile(name, 'utf8');
+        await outputFile(outputPath, content);
+        console.log(`✅ Copied ${relativePath}`);
+        
+        // Regenerate affected documents
+        if (watchModeCache.isInitialized) {
+          const plan = dependencyTracker.getInvalidationPlan(name, sourceDir);
+          if (plan.affectedDocuments.length > 0) {
+            console.log(`📄 ${plan.reason}`);
+            await regenerateAffectedDocuments(plan.affectedDocuments, {
+              _source: sourceDir, _meta: metaDir, _output: outputDir,
+              reason: plan.reason,
+            });
+          }
+        }
+        broadcastReload(name);
+      } catch (error) {
+        console.error("Error handling script change:", error.message);
       } finally {
         isRegenerating = false;
       }
@@ -340,12 +436,23 @@ export async function serve({
     
     if (isMenuChange || isConfigChange) {
       console.log(`\n📦 ${isMenuChange ? 'Menu' : 'Config'} change detected: ${name}`);
-      console.log("Full rebuild required...");
+      console.log("Full rebuild required (preserving output)...");
+      // Delete on-disk caches to force full navigation + content rebuild
+      // We avoid _clean:true because emptyDir(output) deletes images/static assets
+      const ursaDir = join(sourceDir, '.ursa');
+      try { await promises.unlink(join(ursaDir, 'content-hashes.json')); } catch {}
+      try { await promises.unlink(join(ursaDir, 'nav-cache.json')); } catch {}
       clearWatchCache();
       isRegenerating = true;
       try {
-        await generate({ _source: sourceDir, _meta: metaDir, _output: outputDir, _whitelist, _exclude, _clean: true });
+        const result = await generate({ _source: sourceDir, _meta: metaDir, _output: outputDir, _whitelist, _exclude, _deferImages: true, _deferSearchIndex: true });
         console.log("Regeneration complete.");
+        if (result && result.deferredImageProcessing) {
+          result.deferredImageProcessing.then(() => console.log("Image preview generation complete.")).catch(e => console.error("Image processing error:", e.message));
+        }
+        if (result && result.deferredSearchIndex) {
+          result.deferredSearchIndex.then(() => console.log("Search index generation complete.")).catch(e => console.error("Search index error:", e.message));
+        }
         broadcastReload(name);
       } catch (error) {
         console.error("Error during regeneration:", error.message);

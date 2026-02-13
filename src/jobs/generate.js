@@ -30,6 +30,8 @@ import { findStyleCss, findAllStyleCss } from "../helper/findStyleCss.js";
 import { findScriptJs, findAllScriptJs } from "../helper/findScriptJs.js";
 import { bundleMetaTemplateAssets, bundleDocumentCss, bundleDocumentJs, clearMetaBundleCache, generateSeparateCssTags, generateSeparateJsTags } from "../helper/assetBundler.js";
 import { buildFullTextIndex, buildIncrementalIndex, loadIndexCache, saveIndexCache } from "../helper/fullTextIndex.js";
+import { dependencyTracker } from "../helper/dependencyTracker.js";
+import { CacheBustHashMap } from "../helper/build/cacheBust.js";
 import { copy as copyDir, emptyDir, outputFile } from "fs-extra";
 import { basename, dirname, extname, join, parse, resolve } from "path";
 import { URL } from "url";
@@ -122,7 +124,11 @@ export async function generate({
 
   // Generate cache-busting timestamp for this build
   const cacheBustTimestamp = generateCacheBustTimestamp();
+  const cacheBustHashes = new CacheBustHashMap();
   progress.logTimed(`Cache-bust timestamp: ${cacheBustTimestamp}`);
+
+  // Initialize dependency tracker for this build
+  dependencyTracker.init(source);
 
   // Clear output directory when --clean is specified
   if (_clean) {
@@ -681,11 +687,23 @@ export async function generate({
       }
 
       const requestedTemplateName = fileMeta && fileMeta.template;
-      const template =
-        templates[requestedTemplateName] || templates[DEFAULT_TEMPLATE_NAME];
+      const templateName = requestedTemplateName || DEFAULT_TEMPLATE_NAME;
+      const template = templates[templateName];
 
       if (!template) {
-        throw new Error(`Template not found. Requested: "${requestedTemplateName || DEFAULT_TEMPLATE_NAME}". Available templates: ${Object.keys(templates).join(', ') || 'none'}`);
+        throw new Error(`Template not found. Requested: "${templateName}". Available templates: ${Object.keys(templates).join(', ') || 'none'}`);
+      }
+
+      // Register this document's dependencies for invalidation tracking
+      {
+        const dirKey = (dir === "/" || dir === "") ? _source : resolve(_source, dir);
+        const cssDeps = cssPathCache.get(dirKey) || [];
+        const jsDeps = scriptPathCache.get(dirKey) || [];
+        dependencyTracker.registerDocument(file, {
+          templateName,
+          cssPaths: cssDeps,
+          scriptPaths: jsDeps,
+        });
       }
 
       // Check if this file has a custom menu
@@ -1057,11 +1075,15 @@ export async function generate({
   watchModeCache.meta = meta;
   watchModeCache.output = output;
   watchModeCache.hashCache = hashCache;
+  watchModeCache.cacheBustTimestamp = cacheBustTimestamp;
+  watchModeCache.cacheBustHashes = cacheBustHashes;
+  watchModeCache.allArticlePaths = [...allSourceFilenamesThatAreArticles];
   watchModeCache.imageMap = imageMap;
   watchModeCache.customMenus = customMenus;
   watchModeCache.lastFullBuild = Date.now();
   watchModeCache.isInitialized = true;
-  progress.log(`Watch cache initialized for fast single-file regeneration`);
+  const depStats = dependencyTracker.getStats();
+  progress.log(`Watch cache initialized (${depStats.totalDocuments} documents, ${depStats.uniqueFiles} dependencies tracked)`);
 
   // Write error report if there were any errors
   if (errors.length > 0) {
@@ -1114,6 +1136,65 @@ export async function generate({
     deferredImageProcessing: deferredImageProcessingPromise,
     deferredSearchIndex: deferredSearchIndexPromise
   };
+}
+
+/**
+ * Regenerate multiple documents affected by a dependency change (e.g., style.css, script.js, template).
+ * Uses the watchModeCache and dependency tracker to efficiently re-render affected documents
+ * with updated cache-bust timestamps.
+ *
+ * @param {string[]} documentPaths - Absolute paths to documents to regenerate
+ * @param {Object} options
+ * @param {string} options._source - Source directory
+ * @param {string} options._meta - Meta directory
+ * @param {string} options._output - Output directory
+ * @param {string} [options.reason] - Reason for regeneration (for logging)
+ * @returns {Promise<{success: boolean, message: string, regenerated: number, failed: number}>}
+ */
+export async function regenerateAffectedDocuments(documentPaths, {
+  _source,
+  _meta,
+  _output,
+  reason = "dependency change",
+} = {}) {
+  const startTime = Date.now();
+
+  if (!watchModeCache.isInitialized) {
+    return { success: false, message: "Cache not initialized - need full build first", regenerated: 0, failed: 0 };
+  }
+
+  if (documentPaths.length === 0) {
+    return { success: true, message: "No documents to regenerate", regenerated: 0, failed: 0 };
+  }
+
+  console.log(`🔄 Regenerating ${documentPaths.length} documents (${reason})`);
+
+  // Generate a fresh cache-bust timestamp for this invalidation pass
+  const newTimestamp = generateCacheBustTimestamp();
+  watchModeCache.cacheBustTimestamp = newTimestamp;
+
+  let regenerated = 0;
+  let failed = 0;
+
+  for (const docPath of documentPaths) {
+    try {
+      const result = await regenerateSingleFile(docPath, { _source, _meta, _output });
+      if (result.success) {
+        regenerated++;
+      } else {
+        console.warn(`  ⚠️  ${docPath}: ${result.message}`);
+        failed++;
+      }
+    } catch (e) {
+      console.error(`  ❌ ${docPath}: ${e.message}`);
+      failed++;
+    }
+  }
+
+  const elapsed = Date.now() - startTime;
+  const msg = `Regenerated ${regenerated}/${documentPaths.length} documents in ${elapsed}ms (${reason})${failed > 0 ? `, ${failed} failed` : ""}`;
+  console.log(`✅ ${msg}`);
+  return { success: failed === 0, message: msg, regenerated, failed };
 }
 
 /**

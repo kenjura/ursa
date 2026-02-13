@@ -981,20 +981,29 @@ export async function dev({
       devState.menuReady = false;
       await buildBackgroundCaches();
     } else if (isCssChange) {
-      // Copy CSS to output
+      // Copy CSS to output and clear style cache so next render picks up changes
+      devState.stylePathMap.clear();
       try {
         const relativePath = name.replace(sourceDir, '');
         const outputPath = join(outputDir, relativePath);
         const content = await readFile(name, 'utf8');
         await outputFile(outputPath, content);
-        console.log(`✅ Copied ${relativePath}`);
+        console.log(`✅ Copied ${relativePath} (style cache cleared)`);
       } catch (e) {
         console.error(`Error copying CSS: ${e.message}`);
       }
     } else if (isScriptChange) {
-      // Clear script cache so next render picks up changes
+      // Copy script to output and clear script cache so next render picks up changes
       devState.scriptPathMap.clear();
-      console.log(`✅ Script cache cleared for ${name}`);
+      try {
+        const relativePath = name.replace(sourceDir, '');
+        const outputPath = join(outputDir, relativePath);
+        const content = await readFile(name, 'utf8');
+        await outputFile(outputPath, content);
+        console.log(`✅ Copied ${relativePath} (script cache cleared)`);
+      } catch (e) {
+        console.error(`Error copying script: ${e.message}`);
+      }
     } else if (isComponentChange) {
       // Component files (.tsx, .jsx, .ts) may be imported by MDX files
       // Clear all MDX document caches so they re-compile with the updated component

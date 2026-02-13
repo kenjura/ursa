@@ -33,6 +33,10 @@ export async function hashFileStats(files) {
            base === 'index.txt' || 
            base === 'index.yml' ||
            base === 'config.json' ||
+           base === 'menu.md' ||
+           base === 'menu.txt' ||
+           base === '_menu.md' ||
+           base === '_menu.txt' ||
            base.endsWith('-icon.png') ||
            base.endsWith('-icon.svg') ||
            base === 'icon.png' ||
