@@ -3,13 +3,14 @@ import { existsSync, readFileSync } from "fs";
 import { readdir, readFile } from "fs/promises";
 import { basename, dirname, extname, join } from "path";
 import { outputFile } from "fs-extra";
-import { findStyleCss } from "../findStyleCss.js";
+import { findStyleCss, findAllStyleCss } from "../findStyleCss.js";
 import { findAllScriptJs } from "../findScriptJs.js";
 import { toTitleCase } from "./titleCase.js";
 import { addTimestampToHtmlStaticRefs } from "./cacheBust.js";
 import { isMetadataOnly, extractMetadata, getAutoIndexConfig } from "../metadataExtractor.js";
 import { getCustomMenuForFile } from "./menu.js";
 import { generateBreadcrumbs } from "../breadcrumbs.js";
+import { bundleDocumentCss, bundleDocumentJs } from "../assetBundler.js";
 
 // Document extensions for checking if a folder has content
 const SOURCE_DOC_EXTENSIONS = ['.md', '.mdx', '.txt', '.yml', '.html'];
@@ -345,42 +346,42 @@ export async function generateAutoIndices(output, directories, source, templates
           continue;
         }
         
-        // Find nearest style.css for this directory
+        // Find all style.css files up the tree and bundle them into a single CSS file
+        // (Generate mode: one CSS bundle per unique folder path)
         let styleLink = "";
         try {
-          // Map output dir back to source dir to find style.css
           const sourceDir = dir.replace(outputNorm, sourceNorm);
-          const cssPath = await findStyleCss(sourceDir);
-          if (cssPath) {
-            // Calculate output path for the CSS file (mirrors source structure)
-            const cssOutputPath = cssPath.replace(sourceNorm, outputNorm);
-            const cssUrlPath = '/' + cssPath.replace(sourceNorm, '');
-            
-            // Copy CSS file if not already copied
-            if (!copiedCssFiles.has(cssPath)) {
-              const cssContent = await readFile(cssPath, 'utf8');
-              await outputFile(cssOutputPath, cssContent);
-              copiedCssFiles.add(cssPath);
+          const cssPaths = await findAllStyleCss(sourceDir, sourceNorm);
+          if (cssPaths.length > 0) {
+            // Copy all CSS files to output
+            for (const cssPath of cssPaths) {
+              if (!copiedCssFiles.has(cssPath)) {
+                const cssOutputPath = cssPath.replace(sourceNorm, outputNorm);
+                const cssContent = await readFile(cssPath, 'utf8');
+                await outputFile(cssOutputPath, cssContent);
+                copiedCssFiles.add(cssPath);
+              }
             }
-            
-            // Generate link tag
-            styleLink = `<link rel="stylesheet" href="${cssUrlPath}" />`;
+            // Bundle into a single file
+            const folderRelative = sourceDir.replace(sourceNorm, '').replace(/^\//, '');
+            const bundleUrl = await bundleDocumentCss(cssPaths, outputNorm, sourceNorm, folderRelative, { minify: true });
+            styleLink = `<link rel="stylesheet" href="${bundleUrl}" />`;
           }
         } catch (e) {
           // ignore CSS lookup errors
         }
         
-        // Find all script.js files from docroot to this directory
+        // Find all script.js files from docroot to this directory and bundle them
+        // (Generate mode: one JS bundle per unique folder path)
         let customScript = "";
         try {
           const sourceDir = dir.replace(outputNorm, sourceNorm);
           const scriptPaths = await findAllScriptJs(sourceDir, sourceNorm);
-          const scriptTags = [];
-          for (const scriptPath of scriptPaths) {
-            const scriptContent = await readFile(scriptPath, 'utf8');
-            scriptTags.push(`<script>\n${scriptContent}\n</script>`);
+          if (scriptPaths.length > 0) {
+            const folderRelative = sourceDir.replace(sourceNorm, '').replace(/^\//, '');
+            const bundleUrl = await bundleDocumentJs(scriptPaths, outputNorm, sourceNorm, folderRelative, { minify: true });
+            customScript = `<script src="${bundleUrl}"></script>`;
           }
-          customScript = scriptTags.join('\n');
         } catch (e) {
           // ignore script lookup errors
         }

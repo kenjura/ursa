@@ -26,8 +26,9 @@ import {
 import { getAndIncrementBuildId } from "../helper/ursaConfig.js";
 import { extractSections } from "../helper/sectionExtractor.js";
 import { renderFile, renderFileAsync, terminateParserPool } from "../helper/fileRenderer.js";
-import { findStyleCss } from "../helper/findStyleCss.js";
+import { findStyleCss, findAllStyleCss } from "../helper/findStyleCss.js";
 import { findScriptJs, findAllScriptJs } from "../helper/findScriptJs.js";
+import { bundleMetaTemplateAssets, bundleDocumentCss, bundleDocumentJs, clearMetaBundleCache, generateSeparateCssTags, generateSeparateJsTags } from "../helper/assetBundler.js";
 import { buildFullTextIndex, buildIncrementalIndex, loadIndexCache, saveIndexCache } from "../helper/fullTextIndex.js";
 import { copy as copyDir, emptyDir, outputFile } from "fs-extra";
 import { basename, dirname, extname, join, parse, resolve } from "path";
@@ -83,10 +84,15 @@ const cssPathCache = new Map();
 // Cache for script path lookups to avoid repeated filesystem walks
 const scriptPathCache = new Map();
 
+// Cache for document-level CSS/JS bundle paths to avoid re-bundling identical sets
+const docBundleCache = new Map();
+
 // Wrapper for clearWatchCache that passes cssPathCache and scriptPathCache
 export function clearWatchCache() {
   clearWatchCacheBase(cssPathCache);
   scriptPathCache.clear();
+  docBundleCache.clear();
+  clearMetaBundleCache();
 }
 
 const progress = new ProgressReporter();
@@ -284,6 +290,11 @@ export async function generate({
   const pub = join(output, "public");
   await mkdir(pub, { recursive: true });
   await copyDir(meta, pub);
+
+  // Bundle meta template assets (CSS + JS) into single files per template
+  // This must happen after copying meta to public but before cache-busting
+  templates = await bundleMetaTemplateAssets(templates, meta, pub, { minify: true, sourcemap: false });
+  progress.logTimed(`Meta template assets bundled`);
 
   // Process all CSS files in the entire output directory tree for cache-busting
   const allOutputFiles = await recurse(output, [() => false]);
@@ -596,54 +607,74 @@ export async function generate({
         }
       }
 
-      // Find nearest style.css or _style.css up the tree and copy to output
-      // Use cache to avoid repeated filesystem walks for same directory
+      // Find all style.css files up the tree and bundle them into a single CSS file per folder path
+      // (Generate mode: one CSS bundle per unique folder, minimizing requests per page load)
       let styleLink = "";
       try {
-        // For root-level files, dir may be "/" which would resolve to filesystem root
-        // Use source directory directly in that case
         const dirKey = (dir === "/" || dir === "") ? _source : resolve(_source, dir);
-        let cssPath = cssPathCache.get(dirKey);
-        if (cssPath === undefined) {
-          cssPath = await findStyleCss(dirKey);
-          cssPathCache.set(dirKey, cssPath); // Cache null results too
-        }
-        if (cssPath) {
-          // Calculate output path for the CSS file (mirrors source structure)
-          const cssOutputPath = cssPath.replace(source, output);
-          const cssUrlPath = '/' + cssPath.replace(source, '');
-          
-          // Copy CSS file if not already copied
-          if (!copiedCssFiles.has(cssPath)) {
-            const cssContent = await readFile(cssPath, 'utf8');
-            await outputFile(cssOutputPath, cssContent);
-            copiedCssFiles.add(cssPath);
+        const folderRelative = (dir === "/" || dir === "") ? "" : dir;
+
+        // Check bundle cache first (dirs with same CSS ancestry share the same bundle)
+        let cachedBundleUrl = docBundleCache.get(`css:${dirKey}`);
+        if (cachedBundleUrl !== undefined) {
+          if (cachedBundleUrl) {
+            styleLink = `<link rel="stylesheet" href="${cachedBundleUrl}" />`;
           }
-          
-          // Generate link tag
-          styleLink = `<link rel="stylesheet" href="${cssUrlPath}" />`;
+        } else {
+          let cssPaths = cssPathCache.get(dirKey);
+          if (cssPaths === undefined) {
+            cssPaths = await findAllStyleCss(dirKey, _source);
+            cssPathCache.set(dirKey, cssPaths);
+          }
+          if (cssPaths.length > 0) {
+            // Copy all source CSS files to output (still needed for serve mode fallback)
+            for (const cssPath of cssPaths) {
+              if (!copiedCssFiles.has(cssPath)) {
+                const cssOutputPath = cssPath.replace(source, output);
+                const cssContent = await readFile(cssPath, 'utf8');
+                await outputFile(cssOutputPath, cssContent);
+                copiedCssFiles.add(cssPath);
+              }
+            }
+            // Bundle into a single file
+            const bundleUrl = await bundleDocumentCss(cssPaths, output, source, folderRelative, { minify: true });
+            docBundleCache.set(`css:${dirKey}`, bundleUrl);
+            styleLink = `<link rel="stylesheet" href="${bundleUrl}" />`;
+          } else {
+            docBundleCache.set(`css:${dirKey}`, null);
+          }
         }
       } catch (e) {
         // ignore
         console.error(e);
       }
 
-      // Find all script.js or _script.js files from docroot to current dir and inline their contents
-      // Use cache to avoid repeated filesystem walks for same directory
+      // Find all script.js files from docroot to current dir and bundle them
+      // (Generate mode: one JS bundle per unique folder, external not inlined)
       let customScript = "";
       try {
         const dirKey = (dir === "/" || dir === "") ? _source : resolve(_source, dir);
-        let scriptPaths = scriptPathCache.get(dirKey);
-        if (scriptPaths === undefined) {
-          scriptPaths = await findAllScriptJs(dirKey, _source);
-          scriptPathCache.set(dirKey, scriptPaths); // Cache empty arrays too
+        const folderRelative = (dir === "/" || dir === "") ? "" : dir;
+
+        let cachedBundleUrl = docBundleCache.get(`js:${dirKey}`);
+        if (cachedBundleUrl !== undefined) {
+          if (cachedBundleUrl) {
+            customScript = `<script src="${cachedBundleUrl}"></script>`;
+          }
+        } else {
+          let scriptPaths = scriptPathCache.get(dirKey);
+          if (scriptPaths === undefined) {
+            scriptPaths = await findAllScriptJs(dirKey, _source);
+            scriptPathCache.set(dirKey, scriptPaths);
+          }
+          if (scriptPaths.length > 0) {
+            const bundleUrl = await bundleDocumentJs(scriptPaths, output, source, folderRelative, { minify: true });
+            docBundleCache.set(`js:${dirKey}`, bundleUrl);
+            customScript = `<script src="${bundleUrl}"></script>`;
+          } else {
+            docBundleCache.set(`js:${dirKey}`, null);
+          }
         }
-        const scriptTags = [];
-        for (const scriptPath of scriptPaths) {
-          const scriptContent = await readFile(scriptPath, 'utf8');
-          scriptTags.push(`<script>\n${scriptContent}\n</script>`);
-        }
-        customScript = scriptTags.join('\n');
       } catch (e) {
         // ignore
         console.error(e);
@@ -1204,23 +1235,20 @@ export async function regenerateSingleFile(changedFile, {
       }
     }
 
-    // Find CSS and copy to output
+    // Find all CSS files up the tree and create separate link tags
+    // (regenerateSingleFile is used in serve mode, so separate tags per level for invalidation)
     let styleLink = "";
     try {
-      // For root-level files, dir may be "/" which would resolve to filesystem root
       const dirKey = (dir === "/" || dir === "") ? _source : resolve(_source, dir);
-      const cssPath = await findStyleCss(dirKey);
-      if (cssPath) {
-        // Calculate output path for the CSS file
-        const cssOutputPath = cssPath.replace(source, output);
-        const cssUrlPath = '/' + cssPath.replace(source, '');
-        
-        // Copy CSS file (always copy in single-file mode to ensure it's up to date)
-        const cssContent = await readFile(cssPath, 'utf8');
-        await outputFile(cssOutputPath, cssContent);
-        
-        // Generate link tag
-        styleLink = `<link rel="stylesheet" href="${cssUrlPath}" />`;
+      const cssPaths = await findAllStyleCss(dirKey, _source);
+      if (cssPaths.length > 0) {
+        // Copy all CSS files to output (always copy in single-file mode to ensure up to date)
+        for (const cssPath of cssPaths) {
+          const cssOutputPath = cssPath.replace(source, output);
+          const cssContent = await readFile(cssPath, 'utf8');
+          await outputFile(cssOutputPath, cssContent);
+        }
+        styleLink = generateSeparateCssTags(cssPaths, source);
       }
     } catch (e) {
       // ignore
@@ -1235,17 +1263,21 @@ export async function regenerateSingleFile(changedFile, {
       return { success: false, message: `Template not found: ${requestedTemplateName || DEFAULT_TEMPLATE_NAME}` };
     }
     
-    // Find all script.js or _script.js files from docroot to current dir and inline their contents
+    // Find all script.js files from docroot to current dir and serve as separate external tags
+    // (Serve mode: separate tags per level for individual invalidation)
     let customScript = "";
     try {
       const dirKey = (dir === "/" || dir === "") ? _source : resolve(_source, dir);
       const scriptPaths = await findAllScriptJs(dirKey, _source);
-      const scriptTags = [];
-      for (const scriptPath of scriptPaths) {
-        const scriptContent = await readFile(scriptPath, 'utf8');
-        scriptTags.push(`<script>\n${scriptContent}\n</script>`);
+      if (scriptPaths.length > 0) {
+        // Copy all script files to output so they can be served
+        for (const scriptPath of scriptPaths) {
+          const scriptOutputPath = scriptPath.replace(source, output);
+          const scriptContent = await readFile(scriptPath, 'utf8');
+          await outputFile(scriptOutputPath, scriptContent);
+        }
+        customScript = generateSeparateJsTags(scriptPaths, source);
       }
-      customScript = scriptTags.join('\n');
     } catch (e) {
       // ignore
     }

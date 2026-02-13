@@ -24,3 +24,32 @@ export async function findStyleCss(startDir, names = ["style-ursa.css", "style.c
   }
   return null;
 }
+
+/**
+ * Find ALL style.css or _style.css files from the docroot down to startDir.
+ * Walks up from startDir to docroot collecting all matches, then returns them
+ * sorted from shortest path (closest to docroot) to longest (closest to startDir).
+ * @param {string} startDir - Directory to start searching from (deepest)
+ * @param {string} docroot - The root directory to stop at (shallowest)
+ * @param {string[]} [names=["style-ursa.css", "style.css", "_style.css"]] - Filenames to look for
+ * @returns {Promise<string[]>} Array of CSS file paths, ordered from shallowest to deepest
+ */
+export async function findAllStyleCss(startDir, docroot, names = ["style-ursa.css", "style.css", "_style.css"]) {
+  const found = [];
+  let dir = resolve(startDir);
+  const base = resolve(docroot);
+  while (true) {
+    for (const name of names) {
+      const candidate = join(dir, name);
+      if (existsSync(candidate)) {
+        found.push(candidate);
+        break; // Only one match per directory (prefer style-ursa.css > style.css > _style.css)
+      }
+    }
+    if (dir === base || dir === dirname(dir)) break;
+    dir = dirname(dir);
+  }
+  // Sort from shortest path (docroot) to longest (startDir)
+  found.sort((a, b) => a.length - b.length);
+  return found;
+}

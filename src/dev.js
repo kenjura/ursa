@@ -37,6 +37,8 @@ import { getTemplates, getMenu, findAllCustomMenus, getCustomMenuForFile, getTra
 import { findCustomMenu, extractMenuFrontmatter, parseCustomMenu, combineAutoAndManualMenu } from "./helper/customMenu.js";
 import { getAndIncrementBuildId } from "./helper/ursaConfig.js";
 import { resolvePort } from "./helper/portUtils.js";
+import { findAllStyleCss } from "./helper/findStyleCss.js";
+import { bundleMetaTemplateAssets, generateSeparateCssTags, generateSeparateJsTags, clearMetaBundleCache } from "./helper/assetBundler.js";
 
 // Dev mode state
 const devState = {
@@ -268,6 +270,23 @@ function findNearestMenu(dirPath) {
 }
 
 /**
+ * Find all style.css files from docroot to dirPath (all levels)
+ */
+async function findAllStyles(dirPath) {
+  const { stylePathMap, source } = devState;
+  
+  // Use a separate cache key to avoid collision with findNearestStyle
+  const cacheKey = `all:${dirPath}`;
+  if (stylePathMap.has(cacheKey)) {
+    return stylePathMap.get(cacheKey);
+  }
+  
+  const stylePaths = await findAllStyleCss(dirPath, source);
+  stylePathMap.set(cacheKey, stylePaths);
+  return stylePaths;
+}
+
+/**
  * Find the nearest style.css
  */
 async function findNearestStyle(dirPath) {
@@ -441,35 +460,40 @@ async function wrapInTemplate(body, title, fileMeta, urlPath, sourcePath) {
     throw new Error(`Template not found: ${requestedTemplateName || 'default-template'}`);
   }
   
-  // Find nearest style.css
+  // Find all style.css files from docroot to current dir and serve as separate tags
+  // (Serve/dev mode: separate tags per level for individual invalidation)
   let styleLink = "";
   try {
     const styleDir = sourcePath ? dirname(sourcePath) : source;
-    const cssPath = await findNearestStyle(styleDir);
-    if (cssPath) {
-      const cssUrlPath = '/' + cssPath.replace(source, '');
-      styleLink = `<link rel="stylesheet" href="${cssUrlPath}" />`;
-      
-      // Copy CSS file to output
-      const cssOutputPath = cssPath.replace(source, output);
-      const cssContent = await readFile(cssPath, 'utf8');
-      await outputFile(cssOutputPath, cssContent);
+    const cssPaths = await findAllStyles(styleDir);
+    if (cssPaths.length > 0) {
+      // Copy all CSS files to output
+      for (const cssPath of cssPaths) {
+        const cssOutputPath = cssPath.replace(source, output);
+        const cssContent = await readFile(cssPath, 'utf8');
+        await outputFile(cssOutputPath, cssContent);
+      }
+      styleLink = generateSeparateCssTags(cssPaths, source);
     }
   } catch (e) {
     // Ignore CSS errors
   }
   
-  // Find all script.js files from docroot to current dir and inline their contents
+  // Find all script.js files from docroot to current dir and serve as separate external tags
+  // (Serve/dev mode: separate tags per level for individual invalidation)
   let customScript = "";
   try {
     const scriptDir = sourcePath ? dirname(sourcePath) : source;
     const scriptPaths = await findAllScripts(scriptDir);
-    const scriptTags = [];
-    for (const scriptPath of scriptPaths) {
-      const scriptContent = await readFile(scriptPath, 'utf8');
-      scriptTags.push(`<script>\n${scriptContent}\n</script>`);
+    if (scriptPaths.length > 0) {
+      // Copy all script files to output so they can be served
+      for (const scriptPath of scriptPaths) {
+        const scriptOutputPath = scriptPath.replace(source, output);
+        const scriptContent = await readFile(scriptPath, 'utf8');
+        await outputFile(scriptOutputPath, scriptContent);
+      }
+      customScript = generateSeparateJsTags(scriptPaths, source);
     }
-    customScript = scriptTags.join('\n');
   } catch (e) {
     // Ignore script errors
   }
@@ -618,9 +642,10 @@ async function buildBackgroundCaches() {
       await findNearestStyle(dir);
     }
     
-    // 7. Pre-load templates
+    // 7. Pre-load templates and re-bundle meta assets
     console.log('   📄 Pre-loading templates...');
-    devState.templates = await getTemplates(meta);
+    const rawTemplatesBg = await getTemplates(meta);
+    devState.templates = await bundleMetaTemplateAssets(rawTemplatesBg, meta, resolve(output, 'public'), { minify: true, sourcemap: false });
     
     // 8. Build footer
     console.log('   📝 Building footer...');
@@ -735,8 +760,10 @@ export async function dev({
   await mkdir(publicDir, { recursive: true });
   await copyDir(metaDir, publicDir);
   
-  // Pre-load templates for immediate use
-  devState.templates = await getTemplates(metaDir);
+  // Pre-load templates and bundle meta assets (minify without obfuscation for debuggability)
+  let rawTemplates = await getTemplates(metaDir);
+  devState.templates = await bundleMetaTemplateAssets(rawTemplates, metaDir, publicDir, { minify: true, sourcemap: false });
+  console.log('📦 Meta template assets bundled');
   
   // Start server immediately
   const app = express();
@@ -1013,7 +1040,12 @@ export async function dev({
   // Watch meta directory for template changes
   watch(metaDir, { recursive: true }, async (evt, name) => {
     console.log(`🎨 Meta changed: ${name}`);
-    devState.templates = await getTemplates(metaDir);
+    clearMetaBundleCache();
+    const rawMetaTemplates = await getTemplates(metaDir);
+    // Re-copy meta files and re-bundle
+    const pubDir = join(outputDir, 'public');
+    await copyDir(metaDir, pubDir);
+    devState.templates = await bundleMetaTemplateAssets(rawMetaTemplates, metaDir, pubDir, { minify: true, sourcemap: false });
     broadcast('reload', { file: name });
   });
   
