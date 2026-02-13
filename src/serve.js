@@ -10,6 +10,7 @@ import { processImage } from "./helper/imageProcessor.js";
 import { watchModeCache } from "./helper/build/watchCache.js";
 import { WebSocketServer } from "ws";
 import { createServer } from "http";
+import { resolvePort } from "./helper/portUtils.js";
 const { readdir, mkdir, readFile, copyFile } = promises;
 
 // WebSocket server for hot reloading
@@ -185,6 +186,9 @@ export async function serve({
   const outputDir = resolve(_output);
 
   console.log({ source: sourceDir, meta: metaDir, output: outputDir, port, whitelist: _whitelist, exclude: _exclude, clean: _clean });
+
+  // Resolve port (prompt user if occupied)
+  port = await resolvePort(port);
 
   // Ensure output directory exists and start server immediately
   await mkdir(outputDir, { recursive: true });

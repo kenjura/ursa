@@ -36,6 +36,7 @@ import { extractSections } from "./helper/sectionExtractor.js";
 import { getTemplates, getMenu, findAllCustomMenus, getCustomMenuForFile, getTransformedMetadata, getFooter, toTitleCase, addTrailingSlash, generateAutoIndexHtmlFromSource } from "./helper/build/index.js";
 import { findCustomMenu, extractMenuFrontmatter, parseCustomMenu, combineAutoAndManualMenu } from "./helper/customMenu.js";
 import { getAndIncrementBuildId } from "./helper/ursaConfig.js";
+import { resolvePort } from "./helper/portUtils.js";
 
 // Dev mode state
 const devState = {
@@ -724,7 +725,10 @@ export async function dev({
   console.log(`🎨 Meta: ${metaDir}`);
   console.log(`📤 Output: ${outputDir}`);
   console.log('━'.repeat(50));
-  
+
+  // Resolve port (prompt user if occupied)
+  port = await resolvePort(port);
+
   // Create output directory and copy meta files
   await mkdir(outputDir, { recursive: true });
   const publicDir = join(outputDir, 'public');
