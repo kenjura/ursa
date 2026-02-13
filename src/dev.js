@@ -33,7 +33,7 @@ import { extractImageReferences } from "./helper/imageExtractor.js";
 import { recurse } from "./helper/recursive-readdir.js";
 import { isFolderHidden, clearConfigCache } from "./helper/folderConfig.js";
 import { extractSections } from "./helper/sectionExtractor.js";
-import { getTemplates, getMenu, findAllCustomMenus, getCustomMenuForFile, getTransformedMetadata, getFooter, toTitleCase, addTrailingSlash, generateAutoIndexHtmlFromSource } from "./helper/build/index.js";
+import { getTemplates, getMenu, findAllCustomMenus, getCustomMenuForFile, getTransformedMetadata, getFooter, toTitleCase, addTrailingSlash, generateAutoIndexHtmlFromSource, copyMetaAssets } from "./helper/build/index.js";
 import { findCustomMenu, extractMenuFrontmatter, parseCustomMenu, combineAutoAndManualMenu } from "./helper/customMenu.js";
 import { getAndIncrementBuildId } from "./helper/ursaConfig.js";
 import { resolvePort } from "./helper/portUtils.js";
@@ -758,7 +758,7 @@ export async function dev({
   await mkdir(outputDir, { recursive: true });
   const publicDir = join(outputDir, 'public');
   await mkdir(publicDir, { recursive: true });
-  await copyDir(metaDir, publicDir);
+  await copyMetaAssets(metaDir, publicDir);
   
   // Pre-load templates and bundle meta assets (minify without obfuscation for debuggability)
   let rawTemplates = await getTemplates(metaDir);
@@ -1053,7 +1053,7 @@ export async function dev({
     const rawMetaTemplates = await getTemplates(metaDir);
     // Re-copy meta files and re-bundle
     const pubDir = join(outputDir, 'public');
-    await copyDir(metaDir, pubDir);
+    await copyMetaAssets(metaDir, pubDir);
     devState.templates = await bundleMetaTemplateAssets(rawMetaTemplates, metaDir, pubDir, { minify: true, sourcemap: false });
     broadcast('reload', { file: name });
   });

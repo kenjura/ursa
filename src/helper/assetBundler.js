@@ -297,16 +297,20 @@ export async function bundleJs(filePaths, outputPath, { minify = true, minifySyn
  * Bundle all meta template assets. For each template, parse its CSS/JS references,
  * bundle them into single files, and rewrite the template to use the bundles.
  *
- * @param {Object} templates - Map of templateName → templateHtml
+ * @param {Object} templates - Map of templateName → { html, dir } or templateHtml (legacy)
  * @param {string} metaDir - Absolute path to the meta directory
  * @param {string} outputPublicDir - Absolute path to output/public
  * @param {{ minify: boolean, sourcemap: boolean }} options
- * @returns {Promise<Object>} Rewritten templates map
+ * @returns {Promise<Object>} Rewritten templates map (same format as input)
  */
 export async function bundleMetaTemplateAssets(templates, metaDir, outputPublicDir, { minify = true, sourcemap = false } = {}) {
   const rewrittenTemplates = {};
 
-  for (const [templateName, templateHtml] of Object.entries(templates)) {
+  for (const [templateName, templateData] of Object.entries(templates)) {
+    // Support both new { html, dir } format and legacy string format
+    const templateHtml = typeof templateData === 'string' ? templateData : templateData.html;
+    const templateDir = typeof templateData === 'string' ? metaDir : (templateData.dir || metaDir);
+    
     const assets = parseTemplateAssets(templateHtml);
 
     // If the template has no bundleable assets, keep it as-is
@@ -322,10 +326,22 @@ export async function bundleMetaTemplateAssets(templates, metaDir, outputPublicD
       continue;
     }
 
-    // Resolve /public/foo.js → metaDir/foo.js (since meta is copied to output/public/)
+    // Resolve /public/foo.js → templateDir/foo.js (assets are in template folder)
+    // Falls back to metaDir for shared assets
     const resolvePublicPath = (publicPath) => {
       // /public/foo.js → foo.js
       const relativePath = publicPath.replace(/^\/public\//, "");
+      // First try template-specific path
+      const templatePath = resolve(templateDir, relativePath);
+      if (existsSync(templatePath)) {
+        return templatePath;
+      }
+      // Fall back to shared folder
+      const sharedPath = resolve(metaDir, 'shared', relativePath);
+      if (existsSync(sharedPath)) {
+        return sharedPath;
+      }
+      // Legacy fallback: direct meta path
       return resolve(metaDir, relativePath);
     };
 

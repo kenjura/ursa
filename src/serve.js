@@ -10,7 +10,7 @@ import { processImage } from "./helper/imageProcessor.js";
 import { watchModeCache } from "./helper/build/watchCache.js";
 import { dependencyTracker } from "./helper/dependencyTracker.js";
 import { bundleMetaTemplateAssets, clearMetaBundleCache } from "./helper/assetBundler.js";
-import { getTemplates } from "./helper/build/templates.js";
+import { getTemplates, copyMetaAssets } from "./helper/build/templates.js";
 import { WebSocketServer } from "ws";
 import { createServer } from "http";
 import { resolvePort } from "./helper/portUtils.js";
@@ -492,7 +492,7 @@ export async function serve({
         console.log(`🎨 Processing ${metaChanges.length} meta change(s)`);
         const pub = join(outputDir, 'public');
         clearMetaBundleCache();
-        await copyDir(metaDir, pub);
+        await copyMetaAssets(metaDir, pub);
         const freshTemplates = await getTemplates(metaDir);
         const bundledTemplates = await bundleMetaTemplateAssets(freshTemplates, metaDir, pub, { minify: true, sourcemap: false });
         console.log('🔄 Reloaded and re-bundled meta templates');

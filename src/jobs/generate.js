@@ -74,6 +74,7 @@ import {
   getFooter,
   generateAutoIndices,
   generateAutoIndexHtmlFromSource,
+  copyMetaAssets,
 } from "../helper/build/index.js";
 import { getProfiler } from "../helper/build/profiler.js";
 
@@ -295,7 +296,22 @@ export async function generate({
   // create public folder
   const pub = join(output, "public");
   await mkdir(pub, { recursive: true });
-  await copyDir(meta, pub);
+  
+  // Copy meta assets with new template folder structure
+  const { copiedFiles, orphanedFiles } = await copyMetaAssets(meta, pub);
+  
+  // Warn about orphaned files in meta that aren't part of any template
+  if (orphanedFiles.length > 0) {
+    console.warn(`\n⚠️  Warning: Found ${orphanedFiles.length} orphaned file(s) in meta directory:`);
+    console.warn(`   These files are not in meta/templates/ or meta/shared/ and won't be included:`);
+    for (const file of orphanedFiles.slice(0, 10)) {
+      console.warn(`   - ${file}`);
+    }
+    if (orphanedFiles.length > 10) {
+      console.warn(`   ... and ${orphanedFiles.length - 10} more`);
+    }
+    console.warn(`   Move them to meta/templates/{templateName}/ or meta/shared/ to include them.\n`);
+  }
 
   // Bundle meta template assets (CSS + JS) into single files per template
   // This must happen after copying meta to public but before cache-busting
