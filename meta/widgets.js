@@ -1,23 +1,65 @@
 /**
- * Widget system for the top nav right-side panel.
+ * Widget system for the top nav panel.
  * 
  * Widgets appear as icon buttons in the nav bar. Clicking a button toggles a
- * dropdown panel anchored to the right side below the nav. Only one widget can
- * be open at a time.
+ * dropdown panel below the nav. Left-side and right-side widgets have separate
+ * dropdown panels. One widget can be open per side at a time.
  * 
- * Built-in widgets: TOC, Search, Profile
+ * Widget state (open/closed) is persisted in localStorage so it survives page reloads.
+ * 
+ * Built-in widgets:
+ *   Left: Recent Activity (open by default)
+ *   Right: TOC, Search, Profile
  */
 class WidgetManager {
   constructor() {
-    this.dropdown = document.getElementById('widget-dropdown');
+    this.dropdownRight = document.getElementById('widget-dropdown');
+    this.dropdownLeft = document.getElementById('widget-dropdown-left');
     this.buttons = document.querySelectorAll('.widget-button[data-widget]');
-    this.activeWidget = null;
+    this.activeRight = null;
+    this.activeLeft = null;
+
+    // Widgets that default to open on first visit
+    this.defaultOpen = new Set(['recent-activity']);
     
-    if (!this.dropdown || this.buttons.length === 0) return;
+    if (this.buttons.length === 0) return;
     
     this.init();
   }
   
+  /**
+   * Get the side (left/right) for a widget based on its button's data-widget-side attribute
+   */
+  getSide(widgetName) {
+    const btn = document.querySelector(`.widget-button[data-widget="${widgetName}"]`);
+    return btn?.dataset.widgetSide === 'left' ? 'left' : 'right';
+  }
+  
+  /**
+   * Get the dropdown element for a given side
+   */
+  getDropdown(side) {
+    return side === 'left' ? this.dropdownLeft : this.dropdownRight;
+  }
+  
+  /**
+   * Get the active widget name for a given side
+   */
+  getActive(side) {
+    return side === 'left' ? this.activeLeft : this.activeRight;
+  }
+  
+  /**
+   * Set the active widget name for a given side
+   */
+  setActive(side, widgetName) {
+    if (side === 'left') {
+      this.activeLeft = widgetName;
+    } else {
+      this.activeRight = widgetName;
+    }
+  }
+
   init() {
     // Bind button clicks
     this.buttons.forEach(btn => {
@@ -28,32 +70,92 @@ class WidgetManager {
       });
     });
     
+    // Bind close buttons inside widget headers
+    document.querySelectorAll('.widget-close-btn').forEach(closeBtn => {
+      closeBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const widgetContent = closeBtn.closest('.widget-content');
+        if (widgetContent) {
+          const widgetName = widgetContent.dataset.widget;
+          this.close(this.getSide(widgetName));
+        }
+      });
+    });
+    
     // Close on outside click
     document.addEventListener('click', (e) => {
-      if (this.activeWidget && 
-          !this.dropdown.contains(e.target) &&
+      // Close right-side widget if click is outside
+      if (this.activeRight && this.dropdownRight &&
+          !this.dropdownRight.contains(e.target) &&
           !e.target.closest('.widget-button')) {
-        this.close();
+        this.close('right');
+      }
+      // Close left-side widget if click is outside
+      if (this.activeLeft && this.dropdownLeft &&
+          !this.dropdownLeft.contains(e.target) &&
+          !e.target.closest('.widget-button')) {
+        this.close('left');
       }
     });
     
     // Close on Escape
     document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && this.activeWidget) {
-        this.close();
+      if (e.key === 'Escape') {
+        if (this.activeRight) this.close('right');
+        if (this.activeLeft) this.close('left');
       }
     });
 
     // Initialize search widget content
     this.initSearchWidget();
+    
+    // Initialize recent activity widget
+    this.initRecentActivityWidget();
+
+    // Restore saved widget states from localStorage
+    this.restoreState();
   }
   
   /**
-   * Toggle a widget open/closed. If a different widget is open, switch to the new one.
+   * Save widget open/closed state to localStorage
+   */
+  saveState(widgetName, isOpen) {
+    try {
+      const key = `ursa-widget-${widgetName}`;
+      localStorage.setItem(key, isOpen ? 'open' : 'closed');
+    } catch (e) { /* localStorage not available */ }
+  }
+  
+  /**
+   * Restore widget states from localStorage. 
+   * For widgets with no saved state, use their default (defaultOpen set).
+   */
+  restoreState() {
+    // Gather all widget names
+    const widgetNames = new Set();
+    this.buttons.forEach(btn => widgetNames.add(btn.dataset.widget));
+    
+    for (const widgetName of widgetNames) {
+      const key = `ursa-widget-${widgetName}`;
+      let saved;
+      try {
+        saved = localStorage.getItem(key);
+      } catch (e) { /* localStorage not available */ }
+      
+      const shouldOpen = saved === 'open' || (saved === null && this.defaultOpen.has(widgetName));
+      if (shouldOpen) {
+        this.open(widgetName);
+      }
+    }
+  }
+  
+  /**
+   * Toggle a widget open/closed.
    */
   toggle(widgetName) {
-    if (this.activeWidget === widgetName) {
-      this.close();
+    const side = this.getSide(widgetName);
+    if (this.getActive(side) === widgetName) {
+      this.close(side);
       return;
     }
     
@@ -64,54 +166,80 @@ class WidgetManager {
    * Open a specific widget panel.
    */
   open(widgetName) {
-    // Close any open widget first
-    if (this.activeWidget) {
-      this.deactivateContent(this.activeWidget);
+    const side = this.getSide(widgetName);
+    const dropdown = this.getDropdown(side);
+    if (!dropdown) return;
+    
+    // Close any open widget on the same side first
+    const currentActive = this.getActive(side);
+    if (currentActive) {
+      this.deactivateContent(currentActive);
+      // Save the closed widget's state
+      this.saveState(currentActive, false);
     }
     
-    this.activeWidget = widgetName;
+    this.setActive(side, widgetName);
     
     // Show dropdown
-    this.dropdown.classList.remove('hidden');
-    this.dropdown.dataset.activeWidget = widgetName;
+    dropdown.classList.remove('hidden');
+    dropdown.dataset.activeWidget = widgetName;
     
     // Show the correct content panel
     this.activateContent(widgetName);
     
-    // Update button states
+    // Update button states (only for this side's buttons)
     this.buttons.forEach(btn => {
-      btn.classList.toggle('active', btn.dataset.widget === widgetName);
+      if (this.getSide(btn.dataset.widget) === side) {
+        btn.classList.toggle('active', btn.dataset.widget === widgetName);
+      }
     });
 
+    // Save state
+    this.saveState(widgetName, true);
+
     // Fire event for other scripts to listen to
-    document.dispatchEvent(new CustomEvent('widget-opened', { detail: { widget: widgetName } }));
+    document.dispatchEvent(new CustomEvent('widget-opened', { detail: { widget: widgetName, side } }));
   }
   
   /**
-   * Close the currently open widget.
+   * Close the currently open widget on a given side.
    */
-  close() {
-    if (!this.activeWidget) return;
+  close(side) {
+    const active = this.getActive(side);
+    if (!active) return;
     
-    const closing = this.activeWidget;
-    this.deactivateContent(closing);
+    const dropdown = this.getDropdown(side);
+    this.deactivateContent(active);
     
-    this.activeWidget = null;
-    this.dropdown.classList.add('hidden');
-    delete this.dropdown.dataset.activeWidget;
+    // Save state
+    this.saveState(active, false);
     
-    // Update button states
-    this.buttons.forEach(btn => btn.classList.remove('active'));
+    this.setActive(side, null);
+    if (dropdown) {
+      dropdown.classList.add('hidden');
+      delete dropdown.dataset.activeWidget;
+    }
+    
+    // Update button states for this side
+    this.buttons.forEach(btn => {
+      if (this.getSide(btn.dataset.widget) === side) {
+        btn.classList.remove('active');
+      }
+    });
     
     // Fire event
-    document.dispatchEvent(new CustomEvent('widget-closed', { detail: { widget: closing } }));
+    document.dispatchEvent(new CustomEvent('widget-closed', { detail: { widget: active, side } }));
   }
   
   /**
    * Show a widget's content panel.
    */
   activateContent(widgetName) {
-    const content = this.dropdown.querySelector(`.widget-content[data-widget="${widgetName}"]`);
+    const side = this.getSide(widgetName);
+    const dropdown = this.getDropdown(side);
+    if (!dropdown) return;
+
+    const content = dropdown.querySelector(`.widget-content[data-widget="${widgetName}"]`);
     if (content) {
       content.classList.add('active');
     }
@@ -126,7 +254,11 @@ class WidgetManager {
    * Hide a widget's content panel.
    */
   deactivateContent(widgetName) {
-    const content = this.dropdown.querySelector(`.widget-content[data-widget="${widgetName}"]`);
+    const side = this.getSide(widgetName);
+    const dropdown = this.getDropdown(side);
+    if (!dropdown) return;
+
+    const content = dropdown.querySelector(`.widget-content[data-widget="${widgetName}"]`);
     if (content) {
       content.classList.remove('active');
     }
@@ -367,6 +499,73 @@ class WidgetManager {
    */
   deactivateSearch() {
     // Keep the search query so user can re-open and see results
+  }
+
+  /**
+   * Initialize the Recent Activity widget — fetch data and render the list.
+   */
+  initRecentActivityWidget() {
+    const container = document.querySelector('.recent-activity-list');
+    if (!container) return;
+
+    container.innerHTML = '<div class="recent-activity-loading">Loading...</div>';
+
+    fetch('/public/recent-activity.json')
+      .then(res => {
+        if (!res.ok) throw new Error('Not found');
+        return res.json();
+      })
+      .then(items => {
+        container.innerHTML = '';
+        if (!items || items.length === 0) {
+          container.innerHTML = '<div class="recent-activity-empty">No recent activity</div>';
+          return;
+        }
+        const ul = document.createElement('ul');
+        ul.className = 'recent-activity-items';
+        for (const item of items) {
+          const li = document.createElement('li');
+          li.className = 'recent-activity-item';
+          const a = document.createElement('a');
+          a.href = item.url;
+          a.textContent = item.title || 'Untitled';
+          a.className = 'recent-activity-link';
+          const time = document.createElement('span');
+          time.className = 'recent-activity-time';
+          time.textContent = this.formatRelativeTime(item.mtime);
+          time.title = new Date(item.mtime).toLocaleString();
+          li.appendChild(a);
+          li.appendChild(time);
+          ul.appendChild(li);
+        }
+        container.appendChild(ul);
+      })
+      .catch(() => {
+        container.innerHTML = '<div class="recent-activity-empty">Recent activity unavailable</div>';
+      });
+  }
+
+  /**
+   * Format a timestamp into a human-readable relative time string.
+   */
+  formatRelativeTime(mtimeMs) {
+    const now = Date.now();
+    const diff = now - mtimeMs;
+    const seconds = Math.floor(diff / 1000);
+    const minutes = Math.floor(seconds / 60);
+    const hours = Math.floor(minutes / 60);
+    const days = Math.floor(hours / 24);
+    const weeks = Math.floor(days / 7);
+    const months = Math.floor(days / 30);
+    const years = Math.floor(days / 365);
+
+    if (seconds < 60) return 'just now';
+    if (minutes < 60) return `${minutes}m ago`;
+    if (hours < 24) return `${hours}h ago`;
+    if (days < 7) return `${days}d ago`;
+    if (weeks < 5) return `${weeks}w ago`;
+    if (months < 12) return `${months}mo ago`;
+    return `${years}y ago`;
   }
 }
 

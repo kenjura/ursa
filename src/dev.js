@@ -20,7 +20,7 @@ const { readFile, readdir, stat, mkdir } = promises;
 // Import helper modules
 import { renderFileAsync } from "./helper/fileRenderer.js";
 import { findStyleCss } from "./helper/findStyleCss.js";
-import { findScriptJs } from "./helper/findScriptJs.js";
+import { findAllScriptJs } from "./helper/findScriptJs.js";
 import { extractMetadata, getAutoIndexConfig, isMetadataOnly } from "./helper/metadataExtractor.js";
 import { injectFrontmatterTable } from "./helper/frontmatterTable.js";
 import { buildValidPaths, markInactiveLinks, resolveRelativeUrls } from "./helper/linkValidator.js";
@@ -58,6 +58,7 @@ const devState = {
   footer: null,
   fullTextIndex: null,
   searchIndex: null,
+  recentActivity: null,
   
   // Path → nearest menu.md mapping
   menuPathMap: new Map(),
@@ -282,19 +283,19 @@ async function findNearestStyle(dirPath) {
 }
 
 /**
- * Find the nearest script.js
+ * Find all script.js files from docroot to dirPath
  */
-async function findNearestScript(dirPath) {
-  const { scriptPathMap } = devState;
+async function findAllScripts(dirPath) {
+  const { scriptPathMap, source } = devState;
   
   // Check cache first
   if (scriptPathMap.has(dirPath)) {
     return scriptPathMap.get(dirPath);
   }
   
-  const scriptPath = await findScriptJs(dirPath);
-  scriptPathMap.set(dirPath, scriptPath);
-  return scriptPath;
+  const scriptPaths = await findAllScriptJs(dirPath, source);
+  scriptPathMap.set(dirPath, scriptPaths);
+  return scriptPaths;
 }
 
 /**
@@ -457,15 +458,17 @@ async function wrapInTemplate(body, title, fileMeta, urlPath, sourcePath) {
     // Ignore CSS errors
   }
   
-  // Find nearest script.js and inline its contents
+  // Find all script.js files from docroot to current dir and inline their contents
   let customScript = "";
   try {
     const scriptDir = sourcePath ? dirname(sourcePath) : source;
-    const scriptPath = await findNearestScript(scriptDir);
-    if (scriptPath) {
+    const scriptPaths = await findAllScripts(scriptDir);
+    const scriptTags = [];
+    for (const scriptPath of scriptPaths) {
       const scriptContent = await readFile(scriptPath, 'utf8');
-      customScript = `<script>\n${scriptContent}\n</script>`;
+      scriptTags.push(`<script>\n${scriptContent}\n</script>`);
     }
+    customScript = scriptTags.join('\n');
   } catch (e) {
     // Ignore script errors
   }
@@ -635,6 +638,7 @@ async function buildBackgroundCaches() {
     
     const searchIndex = [];
     const fullTextDocs = [];
+    const recentActivity = [];
     
     for (const article of allArticles) {
       try {
@@ -657,12 +661,26 @@ async function buildBackgroundCaches() {
           title,
           content
         });
+
+        // Collect mtime for recent activity
+        try {
+          const articleStat = await stat(article);
+          recentActivity.push({
+            title,
+            url: relativePath.startsWith('/') ? relativePath : '/' + relativePath,
+            mtime: articleStat.mtimeMs
+          });
+        } catch (e) {}
       } catch (e) {}
     }
     
     // Build full-text index
     devState.fullTextIndex = buildFullTextIndex(fullTextDocs);
     devState.searchIndex = searchIndex;
+    
+    // Build recent activity (top 10 by mtime)
+    recentActivity.sort((a, b) => b.mtime - a.mtime);
+    devState.recentActivity = recentActivity.slice(0, 10);
     
     // Write search index files
     const publicDir = join(output, 'public');
@@ -671,6 +689,7 @@ async function buildBackgroundCaches() {
     await outputFile(join(publicDir, 'search-index.json'), JSON.stringify(searchIndex));
     await outputFile(join(publicDir, 'fulltext-index.json'), JSON.stringify(devState.fullTextIndex));
     await outputFile(join(publicDir, 'menu-data.json'), JSON.stringify(devState.menuData));
+    await outputFile(join(publicDir, 'recent-activity.json'), JSON.stringify(devState.recentActivity));
     
     devState.searchReady = true;
     console.log('✅ Search index ready');
@@ -954,6 +973,33 @@ export async function dev({
         }
       }
       console.log(`✅ MDX caches cleared for component change: ${name}`);
+    }
+    
+    // Update recent activity for article changes
+    const isArticleChange = name && /\.(md|mdx|txt|yml)$/.test(name);
+    if (isArticleChange && devState.recentActivity) {
+      try {
+        const articleStat = await stat(name);
+        const ext = extname(name);
+        const base = basename(name, ext);
+        const relativePath = name.replace(sourceDir + '/', '').replace(/\.(md|mdx|txt|yml)$/, '.html');
+        const titleBase = (base === 'index' || base === 'home') ? basename(dirname(name)) : base;
+        const title = toTitleCase(titleBase || base);
+        const url = relativePath.startsWith('/') ? relativePath : '/' + relativePath;
+        
+        // Remove old entry for this URL, add updated one
+        let activity = devState.recentActivity.filter(r => r.url !== url);
+        activity.push({ title, url, mtime: articleStat.mtimeMs });
+        activity.sort((a, b) => b.mtime - a.mtime);
+        devState.recentActivity = activity.slice(0, 10);
+        
+        // Write updated file
+        const publicDir = join(devState.output, 'public');
+        await outputFile(join(publicDir, 'recent-activity.json'), JSON.stringify(devState.recentActivity));
+        console.log(`✅ Recent activity updated for ${name}`);
+      } catch (e) {
+        // ignore
+      }
     }
     
     // Broadcast reload

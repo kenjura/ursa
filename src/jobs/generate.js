@@ -27,7 +27,7 @@ import { getAndIncrementBuildId } from "../helper/ursaConfig.js";
 import { extractSections } from "../helper/sectionExtractor.js";
 import { renderFile, renderFileAsync, terminateParserPool } from "../helper/fileRenderer.js";
 import { findStyleCss } from "../helper/findStyleCss.js";
-import { findScriptJs } from "../helper/findScriptJs.js";
+import { findScriptJs, findAllScriptJs } from "../helper/findScriptJs.js";
 import { buildFullTextIndex, buildIncrementalIndex, loadIndexCache, saveIndexCache } from "../helper/fullTextIndex.js";
 import { copy as copyDir, emptyDir, outputFile } from "fs-extra";
 import { basename, dirname, extname, join, parse, resolve } from "path";
@@ -313,6 +313,8 @@ export async function generate({
   const searchIndex = [];
   // Full-text index: collect documents for word-to-document mapping
   const fullTextDocs = [];
+  // Recent activity: collect {title, url, mtime} for all articles, keep top 10 by mtime
+  const recentActivity = [];
   // Track paths of documents that were regenerated (for incremental index updates)
   const changedPaths = new Set();
   // Directory index cache: only stores minimal data needed for directory indices
@@ -481,6 +483,18 @@ export async function generate({
         title: title,
         content: rawBody
       });
+
+      // Collect mtime for recent activity tracking
+      try {
+        const fileStat = await stat(file);
+        recentActivity.push({
+          title: title,
+          url: searchUrl,
+          mtime: fileStat.mtimeMs
+        });
+      } catch (e) {
+        // ignore stat errors
+      }
       
       // Check if a corresponding .html file already exists in source directory
       const outputHtmlRelative = relativePath.startsWith('/') ? relativePath.slice(1) : relativePath;
@@ -614,21 +628,22 @@ export async function generate({
         console.error(e);
       }
 
-      // Find nearest script.js or _script.js up the tree and inline its contents
+      // Find all script.js or _script.js files from docroot to current dir and inline their contents
       // Use cache to avoid repeated filesystem walks for same directory
       let customScript = "";
       try {
         const dirKey = (dir === "/" || dir === "") ? _source : resolve(_source, dir);
-        let scriptPath = scriptPathCache.get(dirKey);
-        if (scriptPath === undefined) {
-          scriptPath = await findScriptJs(dirKey);
-          scriptPathCache.set(dirKey, scriptPath); // Cache null results too
+        let scriptPaths = scriptPathCache.get(dirKey);
+        if (scriptPaths === undefined) {
+          scriptPaths = await findAllScriptJs(dirKey, _source);
+          scriptPathCache.set(dirKey, scriptPaths); // Cache empty arrays too
         }
-        if (scriptPath) {
+        const scriptTags = [];
+        for (const scriptPath of scriptPaths) {
           const scriptContent = await readFile(scriptPath, 'utf8');
-          // Inline the script content in a script tag
-          customScript = `<script>\n${scriptContent}\n</script>`;
+          scriptTags.push(`<script>\n${scriptContent}\n</script>`);
         }
+        customScript = scriptTags.join('\n');
       } catch (e) {
         // ignore
         console.error(e);
@@ -806,6 +821,17 @@ export async function generate({
     progress.done('Search index', `${result.entries} entries, ${result.words} words [${progress.stopTimer('Search index')}]`);
     profiler.endPhase('Write search index');
   }
+
+  // Phase: Write recent activity data
+  profiler.startPhase('Write recent activity');
+  progress.startTimer('Recent activity');
+  // Sort by mtime descending, keep top 10
+  recentActivity.sort((a, b) => b.mtime - a.mtime);
+  const top10 = recentActivity.slice(0, 10);
+  const recentActivityPath = join(output, 'public', 'recent-activity.json');
+  await outputFile(recentActivityPath, JSON.stringify(top10));
+  progress.done('Recent activity', `${top10.length} entries [${progress.stopTimer('Recent activity')}]`);
+  profiler.endPhase('Write recent activity');
 
   // Phase: Write menu data
   profiler.startPhase('Write menu data');
@@ -1209,15 +1235,17 @@ export async function regenerateSingleFile(changedFile, {
       return { success: false, message: `Template not found: ${requestedTemplateName || DEFAULT_TEMPLATE_NAME}` };
     }
     
-    // Find nearest script.js or _script.js and inline its contents
+    // Find all script.js or _script.js files from docroot to current dir and inline their contents
     let customScript = "";
     try {
       const dirKey = (dir === "/" || dir === "") ? _source : resolve(_source, dir);
-      const scriptPath = await findScriptJs(dirKey);
-      if (scriptPath) {
+      const scriptPaths = await findAllScriptJs(dirKey, _source);
+      const scriptTags = [];
+      for (const scriptPath of scriptPaths) {
         const scriptContent = await readFile(scriptPath, 'utf8');
-        customScript = `<script>\n${scriptContent}\n</script>`;
+        scriptTags.push(`<script>\n${scriptContent}\n</script>`);
       }
+      customScript = scriptTags.join('\n');
     } catch (e) {
       // ignore
     }
@@ -1295,6 +1323,27 @@ export async function regenerateSingleFile(changedFile, {
     
     // Update hash cache
     updateHash(changedFile, rawBody, hashCache);
+    
+    // Update recent-activity.json with this file's new mtime
+    try {
+      const fileStat = await stat(changedFile);
+      const recentActivityPath = join(output, 'public', 'recent-activity.json');
+      let recentActivity = [];
+      try {
+        const existing = await readFile(recentActivityPath, 'utf8');
+        recentActivity = JSON.parse(existing);
+      } catch (e) { /* no existing file, start fresh */ }
+      // Remove old entry for this URL if present
+      recentActivity = recentActivity.filter(r => r.url !== url);
+      // Add updated entry
+      recentActivity.push({ title, url, mtime: fileStat.mtimeMs });
+      // Sort by mtime descending, keep top 10
+      recentActivity.sort((a, b) => b.mtime - a.mtime);
+      recentActivity = recentActivity.slice(0, 10);
+      await outputFile(recentActivityPath, JSON.stringify(recentActivity));
+    } catch (e) {
+      // ignore recent activity update errors
+    }
     
     const elapsed = Date.now() - startTime;
     const shortFile = changedFile.replace(source, '');

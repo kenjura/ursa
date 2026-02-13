@@ -1,3 +1,70 @@
+# 0.77.0 (TODO)
+
+QOL:
+- When 'serve' encounters an occupied port 8080, prompt the user to find an available port instead of just exiting with an error. Will check open ports and find the closest port to 8080, then ask the user if they want to use it.
+
+Static assets revamp:
+- Meta
+  - All scripts and stylesheets referenced by a template should be bundled together into a single CSS file and a single JS file per template. Use esbuild or similar for bundling and minification. This will reduce the number of requests and ensure that all template assets are loaded together.
+- Documents
+  - style.css and script.js files should be external
+  - in serve mode, a document can have multiple style.css and script.js from multiple levels; this should be separate tags so individual ones can be invalidated
+  - in generate mode, these should be bundled together into a single CSS file and a single JS file per folder
+    - why folder? well, /foo may have style.css and script.js, and /foo/bar may have its own style.css and script.js. Every document in foo/bar includes both scripts and both stylesheets, but documents in foo only include the foo ones.
+    - it is true that foo.bundle.js and foo-bar.bundle.js will duplicate code (foo-bar is a superset of foo), but the point is that every page load has the minimum number of requests (1 CSS and 1 JS)
+  - future optimization: bundle document and meta scripts/styles together. This sounds complicated compared to the expected return
+- Bundling logic:
+  - In serve mode, minification without obfuscation is fine, as serve is often used to debug stylesheets and scripts.
+  - In generate mode, we can do full bundling and minification for optimal performance. Map files can be generated for debugging if needed.
+
+Regeneration revamp:
+- Existing logic:
+  - On first generation, save a cache of document output given some sort of hash of the source file and metadata (e.g. mtime, size, etc.)
+    - All static files (meta and document) should include a datetime or hash-based cache-buster in their query strings / filenames, so they can be invalidated as needed
+  - On subsequent generations, if the source file's hash is unchanged, skip regeneration and reuse the existing output file. (Note: this doesn't handle cases where the statis files changed and the document didn't; see below)
+  - Push a notification to the client when a file is regenerated, so the client can update the page if it's currently being viewed
+- New logic is as above, plus: (some of this is partially complete, but these are the complete requirements)
+  - When any file being watched is changed, determine the list of affected files. For instance:
+    - A normal document will obviously invalidate that exact document.
+    - Special Ursa static files (menu.md, style.css, and script.js) are inherited by all documents in the current folder and all subfolders, so they will invalidate all documents in the current folder and all subfolders.
+    - Meta static files:
+      - A template file in meta will invalidate all documents that use that template.
+      - A stylesheet or script file in meta will invalidate all documents that inherit from that meta (which is probably everything).
+    - All other static files in the docroot (assuming they're linked at all by any document) should be invalidated thus:
+      - Calculate a new hash for the static file
+      - Find all documents that reference that static file
+      - Regenerate the html (even if the source md/mdx/txt file is unchanged) for those documents to update the cache-busting query string for the static file reference
+- This should catch all the various edge cases that previously required restarting the server or doing a full regeneration.
+
+
+Top Menu improvements:
+- When a submenu overflows the available viewport height, it should become scrollable instead of overflowing off the screen. This can be achieved with CSS by setting a max-height and overflow-y: auto on the submenu container.
+    
+New Widgets:
+- Suggested Content
+  - A new left-side widget that shows a list of suggested content based on the current page. Categories of suggested content:
+    - Content you frequently view (uses localStorage to track page views and show most viewed content)
+    - Future ideas:
+      - LLM-guided suggestions based on frequently viewed content, suggested related documents you haven't viewed yet, etc.
+
+Bugs:
+- [ ] When using menu.md with auto-generation, the top menu's Home href is "//index.html" instead of "/index.html". On localhost, this ends up working fine, but on https://realdomain.com, this loads https://index.html which obviously doesn't work. The current logic seems to prefer absolute URLs, so in this case, the url for home should be "/index.html" (not double slash).
+- [ ] Site style.css is not present on auto-generated index pages
+  - Regeneration issues:
+    - Create a power, that power page now exists. But powers.json doesn't have it.
+
+# 0.76.0
+2026-02-11
+
+- **New Feature: Recent Activity widget.** A new topbar widget shows the 10 most recently modified documents in the docroot, sorted by modification date (most recent first). The widget appears on the left side of the top nav (to the right of the home icon) and is open by default.
+  - Recent activity data is collected during the generate phase by stat-ing each article file, then written to `public/recent-activity.json`.
+  - In serve/dev mode, the recent activity list is built during background cache initialization and updated live when article files are changed.
+  - The single-file regeneration path (`regenerateSingleFile`) also updates the recent activity JSON incrementally.
+- **Widget system improvements:**
+  - All widgets now have a close (✕) button in the upper-right corner of their panel header. Clicking it closes the widget and deselects the corresponding icon in the top bar.
+  - Widget open/closed state is now persisted in localStorage. Widgets that were open will remain open after a page reload, and widgets that were closed will remain closed. Widgets with no saved state fall back to their default (Recent Activity defaults to open; others default to closed).
+  - The widget system now supports both left-side and right-side widget panels, which operate independently (one widget per side can be open at a time).
+
 # 0.75.0
 2026-02-10
 

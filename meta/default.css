@@ -72,10 +72,17 @@ nav#nav-global {
     background: none;
     border: none;
     cursor: pointer;
-    justify-self: start;
   }
   button.menu-button:hover {
     opacity: 0.7;
+  }
+
+  /* Left controls: menu button + left-side widgets */
+  .nav-left-controls {
+    display: flex;
+    align-items: center;
+    justify-self: start;
+    gap: 0;
   }
 
   /* Center container for search and top menu */
@@ -128,7 +135,7 @@ nav#nav-global {
 
 /* ==========================================
    WIDGET SYSTEM STYLES
-   Right-side nav widgets (TOC, Search, Profile)
+   Nav widgets (TOC, Search, Profile, Recent Activity)
    ========================================== */
 
 /* Widget bar in the nav right column */
@@ -174,7 +181,7 @@ nav#nav-global .nav-right-controls {
   pointer-events: none;
 }
 
-/* Widget dropdown panel */
+/* Widget dropdown panel (right-side, default) */
 .widget-dropdown {
   position: fixed;
   top: var(--global-nav-height);
@@ -190,8 +197,52 @@ nav#nav-global .nav-right-controls {
   transition: opacity 0.15s ease;
 }
 
+/* Widget dropdown panel (left-side) */
+.widget-dropdown.widget-dropdown-left {
+  right: auto;
+  left: 0;
+  border-left: none;
+  border-right: 1px solid var(--widget-border);
+  box-shadow: 2px 4px 12px rgba(0, 0, 0, 0.2);
+}
+
 .widget-dropdown.hidden {
   display: none;
+}
+
+/* Widget header with title and close button */
+.widget-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--widget-border);
+}
+
+.widget-header-title {
+  font-weight: 600;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  opacity: 0.7;
+}
+
+.widget-close-btn {
+  background: none;
+  border: none;
+  color: var(--text-color);
+  font-size: 1rem;
+  cursor: pointer;
+  opacity: 0.5;
+  padding: 4px 8px;
+  line-height: 1;
+  border-radius: 3px;
+  transition: opacity 0.15s ease, background-color 0.15s ease;
+}
+
+.widget-close-btn:hover {
+  opacity: 1;
+  background-color: rgba(128, 128, 128, 0.2);
 }
 
 /* Widget content panels — only the active one is visible */
@@ -372,6 +423,68 @@ nav#nav-global .nav-right-controls {
   font-size: 0.75rem;
   opacity: 0.5;
   font-style: italic;
+}
+
+/* --- Recent Activity Widget --- */
+.recent-activity-list {
+  padding: 0;
+}
+
+.recent-activity-loading,
+.recent-activity-empty {
+  padding: 1.5rem 1rem;
+  text-align: center;
+  color: var(--text-color);
+  opacity: 0.6;
+  font-style: italic;
+  font-size: 0.85rem;
+}
+
+.recent-activity-items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.recent-activity-item {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--widget-border);
+  transition: background-color 0.15s ease;
+}
+
+.recent-activity-item:last-child {
+  border-bottom: none;
+}
+
+.recent-activity-item:hover {
+  background-color: rgba(128, 128, 128, 0.1);
+}
+
+.recent-activity-link {
+  color: var(--text-color);
+  text-decoration: none;
+  font-size: 0.9rem;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recent-activity-link:hover {
+  text-decoration: underline;
+}
+
+.recent-activity-time {
+  font-size: 0.75rem;
+  color: var(--text-color);
+  opacity: 0.5;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 /* Search functionality styles */

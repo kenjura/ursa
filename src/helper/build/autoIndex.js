@@ -4,7 +4,7 @@ import { readdir, readFile } from "fs/promises";
 import { basename, dirname, extname, join } from "path";
 import { outputFile } from "fs-extra";
 import { findStyleCss } from "../findStyleCss.js";
-import { findScriptJs } from "../findScriptJs.js";
+import { findAllScriptJs } from "../findScriptJs.js";
 import { toTitleCase } from "./titleCase.js";
 import { addTimestampToHtmlStaticRefs } from "./cacheBust.js";
 import { isMetadataOnly, extractMetadata, getAutoIndexConfig } from "../metadataExtractor.js";
@@ -370,15 +370,17 @@ export async function generateAutoIndices(output, directories, source, templates
           // ignore CSS lookup errors
         }
         
-        // Find nearest script.js for this directory
+        // Find all script.js files from docroot to this directory
         let customScript = "";
         try {
           const sourceDir = dir.replace(outputNorm, sourceNorm);
-          const scriptPath = await findScriptJs(sourceDir);
-          if (scriptPath) {
+          const scriptPaths = await findAllScriptJs(sourceDir, sourceNorm);
+          const scriptTags = [];
+          for (const scriptPath of scriptPaths) {
             const scriptContent = await readFile(scriptPath, 'utf8');
-            customScript = `<script>\n${scriptContent}\n</script>`;
+            scriptTags.push(`<script>\n${scriptContent}\n</script>`);
           }
+          customScript = scriptTags.join('\n');
         } catch (e) {
           // ignore script lookup errors
         }

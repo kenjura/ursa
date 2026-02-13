@@ -1,3 +1,14 @@
+# 0.76.0 - serve resilience
+
+Issues:
+- When 8081 is in use, 'ursa serve' fails silently, serving files with unfinished generation.
+- Many use cases require --clean option or even rm -rf output/ before serve. In theory, the cache:
+  - Should invalidate every document when the document is changed
+  - Should invalidate every document affected by a changed style.css or menu.md in that file's "catchment area"
+  - Should invalidate every document using a template when that template's html, js, or css is changed in meta (especially the default template)
+  - Should invalidate any document affected by an add/edit/delete event on a static file (examples: images, directly referenced static files other than nearest style.css)
+  - Should invalidate the entire cache if ursa's version or hash changes, either in real time, or if the cache has a different version and/or hash from the current one that is running
+
 # 0.75.0 - navigation overhaul
 
 ## Top Menu
