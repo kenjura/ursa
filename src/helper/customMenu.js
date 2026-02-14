@@ -267,11 +267,13 @@ export function autoGenerateMenuFromFolder(folderPath, sourceRoot, depth = 10, i
     const topLevelFolders = processedItems.filter(item => item.hasChildren);
     const topLevelFiles = processedItems.filter(item => !item.hasChildren);
     
-    const relativePath = '/' + relative(sourceRoot, folderPath).replace(/\\/g, '/');
+    const relPath = relative(sourceRoot, folderPath).replace(/\\/g, '/');
+    // Avoid double slash: if relPath is empty (root), href is '/index.html', otherwise '/relPath/index.html'
+    const homeHref = relPath ? `/${relPath}/index.html` : '/index.html';
     const homeItem = {
       label: 'Home',
       path: 'home',
-      href: relativePath + '/index.html',
+      href: homeHref,
       hasChildren: topLevelFiles.length > 0,
       icon: `<span class="menu-icon">${HOME_ICON}</span>`,
       children: topLevelFiles,

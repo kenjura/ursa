@@ -516,6 +516,67 @@ nav#nav-global .nav-right-controls {
   flex-shrink: 0;
 }
 
+/* Suggested Content Widget Styles */
+.suggested-content-list {
+  padding: 0;
+}
+
+.suggested-empty {
+  padding: 1rem 0.75rem;
+  text-align: center;
+  color: var(--text-color);
+  opacity: 0.6;
+  font-style: italic;
+  font-size: 0.85rem;
+}
+
+.suggested-items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.suggested-item {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--widget-border);
+  transition: background-color 0.15s ease;
+}
+
+.suggested-item:last-child {
+  border-bottom: none;
+}
+
+.suggested-item:hover {
+  background-color: rgba(128, 128, 128, 0.1);
+}
+
+.suggested-link {
+  color: var(--text-color);
+  text-decoration: none;
+  font-size: 0.9rem;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.suggested-link:hover {
+  text-decoration: underline;
+}
+
+.suggested-meta {
+  font-size: 0.75rem;
+  color: var(--text-color);
+  opacity: 0.5;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
 /* Search functionality styles */
 .search-results {
   position: fixed;

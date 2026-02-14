@@ -16,6 +16,9 @@
                 <button class="widget-button" data-widget="recent-activity" data-widget-side="left" aria-label="Recent Activity" title="Recent Activity">
                     <span class="widget-icon">🕒</span>
                 </button>
+                <button class="widget-button" data-widget="suggested" data-widget-side="left" aria-label="Suggested Content" title="Suggested Content">
+                    <span class="widget-icon">⭐</span>
+                </button>
             </div>
             <div id="ursa-update-indicator" class="ursa-update-indicator" style="display:none;" title="Updating...">
                 <div class="ursa-spinner"></div>
@@ -55,6 +58,15 @@
                 <button class="widget-close-btn" aria-label="Close">✕</button>
             </div>
             <div class="recent-activity-list">
+                <!-- Populated by JavaScript -->
+            </div>
+        </div>
+        <div id="widget-content-suggested" class="widget-content" data-widget="suggested">
+            <div class="widget-header">
+                <span class="widget-header-title">Suggested</span>
+                <button class="widget-close-btn" aria-label="Close">✕</button>
+            </div>
+            <div class="suggested-content-list">
                 <!-- Populated by JavaScript -->
             </div>
         </div>

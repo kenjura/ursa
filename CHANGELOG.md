@@ -65,10 +65,10 @@ New Widgets:
       - LLM-guided suggestions based on frequently viewed content, suggested related documents you haven't viewed yet, etc.
 
 Bugs:
-- [ ] When using menu.md with auto-generation, the top menu's Home href is "//index.html" instead of "/index.html". On localhost, this ends up working fine, but on https://realdomain.com, this loads https://index.html which obviously doesn't work. The current logic seems to prefer absolute URLs, so in this case, the url for home should be "/index.html" (not double slash).
-- [ ] Site style.css is not present on auto-generated index pages
-  - Regeneration issues:
-    - Create a power, that power page now exists. But powers.json doesn't have it.
+- [x] When using menu.md with auto-generation, the top menu's Home href is "//index.html" instead of "/index.html". On localhost, this ends up working fine, but on https://realdomain.com, this loads https://index.html which obviously doesn't work. The current logic seems to prefer absolute URLs, so in this case, the url for home should be "/index.html" (not double slash).
+- [x] Site style.css is not present on auto-generated index pages
+- Regeneration issues:
+  - Create a power, that power page now exists. But powers.json doesn't have it.
 
 # 0.76.0
 2026-02-11

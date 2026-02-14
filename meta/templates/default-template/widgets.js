@@ -111,6 +111,10 @@ class WidgetManager {
     
     // Initialize recent activity widget
     this.initRecentActivityWidget();
+    
+    // Track current page view and initialize suggested content widget
+    this.trackPageView();
+    this.initSuggestedWidget();
 
     // Restore saved widget states from localStorage
     this.restoreState();
@@ -566,6 +570,128 @@ class WidgetManager {
     if (weeks < 5) return `${weeks}w ago`;
     if (months < 12) return `${months}mo ago`;
     return `${years}y ago`;
+  }
+
+  /**
+   * Track current page view in localStorage.
+   * Stores a map of URL → { count, lastVisit, title }
+   */
+  trackPageView() {
+    const url = window.location.pathname;
+    // Skip tracking for index/home pages to keep suggestions more focused
+    if (url === '/' || url === '/index.html') return;
+    
+    const STORAGE_KEY = 'ursa-page-views';
+    const MAX_TRACKED_PAGES = 100; // Limit storage size
+    
+    try {
+      let pageViews = {};
+      const stored = localStorage.getItem(STORAGE_KEY);
+      if (stored) {
+        pageViews = JSON.parse(stored);
+      }
+      
+      // Get page title from the document
+      const title = document.title || url;
+      
+      // Update or create entry for this page
+      if (pageViews[url]) {
+        pageViews[url].count += 1;
+        pageViews[url].lastVisit = Date.now();
+        pageViews[url].title = title;
+      } else {
+        pageViews[url] = {
+          count: 1,
+          lastVisit: Date.now(),
+          title: title
+        };
+      }
+      
+      // Prune oldest entries if we exceed the limit
+      const entries = Object.entries(pageViews);
+      if (entries.length > MAX_TRACKED_PAGES) {
+        // Sort by lastVisit and keep only the most recent
+        entries.sort((a, b) => b[1].lastVisit - a[1].lastVisit);
+        pageViews = Object.fromEntries(entries.slice(0, MAX_TRACKED_PAGES));
+      }
+      
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(pageViews));
+    } catch (e) {
+      // localStorage not available or quota exceeded
+    }
+  }
+
+  /**
+   * Initialize the Suggested Content widget.
+   * Shows frequently viewed pages based on localStorage tracking.
+   */
+  initSuggestedWidget() {
+    const container = document.querySelector('.suggested-content-list');
+    if (!container) return;
+
+    const STORAGE_KEY = 'ursa-page-views';
+    const MAX_SUGGESTIONS = 10;
+    const currentUrl = window.location.pathname;
+
+    try {
+      const stored = localStorage.getItem(STORAGE_KEY);
+      if (!stored) {
+        container.innerHTML = '<div class="suggested-empty">Visit more pages to see suggestions</div>';
+        return;
+      }
+
+      const pageViews = JSON.parse(stored);
+      const entries = Object.entries(pageViews);
+      
+      if (entries.length === 0) {
+        container.innerHTML = '<div class="suggested-empty">Visit more pages to see suggestions</div>';
+        return;
+      }
+
+      // Filter out current page and sort by view count (descending)
+      const sorted = entries
+        .filter(([url]) => url !== currentUrl)
+        .sort((a, b) => {
+          // Primary sort: view count (descending)
+          const countDiff = b[1].count - a[1].count;
+          if (countDiff !== 0) return countDiff;
+          // Secondary sort: last visit (descending)
+          return b[1].lastVisit - a[1].lastVisit;
+        })
+        .slice(0, MAX_SUGGESTIONS);
+
+      if (sorted.length === 0) {
+        container.innerHTML = '<div class="suggested-empty">Visit more pages to see suggestions</div>';
+        return;
+      }
+
+      container.innerHTML = '';
+      const ul = document.createElement('ul');
+      ul.className = 'suggested-items';
+
+      for (const [url, data] of sorted) {
+        const li = document.createElement('li');
+        li.className = 'suggested-item';
+        
+        const a = document.createElement('a');
+        a.href = url;
+        a.className = 'suggested-link';
+        a.textContent = data.title || url;
+        
+        const meta = document.createElement('span');
+        meta.className = 'suggested-meta';
+        meta.textContent = `${data.count} view${data.count !== 1 ? 's' : ''}`;
+        meta.title = `Last visited: ${new Date(data.lastVisit).toLocaleString()}`;
+        
+        li.appendChild(a);
+        li.appendChild(meta);
+        ul.appendChild(li);
+      }
+
+      container.appendChild(ul);
+    } catch (e) {
+      container.innerHTML = '<div class="suggested-empty">Unable to load suggestions</div>';
+    }
   }
 }
 
