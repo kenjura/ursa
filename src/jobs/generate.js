@@ -17,6 +17,7 @@ import {
   saveHashCache,
   needsRegeneration,
   updateHash,
+  getUrsaDir,
 } from "../helper/contentHash.js";
 import {
   buildValidPaths,
@@ -32,7 +33,7 @@ import { bundleMetaTemplateAssets, bundleDocumentCss, bundleDocumentJs, clearMet
 import { buildFullTextIndex, buildIncrementalIndex, loadIndexCache, saveIndexCache } from "../helper/fullTextIndex.js";
 import { dependencyTracker } from "../helper/dependencyTracker.js";
 import { CacheBustHashMap } from "../helper/build/cacheBust.js";
-import { copy as copyDir, emptyDir, outputFile } from "fs-extra";
+import { copy as copyDir, emptyDir, outputFile, remove } from "fs-extra";
 import { basename, dirname, extname, join, parse, resolve } from "path";
 import { URL } from "url";
 import o2x from "object-to-xml";
@@ -131,9 +132,12 @@ export async function generate({
   // Initialize dependency tracker for this build
   dependencyTracker.init(source);
 
-  // Clear output directory when --clean is specified
+  // Clear output directory and cache when --clean is specified
   if (_clean) {
     progress.startTimer('Clean');
+    const ursaDir = getUrsaDir(source);
+    progress.logTimed(`Clean build: deleting cache folder ${ursaDir}`);
+    await remove(ursaDir);
     progress.logTimed(`Clean build: clearing output directory ${output}`);
     await emptyDir(output);
     progress.logTimed(`Clean complete [${progress.stopTimer('Clean')}]`);

@@ -2,7 +2,7 @@
   "name": "@kenjura/ursa",
   "author": "Andrew London <andrew@kenjura.com>",
   "type": "module",
-  "version": "0.77.0",
+  "version": "0.78.0",
   "description": "static site generator from MD/wikitext/YML",
   "main": "lib/index.js",
   "bin": {
@@ -72,7 +72,9 @@
     "CHANGELOG.md"
   ],
   "pnpm": {
-    "onlyBuiltDependencies": ["esbuild"]
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
   },
   "publishConfig": {
     "access": "public",

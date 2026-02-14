@@ -1,3 +1,9 @@
+# 0.78.0
+2026-02-13
+
+- added release-it
+- --clean now fully deletes the .ursa cache folder and clears the output directory before generation, ensuring a completely fresh build without any stale files. Previously, --clean only ignored the cache but left existing output files in place, which could cause issues with stale auto-generated indexes and other files blocking new generation. This change provides a more robust clean build experience.
+
 # 0.77.0
 2026-02-13
 

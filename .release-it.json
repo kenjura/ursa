@@ -1,0 +1,27 @@
+{
+  "git": {
+    "commitMessage": "${version} - ${prompt.description}",
+    "tagName": "v${version}",
+    "tagAnnotation": "v${version} - ${prompt.description}",
+    "requireCleanWorkingDir": false,
+    "commit": true,
+    "tag": true,
+    "push": true,
+    "pushArgs": ["--follow-tags"]
+  },
+  "npm": {
+    "publish": false
+  },
+  "github": {
+    "release": false
+  },
+  "hooks": {
+    "before:bump": "echo 'Reminder: update CHANGELOG.md before confirming!'"
+  },
+  "prompt": {
+    "description": {
+      "type": "input",
+      "message": "Release description (for commit & tag message)"
+    }
+  }
+}

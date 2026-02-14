@@ -66,7 +66,7 @@ Start a development server that:
 - `--port, -p` - Port for development server (default: 8080, serve command only)
 - `--whitelist, -w` - Path to whitelist file containing patterns for files to include
 - `--exclude, -e` - Folders to exclude: comma-separated paths relative to source, or path to file with one folder per line
-- `--clean` - Clear output directory and ignore cache, forcing full regeneration
+- `--clean` - Delete the `.ursa` cache folder and clear output directory, forcing full regeneration
 
 ### Whitelist File Format
 
