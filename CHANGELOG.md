@@ -1,4 +1,5 @@
-# 0.77.0 (TODO)
+# 0.77.0
+2026-02-13
 
 QOL:
 - When 'serve' encounters an occupied port 8080, prompt the user to find an available port instead of just exiting with an error. Will check open ports and find the closest port to 8080, then ask the user if they want to use it.
