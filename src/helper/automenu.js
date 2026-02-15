@@ -411,6 +411,14 @@ function buildMenuData(tree, source, validPaths, parentPath = '', includeDebug =
  * When a folder contains only an index file (index.md) or a foldername-matching
  * file (e.g. Arcanist/Arcanist.md) and no other children, the folder is replaced
  * with a direct link to that document using the folder's label.
+ * 
+ * Conditions for collapse:
+ * - Exactly one child
+ * - That child is an index-like file (isIndex: true)
+ * - The child has no children (i.e., not a subfolder)
+ * 
+ * This ensures folders with subfolders are never collapsed, even if they only
+ * have 0-1 regular documents.
  */
 function collapseSingleDocFolders(items) {
   return items.map(item => {
@@ -419,18 +427,20 @@ function collapseSingleDocFolders(items) {
     // Recurse first so nested single-doc folders are collapsed bottom-up
     item.children = collapseSingleDocFolders(item.children);
     
-    // Check if the only child(ren) are index-like files (no sub-folders)
-    const nonIndexChildren = item.children.filter(c => !c.isIndex);
-    if (nonIndexChildren.length === 0 && item.children.length > 0) {
-      // All children are index files — collapse to a single link
-      const indexChild = item.children[0];
-      return {
-        ...item,
-        hasChildren: false,
-        children: undefined,
-        href: indexChild.href || item.href,
-        isIndex: false,
-      };
+    // Only collapse if there is exactly one child that is an index-like file
+    // Collapsed subfolders have isIndex: false, so they won't trigger collapse
+    // Folders with any remaining subfolders (hasChildren: true) won't collapse
+    if (item.children.length === 1) {
+      const onlyChild = item.children[0];
+      if (onlyChild.isIndex && !onlyChild.hasChildren) {
+        return {
+          ...item,
+          hasChildren: false,
+          children: undefined,
+          href: onlyChild.href || item.href,
+          isIndex: false,
+        };
+      }
     }
     
     return item;

@@ -1,3 +1,11 @@
+# 0.79.0
+2026-02-14
+
+- Menu fixes:
+  - Zero-item submenus will no longer be hidden if they have subfolders with one+ item
+  - Bug fix for missing menu items
+  - Level 2+ menus now have overflow:scroll (vertical only)
+
 # 0.78.0
 2026-02-13
 

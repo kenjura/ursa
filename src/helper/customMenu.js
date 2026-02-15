@@ -21,9 +21,57 @@ const DOCUMENT_ICON = '📄';
 const HOME_ICON = '🏠';
 
 /**
+ * Check if a menu item represents an index-like file.
+ * Index-like files are: index, home, or {foldername}.html
+ * 
+ * IMPORTANT: The index file must be DIRECTLY within the parent folder,
+ * not in a nested subfolder. This prevents collapsed nested folders
+ * from being treated as index files for their parent.
+ * 
+ * @param {object} item - Menu item
+ * @param {string} parentLabel - The parent folder's label
+ * @returns {boolean}
+ */
+function isIndexLikeItem(item, parentLabel) {
+  if (!item.href) return false;
+  
+  const hrefLower = item.href.toLowerCase();
+  const parts = hrefLower.split('/').filter(Boolean);
+  
+  // Need at least 2 parts: parent folder and filename
+  if (parts.length < 2) return false;
+  
+  const filename = parts[parts.length - 1]?.replace(/\.html$/, '') || '';
+  const parentFolder = parts[parts.length - 2] || '';
+  
+  // The parent folder in the href must match the expected parent label
+  // This prevents /foo/bar/nested/index.html from matching as index for /foo/bar/
+  if (parentLabel && parentFolder !== parentLabel.toLowerCase()) {
+    return false;
+  }
+  
+  // Check for index or home
+  if (filename === 'index' || filename === 'home') return true;
+  
+  // Check if filename matches parent folder name (e.g., 'arcanist.html' in 'Arcanist/' folder)
+  if (parentLabel && filename === parentLabel.toLowerCase()) return true;
+  
+  return false;
+}
+
+/**
  * Collapse single-document folders into direct links.
- * If a folder's only children are index-like files (no sub-folders),
- * collapse it to a direct link using the folder's label and the first child's href.
+ * When a folder contains only an index file (index.md) or a foldername-matching
+ * file and no subfolders, collapse it to a direct link using the folder's label.
+ * 
+ * Conditions for collapse:
+ * - Exactly one child
+ * - That child is an index-like file (index, home, or {foldername})
+ * - The child has no children (i.e., not a subfolder)
+ * 
+ * This ensures folders with subfolders are never collapsed, even if they only
+ * have 0-1 regular documents.
+ * 
  * @param {Array} items - Menu items
  * @returns {Array} - Processed menu items
  */
@@ -34,13 +82,11 @@ function collapseSingleDocFolders(items) {
     // Recurse first so nested single-doc folders are collapsed bottom-up
     item.children = collapseSingleDocFolders(item.children);
     
-    // Check if all children are non-folder items (i.e., no child has children)
-    const hasSubfolders = item.children.some(c => c.hasChildren);
-    if (!hasSubfolders && item.children.length > 0) {
-      // All children are leaf files — if there's only one, collapse to a direct link
-      // For index-like content (single child), collapse the folder entirely
-      if (item.children.length === 1) {
-        const onlyChild = item.children[0];
+    // Only collapse if there is exactly one child that is an index-like file
+    if (item.children.length === 1) {
+      const onlyChild = item.children[0];
+      // Check that the child is not a subfolder and is an index-like file
+      if (!onlyChild.hasChildren && isIndexLikeItem(onlyChild, item.label)) {
         return {
           ...item,
           hasChildren: false,

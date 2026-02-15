@@ -735,7 +735,7 @@ nav#nav-main-top .dropdown-label {
 }
 
 nav#nav-main-top .dropdown-label:hover {
-  background-color: var(--nav-top-bg);
+  background-color: rgba(255, 255, 255, 0.1);
 }
 
 nav#nav-main-top a.dropdown-label:hover {
@@ -749,14 +749,12 @@ nav#nav-main-top .flyout-indicator {
   margin-left: 8px;
 }
 
-/* Flyout menu (nested children) */
+/* Flyout menu (nested children) - uses fixed positioning to avoid clipping by parent overflow */
 nav#nav-main-top .top-menu-flyout {
   display: none;
-  position: absolute;
-  left: 100%;
-  top: -1px;
+  position: fixed;
   min-width: 200px;
-  max-height: calc(100vh - var(--global-nav-height) - 20px);
+  max-height: calc(100vh - var(--global-nav-height) - 40px);
   overflow-y: auto;
   background-color: var(--widget-bg);
   border: 1px solid var(--widget-border);
@@ -766,9 +764,10 @@ nav#nav-main-top .top-menu-flyout {
   margin: 0;
   padding: 0;
   z-index: 1006;
+  /* JS will set top/left via inline styles */
 }
 
-/* Show flyout on hover */
+/* Show flyout on hover - JS handles positioning */
 nav#nav-main-top .dropdown-item.has-flyout:hover > .top-menu-flyout {
   display: block;
 }

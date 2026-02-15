@@ -17,7 +17,7 @@ Issues:
 - [ ] On small screens (viewport width < css var article-width), the top menu should disappear. The home icon (previously hamburger) in the top left should once again be a hamburger icon, which opens a vertically-oriented side menu containing the same menu items as the top menu, with a "root" item at the very beginning which goes to. This allows access to the menu on mobile devices, while keeping the desktop experience optimized for wide screens.
 - [ ] When rendering a custom menu in a folder that is not root...TBD
 - [ ] Files in the top-level folder should not be top-level menu items. Instead, they should be children of the "home" item in the menu.
-- [ ] When a folder has only an index.md (or {foldername}.md) and no other files, it should be rendered as a single menu item linking to that document, rather than a folder with a child item.
+- [x] When a folder has only an index.md (or {foldername}.md) and no other files, it should be rendered as a single menu item linking to that document, rather than a folder with a child item.
 - [ ] Submenus should show all folders (a-z) before all files (a-z).
 - [ ] Whenever an index page appears in a menu, it should be sorted before all other filenames, regardless of alphabetical order, and the label (if not overridden) should be "Home" rather than Index.
 
