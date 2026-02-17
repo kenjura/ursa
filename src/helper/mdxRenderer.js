@@ -4,6 +4,26 @@ import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { dirname, join, resolve } from "path";
 import { existsSync } from "fs";
+import remarkDirective from "remark-directive";
+import { remarkDefinitionList, defListHastHandlers } from "remark-definition-list";
+import remarkSupersub from "remark-supersub";
+import { visit } from "unist-util-visit";
+
+/**
+ * Custom remark plugin that converts container directives (:::name ... :::)
+ * into <aside> HTML elements, matching the markdown-it-container behavior
+ * used in the .md pipeline (markdownHelper.cjs).
+ */
+function remarkAsideContainers() {
+  return (tree) => {
+    visit(tree, (node) => {
+      if (node.type === "containerDirective") {
+        const data = node.data || (node.data = {});
+        data.hName = "aside";
+      }
+    });
+  };
+}
 
 /**
  * Find _components directories by walking up from the MDX file to the source root.
@@ -85,6 +105,26 @@ export async function renderMDX({ source, filePath, sourceRoot }) {
       esbuildOptions,
       // mdx-bundler uses gray-matter internally for frontmatter
       mdxOptions(options) {
+        // Add remark plugins matching the markdown-it extensions in markdownHelper.cjs:
+        // - remarkDirective: parses :::name container syntax into AST nodes
+        // - remarkAsideContainers: converts container directives to <aside> elements
+        // - remarkDefinitionList: adds PHP Markdown Extra style definition lists (Term\n: Def)
+        // - remarkSupersub: adds ^superscript^ and ~subscript~ syntax
+        options.remarkPlugins = [
+          ...(options.remarkPlugins || []),
+          remarkDirective,
+          remarkAsideContainers,
+          remarkDefinitionList,
+          remarkSupersub,
+        ];
+        // remark-definition-list needs custom handlers for remark-rehype conversion
+        options.remarkRehypeOptions = {
+          ...(options.remarkRehypeOptions || {}),
+          handlers: {
+            ...(options.remarkRehypeOptions?.handlers || {}),
+            ...defListHastHandlers,
+          },
+        };
         return options;
       },
     });
