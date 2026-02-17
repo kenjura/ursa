@@ -1,3 +1,8 @@
+# 0.80.0
+2026-02-16
+
+- Added remark extensions to ensure MDX has the same extended markdown features as regular markdown (e.g. footnotes, definition lists, etc.)
+
 # 0.79.0
 2026-02-14
 
