@@ -42,7 +42,7 @@
 
   // === observer factory tied to current STICKY_TOP ===
   let observer = null;
-  function (re)buildObserver() {
+  function rebuildObserver() {
     if (observer) observer.disconnect();
     // ignore intersections near the bottom; we only care about the top line
     const bottomRM = -(window.innerHeight - 1) + 'px';
@@ -72,7 +72,7 @@
 
   // initial setup
   ensureSentinels();
-  (re)buildObserver();
+  rebuildObserver();
   updateActiveFromSentinels();
 
   // react when sticky top changes
@@ -86,7 +86,7 @@
       // update sentinel offsets
       document.querySelectorAll('.toc-sentinel').forEach(s => s.style.marginTop = `-${STICKY_TOP}px`);
       heads.forEach(h => h.style.scrollMarginTop = (STICKY_TOP + 8) + 'px');
-      (re)buildObserver();
+      rebuildObserver();
       updateActiveFromSentinels();
     });
   }, { passive: true });

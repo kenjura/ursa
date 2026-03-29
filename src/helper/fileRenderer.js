@@ -1,7 +1,7 @@
 
 import { markdownToHtml } from "./markdownHelper.cjs";
 import { wikiToHtml } from "./wikitextHelper.js";
-import { renderMDX } from "./mdxRenderer.js";
+import { renderMDX, generateHydrationScript } from "./mdxRenderer.js";
 import { parseWithWorker, terminateParserPool } from "./parserPool.js";
 
 const DEFAULT_WIKITEXT_ARGS = { db: "noDB", noSection: true, noTOC: true };
@@ -39,10 +39,11 @@ export function renderFile({ fileContents, type, dirname, basename }) {
  * @param {string} options.basename - Base filename
  * @param {string} [options.filePath] - Absolute path to file (required for .mdx)
  * @param {string} [options.sourceRoot] - Source root directory (for .mdx absolute imports)
- * @param {boolean} options.useWorker - Whether to attempt worker thread parsing (default: true)
- * @returns {Promise<string>} Rendered HTML
+ * @param {boolean} [options.useWorker=true] - Whether to attempt worker thread parsing
+ * @param {boolean} [options.hydrate=false] - Whether to enable client-side hydration (.mdx only)
+ * @returns {Promise<string|{html: string, hydrationScript?: string}>} Rendered HTML or object with HTML and hydration script
  */
-export async function renderFileAsync({ fileContents, type, dirname, basename, filePath, sourceRoot, useWorker = true }) {
+export async function renderFileAsync({ fileContents, type, dirname, basename, filePath, sourceRoot, useWorker = true, hydrate = false }) {
   // Wikitext always runs on main thread due to complex ES module dependencies
   if (type === ".txt") {
     return wikiToHtml({
@@ -70,7 +71,16 @@ export async function renderFileAsync({ fileContents, type, dirname, basename, f
   // Falls back to markdown rendering if MDX compilation fails
   if (type === ".mdx") {
     try {
-      const result = await renderMDX({ source: fileContents, filePath, sourceRoot });
+      const result = await renderMDX({ source: fileContents, filePath, sourceRoot, hydrate });
+      
+      // If hydration was requested and we have client code, return object with hydration script
+      if (hydrate && result.clientCode) {
+        return {
+          html: result.html,
+          hydrationScript: generateHydrationScript(result.clientCode),
+        };
+      }
+      
       return result.html;
     } catch (mdxError) {
       // Extract a concise error description for the warning banner

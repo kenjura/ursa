@@ -2,7 +2,7 @@
   "name": "@kenjura/ursa",
   "author": "Andrew London <andrew@kenjura.com>",
   "type": "module",
-  "version": "0.80.1",
+  "version": "0.81",
   "description": "static site generator from MD/wikitext/YML",
   "main": "lib/index.js",
   "bin": {
@@ -41,6 +41,7 @@
     "react-dom": "^19.2.4",
     "remark-definition-list": "^2.0.0",
     "remark-directive": "^4.0.0",
+    "remark-gfm": "^4.0.1",
     "remark-supersub": "^1.0.0",
     "sharp": "^0.33.2",
     "unist-util-visit": "^5.1.0",

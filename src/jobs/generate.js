@@ -24,9 +24,10 @@ import {
   markInactiveLinks,
   resolveRelativeUrls,
 } from "../helper/linkValidator.js";
-import { getAndIncrementBuildId } from "../helper/ursaConfig.js";
+import { getAndIncrementBuildId, loadContentTimestamps, saveContentTimestamps, updateContentTimestamp } from "../helper/ursaConfig.js";
 import { extractSections } from "../helper/sectionExtractor.js";
 import { renderFile, renderFileAsync, terminateParserPool } from "../helper/fileRenderer.js";
+import { buildReactRuntime } from "../helper/mdxRenderer.js";
 import { findStyleCss, findAllStyleCss } from "../helper/findStyleCss.js";
 import { findScriptJs, findAllScriptJs } from "../helper/findScriptJs.js";
 import { bundleMetaTemplateAssets, bundleDocumentCss, bundleDocumentJs, clearMetaBundleCache, generateSeparateCssTags, generateSeparateJsTags } from "../helper/assetBundler.js";
@@ -291,6 +292,12 @@ export async function generate({
     progress.logTimed(`Clean build: ignoring cached hashes`);
     progress.stopTimer('Cache');
   }
+  
+  // Load content timestamps from .ursa.json (survives --clean)
+  // These track when content actually changed, not filesystem mtime
+  const contentTimestamps = loadContentTimestamps(source);
+  const buildTimestamp = Date.now();
+  progress.logTimed(`Loaded ${contentTimestamps.size} content timestamps`);
   profiler.endPhase('Load cache');
 
   // Phase: Copy meta/public files
@@ -321,6 +328,9 @@ export async function generate({
   // This must happen after copying meta to public but before cache-busting
   templates = await bundleMetaTemplateAssets(templates, meta, pub, { minify: true, sourcemap: false });
   progress.logTimed(`Meta template assets bundled`);
+
+  // Build React runtime for MDX hydration (React 19 has no UMD, so we bundle locally)
+  await buildReactRuntime(pub);
 
   // Process all CSS files in the entire output directory tree for cache-busting
   const allOutputFiles = await recurse(output, [() => false]);
@@ -521,17 +531,25 @@ export async function generate({
         content: rawBody
       });
 
-      // Collect mtime for recent activity tracking
-      try {
-        const fileStat = await stat(file);
-        recentActivity.push({
-          title: title,
-          url: searchUrl,
-          mtime: fileStat.mtimeMs
-        });
-      } catch (e) {
-        // ignore stat errors
+      // Collect timestamp for recent activity tracking
+      // Use stored content timestamp if available, otherwise fall back to file mtime
+      // Content timestamps track when content actually changed, not filesystem mtime
+      const storedTimestamp = contentTimestamps.get(relativePath);
+      let activityTimestamp = storedTimestamp;
+      if (!activityTimestamp) {
+        // No stored timestamp - use file mtime as initial value
+        try {
+          const fileStat = await stat(file);
+          activityTimestamp = fileStat.mtimeMs;
+        } catch (e) {
+          activityTimestamp = 0;
+        }
       }
+      recentActivity.push({
+        title: title,
+        url: searchUrl,
+        mtime: activityTimestamp
+      });
       
       // Check if a corresponding .html file already exists in source directory
       const outputHtmlRelative = relativePath.startsWith('/') ? relativePath.slice(1) : relativePath;
@@ -587,15 +605,29 @@ export async function generate({
 
       // Use async rendering with worker threads for parallel markdown parsing
       // Wikitext (.txt) files will fall back to main thread
-      let body = await renderFileAsync({
+      // For MDX files, enable hydration if frontmatter has `hydrate: true`
+      const shouldHydrate = type === '.mdx' && fileMeta?.hydrate === true;
+      
+      let renderResult = await renderFileAsync({
         fileContents: rawBody,
         type,
         dirname: dir,
         basename: base,
         filePath: file,
         sourceRoot: source,
-        useWorker: true
+        useWorker: true,
+        hydrate: shouldHydrate,
       });
+
+      // Handle the result - can be string or { html, hydrationScript }
+      let body;
+      let hydrationScript = '';
+      if (typeof renderResult === 'object' && renderResult.html) {
+        body = renderResult.html;
+        hydrationScript = renderResult.hydrationScript || '';
+      } else {
+        body = renderResult;
+      }
 
       // Inject default H1 if body doesn't start with one
       if (!body || !body.trimStart().startsWith('<h1')) {
@@ -738,6 +770,11 @@ export async function generate({
 
       // Build final HTML with all replacements in a single regex pass
       // This avoids creating 8 intermediate strings
+      // Append hydration script to customScript if present (for MDX with hydrate: true)
+      const finalCustomScript = hydrationScript 
+        ? customScript + '\n' + hydrationScript 
+        : customScript;
+      
       const replacements = {
         "${title}": fileMeta?.title || title,
         "${menu}": menu,
@@ -745,7 +782,7 @@ export async function generate({
         "${transformedMetadata}": lazyTransformedMeta,
         "${body}": body,
         "${styleLink}": styleLink,
-        "${customScript}": customScript,
+        "${customScript}": finalCustomScript,
         "${searchIndex}": "[]", // Placeholder - search index written separately as JSON file
         "${footer}": footer
       };
@@ -824,6 +861,14 @@ export async function generate({
       
       // Update the content hash for this file
       updateHash(file, rawBody, hashCache);
+      
+      // Update content timestamp since this file was regenerated (content changed)
+      contentTimestamps.set(relativePath, buildTimestamp);
+      // Also update the recentActivity entry we pushed earlier with the new timestamp
+      const activityEntry = recentActivity.find(e => e.url === searchUrl);
+      if (activityEntry) {
+        activityEntry.mtime = buildTimestamp;
+      }
     } catch (e) {
       progress.log(`Error processing ${file}: ${e.message}`);
       errors.push({ file, phase: 'article-generation', error: e });
@@ -1085,6 +1130,12 @@ export async function generate({
   if (hashCache.size > 0) {
     await saveHashCache(source, hashCache);
   }
+  
+  // Save content timestamps to .ursa.json (tracks when content actually changed)
+  if (contentTimestamps.size > 0) {
+    saveContentTimestamps(source, contentTimestamps);
+    progress.log(`Saved ${contentTimestamps.size} content timestamps`);
+  }
 
   // Populate watch mode cache for fast single-file regeneration
   watchModeCache.templates = templates;
@@ -1319,18 +1370,31 @@ export async function regenerateSingleFile(changedFile, {
     // Calculate the document's URL path
     const docUrlPath = '/' + dir + base + '.html';
     
+    // Check if hydration should be enabled for MDX files
+    const shouldHydrate = type === '.mdx' && fileMeta?.hydrate === true;
+    
     // Render body (use async for .mdx, sync for .md/.txt)
     let body;
+    let hydrationScript = '';
     if (type === '.mdx') {
-      body = await renderFileAsync({
+      const renderResult = await renderFileAsync({
         fileContents: rawBody,
         type,
         dirname: dir,
         basename: base,
         filePath: changedFile,
         sourceRoot: source,
-        useWorker: false
+        useWorker: false,
+        hydrate: shouldHydrate,
       });
+      
+      // Handle the result - can be string or { html, hydrationScript }
+      if (typeof renderResult === 'object' && renderResult.html) {
+        body = renderResult.html;
+        hydrationScript = renderResult.hydrationScript || '';
+      } else {
+        body = renderResult;
+      }
     } else {
       body = renderFile({
         fileContents: rawBody,
@@ -1425,6 +1489,11 @@ export async function regenerateSingleFile(changedFile, {
     // Check if this file has a custom menu
     const customMenuInfo = customMenus ? getCustomMenuForFile(changedFile, source, customMenus) : null;
 
+    // Append hydration script to customScript if present (for MDX with hydrate: true)
+    const finalCustomScript = hydrationScript 
+      ? customScript + '\n' + hydrationScript 
+      : customScript;
+
     // Build final HTML
     let finalHtml = template;
     const replacements = {
@@ -1434,7 +1503,7 @@ export async function regenerateSingleFile(changedFile, {
       "${transformedMetadata}": transformedMetadata,
       "${body}": body,
       "${styleLink}": styleLink,
-      "${customScript}": customScript,
+      "${customScript}": finalCustomScript,
       "${searchIndex}": "[]",
       "${footer}": footer
     };
@@ -1496,9 +1565,9 @@ export async function regenerateSingleFile(changedFile, {
     // Update hash cache
     updateHash(changedFile, rawBody, hashCache);
     
-    // Update recent-activity.json with this file's new mtime
+    // Update recent-activity.json with this file's new content timestamp
     try {
-      const fileStat = await stat(changedFile);
+      const now = Date.now();
       const recentActivityPath = join(output, 'public', 'recent-activity.json');
       let recentActivity = [];
       try {
@@ -1507,12 +1576,16 @@ export async function regenerateSingleFile(changedFile, {
       } catch (e) { /* no existing file, start fresh */ }
       // Remove old entry for this URL if present
       recentActivity = recentActivity.filter(r => r.url !== url);
-      // Add updated entry
-      recentActivity.push({ title, url, mtime: fileStat.mtimeMs });
+      // Add updated entry with current timestamp (content changed now)
+      recentActivity.push({ title, url, mtime: now });
       // Sort by mtime descending, keep top 10
       recentActivity.sort((a, b) => b.mtime - a.mtime);
       recentActivity = recentActivity.slice(0, 10);
       await outputFile(recentActivityPath, JSON.stringify(recentActivity));
+      
+      // Also update content timestamp in .ursa.json for persistence
+      const relativePath = '/' + changedFile.replace(source, '').replace(/\.(md|mdx|txt|yml)$/, '.html');
+      updateContentTimestamp(source, relativePath, now);
     } catch (e) {
       // ignore recent activity update errors
     }

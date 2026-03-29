@@ -19,6 +19,7 @@ const { readFile, readdir, stat, mkdir } = promises;
 
 // Import helper modules
 import { renderFileAsync } from "./helper/fileRenderer.js";
+import { buildReactRuntime } from "./helper/mdxRenderer.js";
 import { findStyleCss } from "./helper/findStyleCss.js";
 import { findAllScriptJs } from "./helper/findScriptJs.js";
 import { extractMetadata, getAutoIndexConfig, isMetadataOnly } from "./helper/metadataExtractor.js";
@@ -382,22 +383,37 @@ async function renderDocument(urlPath) {
     if (autoIndexHtml) {
       // Wrap in template and return — use parent folder name for title
       const indexTitle = toTitleCase(basename(dirname(sourcePath)) || 'Index');
-      return await wrapInTemplate(autoIndexHtml, indexTitle, null, urlPath, sourcePath);
+      return await wrapInTemplate(autoIndexHtml, indexTitle, null, urlPath, sourcePath, '');
     }
   }
   
+  // Extract metadata first to determine if hydration is needed
+  const fileMeta = extractMetadata(rawBody);
+  
   // Render body
-  let body = await renderFileAsync({
+  // For MDX files, enable hydration if frontmatter has `hydrate: true`
+  const shouldHydrate = type === '.mdx' && fileMeta?.hydrate === true;
+  
+  let renderResult = await renderFileAsync({
     fileContents: rawBody,
     type,
     dirname: dir,
     basename: base,
     filePath: sourcePath,
     sourceRoot: devState.source,
-    useWorker: false // Use main thread for faster single-file processing
+    useWorker: false, // Use main thread for faster single-file processing
+    hydrate: shouldHydrate,
   });
   
-  const fileMeta = extractMetadata(rawBody);
+  // Handle the result - can be string or { html, hydrationScript }
+  let body;
+  let hydrationScript = '';
+  if (typeof renderResult === 'object' && renderResult.html) {
+    body = renderResult.html;
+    hydrationScript = renderResult.hydrationScript || '';
+  } else {
+    body = renderResult;
+  }
 
   // Title from filename (for index/home, use parent folder name)
   const titleBase = (base === 'index' || base === 'home') ? basename(dirname(sourcePath)) : base;
@@ -438,7 +454,7 @@ async function renderDocument(urlPath) {
   // Process images in this document
   body = await processDocumentImages(body, sourcePath);
   
-  const html = await wrapInTemplate(body, title, fileMeta, urlPath, sourcePath);
+  const html = await wrapInTemplate(body, title, fileMeta, urlPath, sourcePath, hydrationScript);
   
   // Cache rendered document
   // documentCache.set(urlPath, html);
@@ -449,7 +465,7 @@ async function renderDocument(urlPath) {
 /**
  * Wrap body in template
  */
-async function wrapInTemplate(body, title, fileMeta, urlPath, sourcePath) {
+async function wrapInTemplate(body, title, fileMeta, urlPath, sourcePath, hydrationScript = '') {
   const { source, output, templates, menuHtml, footer, validPaths, customMenus } = devState;
   
   // Get template
@@ -504,6 +520,11 @@ async function wrapInTemplate(body, title, fileMeta, urlPath, sourcePath) {
   // Calculate document URL path
   const docUrlPath = urlPath.endsWith('.html') ? urlPath : urlPath + '.html';
   
+  // Append hydration script to customScript if present (for MDX with hydrate: true)
+  const finalCustomScript = hydrationScript 
+    ? customScript + '\n' + hydrationScript 
+    : customScript;
+  
   // Build replacements
   const replacements = {
     "${title}": fileMeta?.title || title,
@@ -512,7 +533,7 @@ async function wrapInTemplate(body, title, fileMeta, urlPath, sourcePath) {
     "${transformedMetadata}": "",
     "${body}": body,
     "${styleLink}": styleLink,
-    "${customScript}": customScript,
+    "${customScript}": finalCustomScript,
     "${searchIndex}": "[]",
     "${footer}": footer || ""
   };
@@ -764,6 +785,9 @@ export async function dev({
   let rawTemplates = await getTemplates(metaDir);
   devState.templates = await bundleMetaTemplateAssets(rawTemplates, metaDir, publicDir, { minify: true, sourcemap: false });
   console.log('📦 Meta template assets bundled');
+  
+  // Build React runtime for MDX hydration (React 19 has no UMD, so we bundle locally)
+  await buildReactRuntime(publicDir);
   
   // Start server immediately
   const app = express();

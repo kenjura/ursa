@@ -60,3 +60,52 @@ export function getAndIncrementBuildId(sourceDir) {
   
   return newBuildId;
 }
+
+/**
+ * Load content timestamps from .ursa.json
+ * These track when each file's content actually changed (not filesystem mtime)
+ * @param {string} sourceDir - The source directory path
+ * @returns {Map<string, number>} Map of relative file paths to timestamps
+ */
+export function loadContentTimestamps(sourceDir) {
+  const config = loadUrsaConfig(sourceDir);
+  const timestamps = config.contentTimestamps || {};
+  return new Map(Object.entries(timestamps));
+}
+
+/**
+ * Save content timestamps to .ursa.json
+ * @param {string} sourceDir - The source directory path
+ * @param {Map<string, number>} timestampMap - Map of relative file paths to timestamps
+ */
+export function saveContentTimestamps(sourceDir, timestampMap) {
+  const config = loadUrsaConfig(sourceDir);
+  config.contentTimestamps = Object.fromEntries(timestampMap);
+  saveUrsaConfig(sourceDir, config);
+}
+
+/**
+ * Update the content timestamp for a single file
+ * @param {string} sourceDir - The source directory path
+ * @param {string} relativePath - The relative file path
+ * @param {number} timestamp - The timestamp when content changed
+ */
+export function updateContentTimestamp(sourceDir, relativePath, timestamp) {
+  const config = loadUrsaConfig(sourceDir);
+  if (!config.contentTimestamps) {
+    config.contentTimestamps = {};
+  }
+  config.contentTimestamps[relativePath] = timestamp;
+  saveUrsaConfig(sourceDir, config);
+}
+
+/**
+ * Get the content timestamp for a file, or null if not tracked
+ * @param {string} sourceDir - The source directory path
+ * @param {string} relativePath - The relative file path
+ * @returns {number|null} The timestamp or null
+ */
+export function getContentTimestamp(sourceDir, relativePath) {
+  const config = loadUrsaConfig(sourceDir);
+  return config.contentTimestamps?.[relativePath] || null;
+}

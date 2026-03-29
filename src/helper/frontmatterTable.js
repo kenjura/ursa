@@ -74,7 +74,8 @@ export function metadataToTable(metadata) {
     'menu-sort-as',   // Custom sort key for menu ordering
     'generate-auto-index', // Auto-indexing control
     'auto-index-depth',    // Auto-indexing depth
-    'auto-index-position'  // Auto-indexing position
+    'auto-index-position', // Auto-indexing position
+    'hydrate'         // MDX hydration control
   ];
   const entries = Object.entries(metadata).filter(
     ([key]) => !excludeKeys.includes(key.toLowerCase())

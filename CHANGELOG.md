@@ -1,3 +1,16 @@
+# 0.81
+2026-03-28
+
+- MDX hydration: MDX documents now support hydration of embedded React components, allowing for interactive content within static pages.
+
+- **Fixed Recent Activity tracking**: The Recent Activity widget now properly tracks when document content actually changed, rather than relying on file system modification times (mtime). 
+  - Previously, Recent Activity used filesystem mtime, which doesn't work correctly after git clone (git doesn't preserve timestamps) or when all files are built simultaneously.
+  - Now, content change timestamps are stored in `.ursa.json` (in the source directory), which:
+    - Survives `--clean` builds (unlike the `.ursa/` cache folder)
+    - Can be committed to git to preserve wiki history across clones
+    - Falls back to file mtime for files that haven't been tracked yet (backward compatibility)
+  - Both full builds and single-file regeneration (serve/dev mode) now update content timestamps when content actually changes (detected by hash comparison).
+
 # 0.80.1
 2026-02-16
 

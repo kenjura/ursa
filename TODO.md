@@ -201,7 +201,7 @@ Here's a monster stat block:
 #### Phase 6: Optional Enhancements ✅
 - [x] **Shared components**: Support a global `_components/` directory for site-wide components
 - [ ] **MDX plugins**: Allow remark/rehype plugins via config (future)
-- [ ] **Client hydration opt-in**: For interactive components, optionally include React runtime and hydrate (future)
+- [x] **Client hydration opt-in**: For interactive components, add `hydrate: true` to frontmatter to include React runtime and hydrate components
 
 
 
