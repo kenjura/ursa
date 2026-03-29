@@ -1,4 +1,4 @@
-# 0.81
+# 0.81.2
 2026-03-28
 
 - MDX hydration: MDX documents now support hydration of embedded React components, allowing for interactive content within static pages.
