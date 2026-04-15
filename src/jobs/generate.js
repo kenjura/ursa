@@ -100,6 +100,28 @@ export function clearWatchCache() {
   clearMetaBundleCache();
 }
 
+// Clear just the script-related caches (for when script.js changes)
+export function clearScriptCache() {
+  scriptPathCache.clear();
+  // Clear all JS bundle cache entries
+  for (const key of docBundleCache.keys()) {
+    if (key.startsWith('js:')) {
+      docBundleCache.delete(key);
+    }
+  }
+}
+
+// Clear just the CSS-related caches (for when style.css changes)
+export function clearStyleCache() {
+  cssPathCache.clear();
+  // Clear all CSS bundle cache entries
+  for (const key of docBundleCache.keys()) {
+    if (key.startsWith('css:')) {
+      docBundleCache.delete(key);
+    }
+  }
+}
+
 const progress = new ProgressReporter();
 
 const DEFAULT_TEMPLATE_NAME =

@@ -1,3 +1,11 @@
+# 0.81.3
+2026-04-14
+
+- bug fix: When script.js changes in serve mode, the bundle cache wasn't being cleared, so documents kept using stale bundles.
+  - Added clearScriptCache() and clearStyleCache() functions in generate.js
+  - Updated serve.js to call these functions when CSS/JS files change
+
+
 # 0.81.2
 2026-03-28
 

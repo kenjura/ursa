@@ -1,7 +1,7 @@
 import express from "express";
 import compression from "compression";
 import watch from "node-watch";
-import { generate, regenerateAffectedDocuments, clearWatchCache } from "./jobs/generate.js";
+import { generate, regenerateAffectedDocuments, clearWatchCache, clearScriptCache, clearStyleCache } from "./jobs/generate.js";
 import { join, resolve, dirname, basename } from "path";
 import fs from "fs";
 import { promises } from "fs";
@@ -463,6 +463,8 @@ export async function serve({
       for (const change of cssChanges) {
         const result = await copyCssFile(change.name, sourceDir + '/', outputDir + '/');
         if (result.success) console.log(`✅ ${result.message}`);
+        // Clear CSS bundle cache so affected documents will regenerate bundles
+        clearStyleCache();
         if (watchModeCache.isInitialized) {
           const plan = dependencyTracker.getInvalidationPlan(change.name, sourceDir);
           if (plan.requiresFullRebuild) {
@@ -481,6 +483,8 @@ export async function serve({
         const content = await readFile(change.name, 'utf8');
         await outputFile(outputPath, content);
         console.log(`✅ Copied ${relativePath}`);
+        // Clear script bundle cache so affected documents will regenerate bundles
+        clearScriptCache();
         if (watchModeCache.isInitialized) {
           const plan = dependencyTracker.getInvalidationPlan(change.name, sourceDir);
           plan.affectedDocuments.forEach(d => affectedDocPaths.add(d));
