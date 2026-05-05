@@ -1025,7 +1025,7 @@ export async function generate({
 
       // html
       const htmlOutputFilename = dirPath.replace(source, output) + ".html";
-      const indexAlreadyExists = fileExists(htmlOutputFilename);
+      const indexAlreadyExists = await fileExists(htmlOutputFilename);
       if (!indexAlreadyExists) {
         const template = templates["default-template"];
         const indexHtml = `<ul>${pathsInThisDirectory

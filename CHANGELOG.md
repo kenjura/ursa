@@ -1,3 +1,8 @@
+# 0.81.4
+2026-05-04
+
+- bug fix: directory index html files were never being written...impossibly, but there it is
+
 # 0.81.3
 2026-04-14
 
