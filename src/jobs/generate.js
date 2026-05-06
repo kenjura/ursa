@@ -1583,7 +1583,24 @@ export async function regenerateSingleFile(changedFile, {
     const xmlOutputFilename = outputFilename.replace(".html", ".xml");
     const xml = `<article>${o2x(jsonObject)}</article>`;
     await outputFile(xmlOutputFilename, xml);
-    
+
+    // Folder-named index promotion (mirrors autoIndex behavior on full builds):
+    // If the file is named like its parent folder (e.g. aletheia/aletheia.md) and
+    // no explicit index.{md,mdx,txt,yml,html} exists alongside it, also write the
+    // same outputs to <dir>/index.html|json|xml so the canonical URL stays fresh.
+    const sourceDirOfFile = dirname(changedFile);
+    const parentFolderName = basename(sourceDirOfFile);
+    if (base && parentFolderName && base === parentFolderName) {
+      const hasExplicitIndex = ['index.md', 'index.mdx', 'index.txt', 'index.yml', 'index.html']
+        .some(name => existsSync(join(sourceDirOfFile, name)));
+      if (!hasExplicitIndex) {
+        const outDirOfFile = dirname(outputFilename);
+        await outputFile(join(outDirOfFile, 'index.html'), finalHtml);
+        await outputFile(join(outDirOfFile, 'index.json'), json);
+        await outputFile(join(outDirOfFile, 'index.xml'), xml);
+      }
+    }
+
     // Update hash cache
     updateHash(changedFile, rawBody, hashCache);
     

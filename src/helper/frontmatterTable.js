@@ -4,6 +4,18 @@
  */
 
 /**
+ * Determine whether the document's frontmatter opts in to rendering
+ * the frontmatter table. Accepts boolean true or the string "true".
+ * @param {Object} metadata
+ * @returns {boolean}
+ */
+export function isRenderFrontmatterEnabled(metadata) {
+  if (!metadata || typeof metadata !== 'object') return false;
+  const value = metadata['render-frontmatter'];
+  return value === true || value === 'true';
+}
+
+/**
  * Convert a metadata value to a displayable string
  * @param {any} value - The value to convert
  * @returns {string} The displayable string
@@ -75,7 +87,8 @@ export function metadataToTable(metadata) {
     'generate-auto-index', // Auto-indexing control
     'auto-index-depth',    // Auto-indexing depth
     'auto-index-position', // Auto-indexing position
-    'hydrate'         // MDX hydration control
+    'hydrate',        // MDX hydration control
+    'render-frontmatter' // Opt-in flag controlling whether this table is rendered
   ];
   const entries = Object.entries(metadata).filter(
     ([key]) => !excludeKeys.includes(key.toLowerCase())
@@ -109,8 +122,14 @@ ${rows}
  * @returns {string} The body HTML with the frontmatter table injected
  */
 export function injectFrontmatterTable(bodyHtml, metadata) {
+  // Opt-in: only render the frontmatter table when the document explicitly
+  // sets `render-frontmatter: true` in its frontmatter.
+  if (!metadata || !isRenderFrontmatterEnabled(metadata)) {
+    return bodyHtml;
+  }
+
   const table = metadataToTable(metadata);
-  
+
   if (!table) {
     return bodyHtml;
   }

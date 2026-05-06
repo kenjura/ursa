@@ -70,6 +70,30 @@ function docPathToUrl(docPath, sourceDir) {
 }
 
 /**
+ * Return all URL paths a source file maps to. Most files map to a single URL,
+ * but folder-named files (e.g. aletheia/aletheia.md) are promoted to
+ * <folder>/index.html during the build, so they also serve the folder URL.
+ * @param {string} docPath - Absolute source path
+ * @param {string} sourceDir - Absolute source directory (with trailing slash)
+ * @returns {string[]} Normalized URL paths
+ */
+function docPathToUrls(docPath, sourceDir) {
+  const urls = [docPathToUrl(docPath, sourceDir)];
+  const ext = docPath.match(/\.(md|mdx|txt|yml|yaml)$/);
+  if (ext) {
+    const base = basename(docPath, ext[0]);
+    const parent = basename(dirname(docPath));
+    if (base && parent && base === parent) {
+      // Folder-named file → also serves the folder's index URL
+      const folderUrl = normalizeUrl('/' + dirname(docPath).replace(
+        sourceDir.endsWith('/') ? sourceDir : sourceDir + '/', '') + '/');
+      if (!urls.includes(folderUrl)) urls.push(folderUrl);
+    }
+  }
+  return urls;
+}
+
+/**
  * Broadcast a message to all connected WebSocket clients.
  * @param {object} messageObj - Object to JSON.stringify and send
  */
@@ -573,10 +597,12 @@ export async function serve({
         const affectedUrlSet = new Set();
 
         for (const docPath of docPathsArray) {
-          const url = docPathToUrl(docPath, sourceDir + '/');
-          affectedUrlSet.add(url);
-          if (viewedUrls.includes(url)) {
-            priorityPaths.push(docPath);
+          const urls = docPathToUrls(docPath, sourceDir + '/');
+          for (const url of urls) {
+            affectedUrlSet.add(url);
+            if (viewedUrls.includes(url) && !priorityPaths.includes(docPath)) {
+              priorityPaths.push(docPath);
+            }
           }
         }
 
@@ -599,7 +625,7 @@ export async function serve({
           onPriorityComplete: ({ regenerated, failed, priorityDocs }) => {
             if (regenerated > 0) {
               // Immediately reload clients whose pages are now ready
-              const readyUrls = new Set(priorityDocs.map(p => docPathToUrl(p, sourceDir + '/')));
+              const readyUrls = new Set(priorityDocs.flatMap(p => docPathToUrls(p, sourceDir + '/')));
               console.log(`⚡ Priority complete: ${regenerated} OK, ${failed} failed → reloading clients`);
               reloadAffectedClients(readyUrls, uniqueNames[0]);
             } else if (failed > 0) {
@@ -610,7 +636,7 @@ export async function serve({
 
         // After all remaining docs are done, reload any remaining affected clients
         // (non-priority clients that weren't reloaded during onPriorityComplete)
-        const priorityUrlSet = new Set(priorityPaths.map(p => docPathToUrl(p, sourceDir + '/')));
+        const priorityUrlSet = new Set(priorityPaths.flatMap(p => docPathToUrls(p, sourceDir + '/')));
         const remainingUrls = new Set([...affectedUrlSet].filter(u => !priorityUrlSet.has(u)));
         if (remainingUrls.size > 0) {
           reloadAffectedClients(remainingUrls, uniqueNames[0]);

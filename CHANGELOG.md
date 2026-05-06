@@ -1,3 +1,8 @@
+# 0.82.0
+2026-05-06
+
+- **Frontmatter table is now opt-in**: The HTML frontmatter table that was previously injected into every Markdown/MDX document after the first H1 is now only rendered when the document's frontmatter sets `render-frontmatter: true` (boolean `true` or string `"true"`). Documents without the flag (or with it set to `false`) no longer have the table injected. The `render-frontmatter` key itself is excluded from the rendered table.
+
 # 0.81.4
 2026-05-04
 
