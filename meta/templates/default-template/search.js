@@ -590,6 +590,27 @@ class GlobalSearch {
   }
   
   navigateToResult(result) {
+    // Hide the results dropdown immediately. This handles cases where the
+    // navigation does not trigger a fresh page load (e.g. same-page anchor
+    // links, or restoration from the browser's back/forward cache).
+    this.hideResults();
+    // Also close the search widget panel (if any) so the search UI fully
+    // collapses, mirroring the effect of clicking the search icon again.
+    if (window.widgetManager && typeof window.widgetManager.close === 'function') {
+      try {
+        const side = window.widgetManager.getSide
+          ? window.widgetManager.getSide('search')
+          : undefined;
+        window.widgetManager.close(side);
+      } catch {
+        // ignore — best effort
+      }
+    }
+    // Clear the search input so the field is empty when the user reopens it.
+    if (this.searchInput) {
+      this.searchInput.value = '';
+      this.updateClearButtonVisibility();
+    }
     if (result.url) {
       window.location.href = result.url;
     } else if (result.path) {
@@ -601,4 +622,21 @@ class GlobalSearch {
 // Initialize when DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
   window.globalSearch = new GlobalSearch();
+});
+
+// Also hide search results if the page is restored from the browser's
+// back/forward cache (bfcache). Without this, the search dropdown can
+// appear "stuck" open after returning to a previous page.
+window.addEventListener('pageshow', () => {
+  if (window.globalSearch && typeof window.globalSearch.hideResults === 'function') {
+    window.globalSearch.hideResults();
+  }
+  // Also clear the search input on bfcache restore so the field doesn't
+  // appear pre-populated with the previous query.
+  if (window.globalSearch && window.globalSearch.searchInput) {
+    window.globalSearch.searchInput.value = '';
+    if (typeof window.globalSearch.updateClearButtonVisibility === 'function') {
+      window.globalSearch.updateClearButtonVisibility();
+    }
+  }
 });

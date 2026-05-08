@@ -464,6 +464,19 @@ class WidgetManager {
     item.appendChild(path);
     
     item.addEventListener('click', () => {
+      // Close the search widget panel before navigating, so it isn't left
+      // open when the new page loads (or when a same-page anchor link
+      // doesn't trigger a fresh page load at all).
+      const side = this.getSide('search');
+      // Clear the widget search input so the field is empty next time the
+      // user opens the search panel.
+      if (this._widgetSearchInput) {
+        this._widgetSearchInput.value = '';
+      }
+      if (this._widgetSearchResults) {
+        this._widgetSearchResults.innerHTML = '';
+      }
+      this.close(side);
       window.location.href = result.url || result.path;
     });
     

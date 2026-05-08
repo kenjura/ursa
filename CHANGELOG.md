@@ -1,3 +1,10 @@
+
+# 0.83.0
+2026-05-07
+
+- **New `--promote-changelog=<file.md>` option** for the `generate` and `serve` commands. When supplied, the named markdown (or .mdx) file is staged into the source root for the duration of the build, so it is rendered by the normal Ursa pipeline and ends up in the output root as a sibling of the main `index.html`. The staged copy is removed after the build completes (or when the serve process exits via SIGINT/SIGTERM). If a file with the same basename already exists in the source root, no staging is performed and a warning is logged.
+- **Search UI fix**: clicking a search suggestion (or selecting one with Enter) now hides the search results dropdown immediately. Previously the dropdown could remain visible when navigation did not trigger a fresh page load (e.g. same-page anchor links, or restoration from the browser's back/forward cache). Also added a `pageshow` listener that hides results when the page is restored from bfcache.
+- **Search UI fully collapses after navigation**: clicking a search suggestion (in either the inline search dropdown or the search widget panel) now also closes the search widget panel and clears the search input, mirroring the effect of clicking the search icon a second time. The input is also cleared when the page is restored from the browser's back/forward cache.
 # 0.82.0
 2026-05-06
 

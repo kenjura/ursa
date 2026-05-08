@@ -5,6 +5,7 @@ import { hideBin } from 'yargs/helpers';
 import { generate } from '../src/jobs/generate.js';
 import { resolve, dirname, join } from 'path';
 import { fileURLToPath } from 'url';
+import { stagePromotedChangelog, registerCleanupOnExit } from '../src/helper/promoteChangelog.js';
 
 // Get the directory where ursa is installed
 const __filename = fileURLToPath(import.meta.url);
@@ -48,6 +49,10 @@ yargs(hideBin(process.argv))
           describe: 'Ignore cached hashes and regenerate all files',
           type: 'boolean',
           default: false
+        })
+        .option('promote-changelog', {
+          describe: 'Path to a markdown file to render at the output root (sibling of index.html)',
+          type: 'string'
         });
     },
     async (argv) => {
@@ -57,6 +62,7 @@ yargs(hideBin(process.argv))
       const whitelist = argv.whitelist ? resolve(argv.whitelist) : null;
       const exclude = argv.exclude || null;
       const clean = argv.clean;
+      const promoteChangelog = argv['promote-changelog'] || null;
       
       console.log(`Generating site from ${source} to ${output} using meta from ${meta}`);
       if (whitelist) {
@@ -69,7 +75,9 @@ yargs(hideBin(process.argv))
         console.log(`Clean build: ignoring cached hashes`);
       }
       
+      let promoted = { stagedFile: null, cleanup: async () => {} };
       try {
+        promoted = await stagePromotedChangelog({ changelogPath: promoteChangelog, sourceDir: source });
         await generate({
           _source: source,
           _meta: meta,
@@ -82,6 +90,8 @@ yargs(hideBin(process.argv))
       } catch (error) {
         console.error('Error generating site:', error.message);
         process.exit(1);
+      } finally {
+        await promoted.cleanup();
       }
     }
   )
@@ -127,6 +137,10 @@ yargs(hideBin(process.argv))
           describe: 'Ignore cached hashes and regenerate all files',
           type: 'boolean',
           default: false
+        })
+        .option('promote-changelog', {
+          describe: 'Path to a markdown file to render at the output root (sibling of index.html)',
+          type: 'string'
         });
     },
     async (argv) => {
@@ -137,6 +151,7 @@ yargs(hideBin(process.argv))
       const whitelist = argv.whitelist ? resolve(argv.whitelist) : null;
       const exclude = argv.exclude || null;
       const clean = argv.clean;
+      const promoteChangelog = argv['promote-changelog'] || null;
       
       console.log(`Starting development server...`);
       console.log(`Source: ${source}`);
@@ -151,6 +166,8 @@ yargs(hideBin(process.argv))
       }
       
       try {
+        const promoted = await stagePromotedChangelog({ changelogPath: promoteChangelog, sourceDir: source });
+        registerCleanupOnExit(promoted.cleanup);
         const { serve } = await import('../src/serve.js');
         await serve({
           _source: source,
