@@ -1265,3 +1265,39 @@ footer#site-footer {
     text-size-adjust: 100%;
   }
 }
+
+
+/* sticky unified header */
+article#main-content {
+  h1, h2, h3 {
+    position: sticky;
+    z-index: 90;
+    margin: 0;
+
+    &.stuck {
+      background: var(--nav-top-bg);
+    }
+  }
+  h1 {
+    top: var(--global-nav-height);
+    height: 3rem;
+    line-height: 3rem;
+  }
+  h2 {
+    top: calc(var(--global-nav-height) + 3rem);
+    height: 2.25rem;
+    line-height: 2.25rem;
+  }
+  h3 {
+    top: calc(var(--global-nav-height) + 5.25rem);
+    height: 1.75rem;
+    line-height: 1.75rem;
+  }
+
+  /* Hide stuck h2/h3 — the breadcrumb on the stuck h1 carries their text.
+     Use visibility (not max-height/display) to preserve layout and avoid
+     the flicker loop where collapsing the heading un-sticks it. */
+  h2.stuck, h3.stuck {
+    visibility: hidden;
+  }
+}

@@ -1,3 +1,7 @@
+# 0.84.0
+2026-05-08
+
+- Unified sticky headers are now standard
 
 # 0.83.0
 2026-05-07
