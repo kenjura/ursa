@@ -6,6 +6,7 @@ import { generate } from '../src/jobs/generate.js';
 import { resolve, dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import { stagePromotedChangelog, registerCleanupOnExit } from '../src/helper/promoteChangelog.js';
+import { instantiateTemplate } from '../src/helper/documentTemplates.js';
 
 // Get the directory where ursa is installed
 const __filename = fileURLToPath(import.meta.url);
@@ -230,6 +231,45 @@ yargs(hideBin(process.argv))
       } catch (error) {
         console.error('Error starting dev mode:', error.message);
         console.error(error);
+        process.exit(1);
+      }
+    }
+  )
+  .command(
+    'template <source> <templatePath> <destination>',
+    'Create a new document from a document template',
+    (yargs) => {
+      return yargs
+        .positional('source', {
+          describe: 'Source directory (docroot) of the Ursa site',
+          type: 'string',
+          demandOption: true
+        })
+        .positional('templatePath', {
+          describe: 'Path to the template file (relative to source, e.g. _templates/city.md)',
+          type: 'string',
+          demandOption: true
+        })
+        .positional('destination', {
+          describe: 'Path for the new document (relative to source, e.g. places/springfield.md)',
+          type: 'string',
+          demandOption: true
+        });
+    },
+    async (argv) => {
+      const source = resolve(argv.source);
+      const templateAbsPath = resolve(source, argv.templatePath);
+      const destAbsPath = resolve(source, argv.destination);
+
+      try {
+        const { templateRelPath, destRelPath } = await instantiateTemplate(
+          templateAbsPath,
+          destAbsPath,
+          source
+        );
+        console.log(`✅ Created ${destRelPath} from template ${templateRelPath}`);
+      } catch (error) {
+        console.error(`Error creating template instance: ${error.message}`);
         process.exit(1);
       }
     }

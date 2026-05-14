@@ -79,6 +79,7 @@ import {
   copyMetaAssets,
 } from "../helper/build/index.js";
 import { getProfiler } from "../helper/build/profiler.js";
+import { reconcileAll, isInsideTemplatesFolder } from "../helper/documentTemplates.js";
 
 // Concurrency limiter for batch processing to avoid memory exhaustion
 const BATCH_SIZE = parseInt(process.env.URSA_BATCH_SIZE || '50', 10);
@@ -210,7 +211,7 @@ export async function generate({
 
   // read all articles, process them, copy them to build
   const articleExtensions = /\.(md|mdx|txt|yml)$/;
-  const hiddenOrSystemDirs = /[\/\\]\.(?!\.)|[\/\\]node_modules[\/\\]/;  // Matches hidden folders (starting with .) or node_modules
+  const hiddenOrSystemDirs = /[\/\\]\.(?!\.)|[\/\\]node_modules[\/\\]|[\/\\]_templates[\/\\]|[\/\\]_templates$/;  // Matches hidden folders (starting with .), node_modules, or _templates
   const allSourceFilenamesThatAreArticles = allSourceFilenames.filter(
     (filename) => filename.match(articleExtensions) && !filename.match(hiddenOrSystemDirs) && !isInHiddenFolder(filename)
   );
@@ -229,6 +230,40 @@ export async function generate({
   
   progress.logTimed(`Classified: ${allSourceFilenamesThatAreArticles.length} articles, ${allSourceFilenamesThatAreDirectories.length} dirs, ${existingHtmlFiles.size} HTML [${progress.stopTimer('Filter')}]`);
   profiler.endPhase('Filter & classify');
+
+  // Phase: Document template reconciliation
+  // Must run BEFORE article processing so that any template-driven changes
+  // to source .md files are picked up during rendering.
+  profiler.startPhase('Template reconciliation');
+  progress.startTimer('Templates');
+  const templateReconciliation = await reconcileAll(
+    allSourceFilenamesThatAreArticles,
+    allSourceFilenamesUnfiltered,   // templates live in _templates which is filtered out of articles
+    source
+  );
+  if (templateReconciliation.updated > 0 || templateReconciliation.conflicts > 0 || templateReconciliation.initialized > 0) {
+    progress.logTimed(
+      `📄 Document templates: ${templateReconciliation.initialized} initialized, ` +
+      `${templateReconciliation.updated} auto-merged, ` +
+      `${templateReconciliation.conflicts} conflicts, ` +
+      `${templateReconciliation.unchanged} unchanged, ` +
+      `${templateReconciliation.errors} errors`
+    );
+    if (templateReconciliation.conflicts > 0) {
+      console.warn(`\n⚠️  Template conflicts require manual resolution:`);
+      for (const msg of templateReconciliation.messages) {
+        if (msg.includes('Conflict')) console.warn(`   ${msg}`);
+      }
+      console.warn('');
+    }
+    if (templateReconciliation.errors > 0) {
+      for (const msg of templateReconciliation.messages) {
+        if (msg.includes('Error') || msg.includes('not found')) console.warn(`   ⚠️  ${msg}`);
+      }
+    }
+  }
+  progress.logTimed(`Document templates processed [${progress.stopTimer('Templates')}]`);
+  profiler.endPhase('Template reconciliation');
 
   // Phase: Build navigation and metadata
   profiler.startPhase('Build navigation');

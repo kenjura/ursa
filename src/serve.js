@@ -11,6 +11,7 @@ import { watchModeCache } from "./helper/build/watchCache.js";
 import { dependencyTracker } from "./helper/dependencyTracker.js";
 import { bundleMetaTemplateAssets, clearMetaBundleCache } from "./helper/assetBundler.js";
 import { getTemplates, copyMetaAssets } from "./helper/build/templates.js";
+import { isInsideTemplatesFolder, reconcileByTemplate } from "./helper/documentTemplates.js";
 import { WebSocketServer } from "ws";
 import { createServer } from "http";
 import { resolvePort } from "./helper/portUtils.js";
@@ -553,9 +554,32 @@ export async function serve({
         try { await promises.unlink(join(ursaDir, 'nav-cache.json')); } catch {}
       }
 
+      // --- 5.5) Handle document template changes ---
+      // If a _templates/*.md file changed, reconcile all documents using that template
+      // and add the affected instance documents to the regeneration set.
+      const templateChanges = articleChanges.filter(c => c.name && isInsideTemplatesFolder(c.name));
+      if (templateChanges.length > 0 && watchModeCache.isInitialized) {
+        const allArticles = watchModeCache.allArticlePaths || [];
+        for (const change of templateChanges) {
+          console.log(`📄 Document template changed: ${basename(change.name)}`);
+          const reconcileResult = await reconcileByTemplate(change.name, allArticles, sourceDir);
+          if (reconcileResult.updated > 0 || reconcileResult.conflicts > 0) {
+            console.log(`   ${reconcileResult.updated} auto-merged, ${reconcileResult.conflicts} conflicts`);
+            reconcileResult.affectedPaths.forEach(p => affectedDocPaths.add(p));
+          }
+          if (reconcileResult.conflicts > 0) {
+            for (const msg of reconcileResult.messages) {
+              if (msg.includes('Conflict')) console.warn(`   ⚠️  ${msg}`);
+            }
+          }
+        }
+      }
+
       // --- 6) Handle article changes via fast single-file regen ---
       // Deduplicate articles (same file may appear multiple times in rapid saves)
-      const uniqueArticles = [...new Set(articleChanges.map(c => c.name))];
+      // Exclude _templates files from direct article regeneration (they aren't rendered)
+      const uniqueArticles = [...new Set(articleChanges.map(c => c.name))]
+        .filter(name => !isInsideTemplatesFolder(name));
       for (const articlePath of uniqueArticles) {
         affectedDocPaths.add(articlePath);
       }
