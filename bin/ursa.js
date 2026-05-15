@@ -15,7 +15,7 @@ const PACKAGE_META = join(__dirname, '..', 'meta');
 
 yargs(hideBin(process.argv))
   .command(
-    'generate <source>',
+    ['generate <source>', '$0 <source>'],
     'Generate a static site from source files',
     (yargs) => {
       return yargs
@@ -270,59 +270,6 @@ yargs(hideBin(process.argv))
         console.log(`✅ Created ${destRelPath} from template ${templateRelPath}`);
       } catch (error) {
         console.error(`Error creating template instance: ${error.message}`);
-        process.exit(1);
-      }
-    }
-  )
-  .command(
-    '$0 <source>',
-    'Generate a static site from source files (default command)',
-    (yargs) => {
-      return yargs
-        .positional('source', {
-          describe: 'Source directory containing markdown/wikitext files',
-          type: 'string',
-          demandOption: true
-        })
-        .option('meta', {
-          alias: 'm',
-          default: 'meta',
-          describe: 'Meta directory containing templates and styles',
-          type: 'string'
-        })
-        .option('output', {
-          alias: 'o', 
-          default: 'output',
-          describe: 'Output directory for generated site',
-          type: 'string'
-        })
-        .option('whitelist', {
-          alias: 'w',
-          describe: 'Path to whitelist file containing patterns for files to include',
-          type: 'string'
-        });
-    },
-    async (argv) => {
-      const source = resolve(argv.source);
-      const meta = resolve(argv.meta);
-      const output = resolve(argv.output);
-      const whitelist = argv.whitelist ? resolve(argv.whitelist) : null;
-      
-      console.log(`Generating site from ${source} to ${output} using meta from ${meta}`);
-      if (whitelist) {
-        console.log(`Using whitelist: ${whitelist}`);
-      }
-      
-      try {
-        await generate({
-          _source: source,
-          _meta: meta,
-          _output: output,
-          _whitelist: whitelist
-        });
-        console.log('Site generation completed successfully!');
-      } catch (error) {
-        console.error('Error generating site:', error.message);
         process.exit(1);
       }
     }
