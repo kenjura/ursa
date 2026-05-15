@@ -13,6 +13,25 @@ import remarkGfm from "remark-gfm";
 import { visit } from "unist-util-visit";
 
 /**
+ * remark-definition-list only registers the `:` (charcode 58) marker, but
+ * PHP Markdown Extra (and markdown-it-deflist) also support `~` (charcode 126).
+ * This sibling plugin must run AFTER remarkDefinitionList; it locates the
+ * already-registered defList construct and re-registers it under `~` so that
+ * .mdx files have parity with .md files.
+ */
+function remarkDefinitionListTildeMarker() {
+  const data = this.data();
+  const micromarkExtensions = data.micromarkExtensions ?? (data.micromarkExtensions = []);
+  for (const ext of micromarkExtensions) {
+    const construct = ext?.document?.[58];
+    if (construct) {
+      micromarkExtensions.push({ document: { 126: construct } });
+      return;
+    }
+  }
+}
+
+/**
  * Custom remark plugin that converts container directives (:::name ... :::)
  * into <aside> HTML elements, matching the markdown-it-container behavior
  * used in the .md pipeline (markdownHelper.cjs).
@@ -122,6 +141,7 @@ export async function renderMDX({ source, filePath, sourceRoot, hydrate = false 
       remarkDirective,
       remarkAsideContainers,
       remarkDefinitionList,
+      remarkDefinitionListTildeMarker,
       remarkSupersub,
     ];
     // remark-definition-list needs custom handlers for remark-rehype conversion

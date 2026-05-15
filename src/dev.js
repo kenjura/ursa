@@ -569,10 +569,12 @@ async function wrapInTemplate(body, title, fileMeta, urlPath, sourcePath, hydrat
   // Resolve relative URLs
   finalHtml = resolveRelativeUrls(finalHtml, docUrlPath);
   
-  // Mark inactive links (only if validPaths is ready)
-  if (validPaths) {
-    finalHtml = markInactiveLinks(finalHtml, validPaths, docUrlPath, false);
-  }
+  // Mark inactive links + rewrite .md/.mdx → .html. We always run this even
+  // before validPaths is ready, because the optimistic .md→.html conversion
+  // inside resolveHref does not require validPaths. Without this, links to
+  // markdown files served before background caches finish would not be
+  // rewritten and the browser would request the source .md file directly.
+  finalHtml = markInactiveLinks(finalHtml, validPaths || new Map(), docUrlPath, false);
   
   return finalHtml;
 }
