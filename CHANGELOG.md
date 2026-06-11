@@ -1,3 +1,21 @@
+# 0.87.0
+TBD
+
+- Added support for definition lists in Markdown/MDX documents, allowing for structured term-definition pairs to be rendered as HTML definition lists (<dl>, <dt>, <dd>).
+- Added response headers for json files with the ursa and doc repo version numbers, so consumers can invalidate caches when a new version is deployed.
+
+
+## Serve Revamp (Phases 0–1)
+
+`ursa serve` could miss cascading updates — stylesheet edits, static files in `meta/`, template changes, and any change saved while a rebuild was already running — forcing a restart with `--clean`. This release ships the first two phases of the rework; design, root-cause analysis, and remaining TODOs: [docs/changes/serve-logic.md](docs/changes/serve-logic.md).
+
+- **Serve-mode reliability fixes (Phase 0):**
+  - Static assets in `meta/` (images, fonts, PDFs, media) are now watched; replacing one re-copies it to output and reloads clients, without a full rebuild. Previously these changes were invisible until restart.
+  - Changes saved while a regeneration is in flight are queued and processed when the current pass finishes, instead of being dropped with "changes lost".
+  - Every full-rebuild path now deletes `content-hashes.json` and `nav-cache.json` first, so a rebuild after a template/meta change actually regenerates unchanged articles instead of hash-skipping them and leaving stale HTML.
+  - The dependency tracker is persisted to `.ursa/dependency-graph.json` and reloaded on warm start, so hash-skipped documents keep their invalidation edges. Single-file regeneration now registers dependencies too, and template edits are recognized under the `templates/{name}/index.html` folder structure — a template edit on a warm start is now a selective rebuild of just the documents using that template.
+- **New incremental build engine (Phase 1):** `src/helper/build/graph.js` — a fingerprinted dependency graph (Make/Shake-style) with dynamic dependency discovery (`ctx.read`/`ctx.exists`/`ctx.get`), lookup nodes so file *creation* invalidates, size+mtime fast-path fingerprinting with content-hash confirmation, early cutoff, topological demand-driven scheduling, failure isolation with retry, and versioned persistence to `.ursa/graph.json`. Fully unit-tested; the build/serve pipelines will be ported onto it in the next phases (2–4).
+
 # 0.86.0
 2026-05-18
 

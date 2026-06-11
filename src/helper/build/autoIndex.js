@@ -252,8 +252,14 @@ export async function generateAutoIndices(output, directories, source, templates
   let skippedHtmlCount = 0;
   
   for (const dir of outputDirs) {
+    // Skip output directories that were never created (the source folder
+    // produced no output files, e.g. it was empty)
+    if (!existsSync(dir)) {
+      continue;
+    }
+
     const indexPath = join(dir, 'index.html');
-    
+
     // Skip if this directory had a source index.md/txt/yml that was already processed
     if (dirsWithSourceIndex.has(dir)) {
       continue;
