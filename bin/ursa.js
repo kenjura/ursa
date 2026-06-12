@@ -6,6 +6,7 @@ import { generate } from '../src/jobs/generate.js';
 import { resolve, dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import { stagePromotedChangelog, registerCleanupOnExit } from '../src/helper/promoteChangelog.js';
+import { instantiateTemplate } from '../src/helper/documentTemplates.js';
 
 // Get the directory where ursa is installed
 const __filename = fileURLToPath(import.meta.url);
@@ -14,7 +15,7 @@ const PACKAGE_META = join(__dirname, '..', 'meta');
 
 yargs(hideBin(process.argv))
   .command(
-    'generate <source>',
+    ['generate <source>', '$0 <source>'],
     'Generate a static site from source files',
     (yargs) => {
       return yargs
@@ -235,54 +236,40 @@ yargs(hideBin(process.argv))
     }
   )
   .command(
-    '$0 <source>',
-    'Generate a static site from source files (default command)',
+    'template <source> <templatePath> <destination>',
+    'Create a new document from a document template',
     (yargs) => {
       return yargs
         .positional('source', {
-          describe: 'Source directory containing markdown/wikitext files',
+          describe: 'Source directory (docroot) of the Ursa site',
           type: 'string',
           demandOption: true
         })
-        .option('meta', {
-          alias: 'm',
-          default: 'meta',
-          describe: 'Meta directory containing templates and styles',
-          type: 'string'
+        .positional('templatePath', {
+          describe: 'Path to the template file (relative to source, e.g. _templates/city.md)',
+          type: 'string',
+          demandOption: true
         })
-        .option('output', {
-          alias: 'o', 
-          default: 'output',
-          describe: 'Output directory for generated site',
-          type: 'string'
-        })
-        .option('whitelist', {
-          alias: 'w',
-          describe: 'Path to whitelist file containing patterns for files to include',
-          type: 'string'
+        .positional('destination', {
+          describe: 'Path for the new document (relative to source, e.g. places/springfield.md)',
+          type: 'string',
+          demandOption: true
         });
     },
     async (argv) => {
       const source = resolve(argv.source);
-      const meta = resolve(argv.meta);
-      const output = resolve(argv.output);
-      const whitelist = argv.whitelist ? resolve(argv.whitelist) : null;
-      
-      console.log(`Generating site from ${source} to ${output} using meta from ${meta}`);
-      if (whitelist) {
-        console.log(`Using whitelist: ${whitelist}`);
-      }
-      
+      const templateAbsPath = resolve(source, argv.templatePath);
+      const destAbsPath = resolve(source, argv.destination);
+
       try {
-        await generate({
-          _source: source,
-          _meta: meta,
-          _output: output,
-          _whitelist: whitelist
-        });
-        console.log('Site generation completed successfully!');
+        const { templateRelPath, destRelPath } = await instantiateTemplate(
+          templateAbsPath,
+          destAbsPath,
+          source
+        );
+        console.log(`✅ Created ${destRelPath} from template ${templateRelPath}`);
       } catch (error) {
-        console.error('Error generating site:', error.message);
+        console.error(`Error creating template instance: ${error.message}`);
         process.exit(1);
       }
     }

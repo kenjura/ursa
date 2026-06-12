@@ -34,7 +34,7 @@ import { extractImageReferences } from "./helper/imageExtractor.js";
 import { recurse } from "./helper/recursive-readdir.js";
 import { isFolderHidden, clearConfigCache } from "./helper/folderConfig.js";
 import { extractSections } from "./helper/sectionExtractor.js";
-import { getTemplates, getMenu, findAllCustomMenus, getCustomMenuForFile, getTransformedMetadata, getFooter, toTitleCase, addTrailingSlash, generateAutoIndexHtmlFromSource, copyMetaAssets } from "./helper/build/index.js";
+import { getTemplates, getMenu, findAllCustomMenus, getCustomMenuForFile, getTransformedMetadata, getFooter, getUrsaMetadata, toTitleCase, addTrailingSlash, generateAutoIndexHtmlFromSource, copyMetaAssets } from "./helper/build/index.js";
 import { findCustomMenu, extractMenuFrontmatter, parseCustomMenu, combineAutoAndManualMenu } from "./helper/customMenu.js";
 import { getAndIncrementBuildId } from "./helper/ursaConfig.js";
 import { resolvePort } from "./helper/portUtils.js";
@@ -47,6 +47,9 @@ const devState = {
   source: null,
   meta: null,
   output: null,
+
+  // Ursa + doc repo versions, embedded in JSON response headers
+  ursaMetadata: null,
   
   // Background cache status
   cacheReady: false,
@@ -766,6 +769,7 @@ export async function dev({
   devState.source = sourceDir + '/';
   devState.meta = metaDir;
   devState.output = outputDir + '/';
+  devState.ursaMetadata = await getUrsaMetadata(_source);
   
   console.log('🚀 Ursa Dev Mode');
   console.log('━'.repeat(50));
@@ -810,6 +814,17 @@ export async function dev({
     threshold: 1024,
     level: 6
   }));
+
+  // Add ursa-version and doc-version headers to all JSON responses
+  // (per-document JSON, directory index arrays, and public/*.json index files)
+  app.use((req, res, next) => {
+    if (req.path.endsWith('.json')) {
+      const meta = devState.ursaMetadata || {};
+      res.setHeader('X-ursa-version', meta.ursaVersion || 'unknown');
+      res.setHeader('X-doc-version', meta.docVersion || 'unknown');
+    }
+    next();
+  });
   
   // Dev mode document handler
   app.use(async (req, res, next) => {

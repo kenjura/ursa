@@ -11,6 +11,7 @@ import { watchModeCache } from "./helper/build/watchCache.js";
 import { dependencyTracker } from "./helper/dependencyTracker.js";
 import { bundleMetaTemplateAssets, clearMetaBundleCache } from "./helper/assetBundler.js";
 import { getTemplates, copyMetaAssets } from "./helper/build/templates.js";
+import { isInsideTemplatesFolder, reconcileByTemplate } from "./helper/documentTemplates.js";
 import { WebSocketServer } from "ws";
 import { createServer } from "http";
 import { resolvePort } from "./helper/portUtils.js";
@@ -270,6 +271,11 @@ const DEBOUNCE_MS = 500; // Wait 500ms of quiet before starting regeneration
 let pendingChanges = [];    // { evt, name, watcher: 'source'|'meta' }
 let debounceTimer = null;
 
+// Changes that arrived while a regeneration pass was in flight.
+// They are processed as the next batch when the current pass finishes —
+// never dropped (passes run sequentially, single-writer).
+let queuedDuringRegeneration = [];
+
 /**
  * Copy a single CSS file to the output directory
  * @param {string} cssPath - Absolute path to the CSS file
@@ -434,8 +440,10 @@ export async function serve({
    */
   async function processChangeBatch(batch, sourceDir, metaDir, outputDir, _whitelist, _exclude) {
     if (isRegenerating) {
-      console.log(`⏳ Debounce batch skipped (regeneration already in progress) — ${batch.length} changes lost`);
-      broadcastMessage({ type: 'update-no-affect', timestamp: Date.now() });
+      // Never drop changes: accumulate them and process when the current
+      // pass finishes (clients keep their update-start indicator until then)
+      queuedDuringRegeneration.push(...batch);
+      console.log(`⏳ Regeneration in progress — queued ${batch.length} change(s) for the next pass`);
       return;
     }
     isRegenerating = true;
@@ -443,6 +451,7 @@ export async function serve({
     try {
       // Categorize changes
       const metaChanges = batch.filter(c => c.watcher === 'meta');
+      const metaStaticChanges = metaChanges.filter(c => c.name && STATIC_FILE_EXTENSIONS.test(c.name));
       const sourceChanges = batch.filter(c => c.watcher === 'source');
 
       const cssChanges = sourceChanges.filter(c => c.name?.endsWith('.css'));
@@ -547,15 +556,34 @@ export async function serve({
       if (menuConfigChanges.length > 0) {
         needsFullRebuild = true;
         fullRebuildReason = `Menu/config change: ${menuConfigChanges.map(c => basename(c.name)).join(', ')}`;
-        // Delete on-disk caches to force full navigation + content rebuild
-        const ursaDir = join(sourceDir, '.ursa');
-        try { await promises.unlink(join(ursaDir, 'content-hashes.json')); } catch {}
-        try { await promises.unlink(join(ursaDir, 'nav-cache.json')); } catch {}
+      }
+
+      // --- 5.5) Handle document template changes ---
+      // If a _templates/*.md file changed, reconcile all documents using that template
+      // and add the affected instance documents to the regeneration set.
+      const templateChanges = articleChanges.filter(c => c.name && isInsideTemplatesFolder(c.name));
+      if (templateChanges.length > 0 && watchModeCache.isInitialized) {
+        const allArticles = watchModeCache.allArticlePaths || [];
+        for (const change of templateChanges) {
+          console.log(`📄 Document template changed: ${basename(change.name)}`);
+          const reconcileResult = await reconcileByTemplate(change.name, allArticles, sourceDir);
+          if (reconcileResult.updated > 0 || reconcileResult.conflicts > 0) {
+            console.log(`   ${reconcileResult.updated} auto-merged, ${reconcileResult.conflicts} conflicts`);
+            reconcileResult.affectedPaths.forEach(p => affectedDocPaths.add(p));
+          }
+          if (reconcileResult.conflicts > 0) {
+            for (const msg of reconcileResult.messages) {
+              if (msg.includes('Conflict')) console.warn(`   ⚠️  ${msg}`);
+            }
+          }
+        }
       }
 
       // --- 6) Handle article changes via fast single-file regen ---
       // Deduplicate articles (same file may appear multiple times in rapid saves)
-      const uniqueArticles = [...new Set(articleChanges.map(c => c.name))];
+      // Exclude _templates files from direct article regeneration (they aren't rendered)
+      const uniqueArticles = [...new Set(articleChanges.map(c => c.name))]
+        .filter(name => !isInsideTemplatesFolder(name));
       for (const articlePath of uniqueArticles) {
         affectedDocPaths.add(articlePath);
       }
@@ -569,6 +597,13 @@ export async function serve({
       // --- 8) Execute rebuild ---
       if (needsFullRebuild) {
         console.log(`📦 Full rebuild required: ${fullRebuildReason}`);
+        // Delete on-disk caches on EVERY full-rebuild path (not just menu/config):
+        // the content-hash skip only looks at article markdown, so without this a
+        // rebuild after a template/meta change would skip every unchanged article
+        // and leave stale HTML (see docs/changes/serve-logic.md, root cause #2)
+        const ursaDir = join(sourceDir, '.ursa');
+        try { await promises.unlink(join(ursaDir, 'content-hashes.json')); } catch {}
+        try { await promises.unlink(join(ursaDir, 'nav-cache.json')); } catch {}
         clearWatchCache();
         try {
           const result = await generate({ _source: sourceDir, _meta: metaDir, _output: outputDir, _whitelist, _exclude, _deferImages: true, _deferSearchIndex: true });
@@ -666,7 +701,8 @@ export async function serve({
         }
       } else {
         // No documents affected (e.g. static-only changes) — reload all clients
-        if (staticChanges.length > 0) {
+        // (meta static assets were re-copied to output/public in step 4)
+        if (staticChanges.length > 0 || metaStaticChanges.length > 0) {
           broadcastReload(uniqueNames[0]);
         } else {
           // Nothing to do — clear indicators
@@ -680,11 +716,20 @@ export async function serve({
       broadcastReload();
     } finally {
       isRegenerating = false;
+      // Process changes that arrived during this pass (sequentially, never dropped)
+      if (queuedDuringRegeneration.length > 0) {
+        const nextBatch = queuedDuringRegeneration.splice(0);
+        console.log(`▶️  Processing ${nextBatch.length} change(s) queued during the last pass`);
+        setImmediate(() => processChangeBatch(nextBatch, sourceDir, metaDir, outputDir, _whitelist, _exclude));
+      }
     }
   }
   
-  // Meta changes: queue for debounced batch processing
-  watch(metaDir, { recursive: true, filter: /\.(js|json|css|html|md|txt|yml|yaml)$/ }, (evt, name) => {
+  // Meta changes: queue for debounced batch processing.
+  // Includes static asset extensions (images, fonts, media, PDFs) so that
+  // replacing e.g. a PNG or font in meta/ re-runs copyMetaAssets + re-bundling
+  // instead of being invisible to the watcher.
+  watch(metaDir, { recursive: true, filter: /\.(js|json|css|html|md|txt|yml|yaml|jpg|jpeg|png|gif|webp|svg|ico|woff|woff2|ttf|eot|pdf|mp3|mp4|webm|ogg)$/i }, (evt, name) => {
     queueChange(evt, name, 'meta');
   });
 
@@ -720,6 +765,17 @@ function serveFiles(outputDir, port = 8080) {
     // Use default compression level (good balance of speed vs size)
     level: 6
   }));
+
+  // Add ursa-version and doc-version headers to all JSON responses
+  // (per-document JSON, directory index arrays, and public/*.json index files)
+  app.use((req, res, next) => {
+    if (req.path.endsWith('.json')) {
+      const meta = watchModeCache.ursaMetadata || {};
+      res.setHeader('X-ursa-version', meta.ursaVersion || 'unknown');
+      res.setHeader('X-doc-version', meta.docVersion || 'unknown');
+    }
+    next();
+  });
 
   // Middleware to inject hot reload script into HTML responses
   app.use(async (req, res, next) => {
