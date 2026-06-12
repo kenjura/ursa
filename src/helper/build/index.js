@@ -10,4 +10,5 @@ export * from './templates.js';
 export * from './menu.js';
 export * from './metadata.js';
 export * from './footer.js';
+export * from './ursaMetadata.js';
 export * from './autoIndex.js';

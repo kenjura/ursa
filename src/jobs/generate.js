@@ -32,7 +32,7 @@ import { findStyleCss, findAllStyleCss } from "../helper/findStyleCss.js";
 import { findScriptJs, findAllScriptJs } from "../helper/findScriptJs.js";
 import { bundleMetaTemplateAssets, bundleDocumentCss, bundleDocumentJs, clearMetaBundleCache, generateSeparateCssTags, generateSeparateJsTags } from "../helper/assetBundler.js";
 import { buildFullTextIndex, buildIncrementalIndex, loadIndexCache, saveIndexCache } from "../helper/fullTextIndex.js";
-import { dependencyTracker } from "../helper/dependencyTracker.js";
+import { dependencyTracker, loadDependencyTracker, saveDependencyTracker } from "../helper/dependencyTracker.js";
 import { CacheBustHashMap } from "../helper/build/cacheBust.js";
 import { copy as copyDir, emptyDir, outputFile, remove } from "fs-extra";
 import { basename, dirname, extname, join, parse, resolve } from "path";
@@ -74,11 +74,13 @@ import {
   getCustomMenuForFile,
   getTransformedMetadata,
   getFooter,
+  getUrsaMetadata,
   generateAutoIndices,
   generateAutoIndexHtmlFromSource,
   copyMetaAssets,
 } from "../helper/build/index.js";
 import { getProfiler } from "../helper/build/profiler.js";
+import { reconcileAll, isInsideTemplatesFolder } from "../helper/documentTemplates.js";
 
 // Concurrency limiter for batch processing to avoid memory exhaustion
 const BATCH_SIZE = parseInt(process.env.URSA_BATCH_SIZE || '50', 10);
@@ -164,6 +166,14 @@ export async function generate({
     progress.logTimed(`Clean build: clearing output directory ${output}`);
     await emptyDir(output);
     progress.logTimed(`Clean complete [${progress.stopTimer('Clean')}]`);
+  } else {
+    // Warm start: reload persisted dependency registrations so hash-skipped
+    // documents keep their edges (current-run registrations take precedence)
+    const loaded = await loadDependencyTracker(source);
+    if (loaded) {
+      const stats = dependencyTracker.getStats();
+      progress.logTimed(`Dependency graph loaded: ${stats.totalDocuments} documents, ${stats.uniqueFiles} dependencies`);
+    }
   }
 
   // Phase: Scan source files
@@ -210,7 +220,7 @@ export async function generate({
 
   // read all articles, process them, copy them to build
   const articleExtensions = /\.(md|mdx|txt|yml)$/;
-  const hiddenOrSystemDirs = /[\/\\]\.(?!\.)|[\/\\]node_modules[\/\\]/;  // Matches hidden folders (starting with .) or node_modules
+  const hiddenOrSystemDirs = /[\/\\]\.(?!\.)|[\/\\]node_modules[\/\\]|[\/\\]_templates[\/\\]|[\/\\]_templates$/;  // Matches hidden folders (starting with .), node_modules, or _templates
   const allSourceFilenamesThatAreArticles = allSourceFilenames.filter(
     (filename) => filename.match(articleExtensions) && !filename.match(hiddenOrSystemDirs) && !isInHiddenFolder(filename)
   );
@@ -229,6 +239,44 @@ export async function generate({
   
   progress.logTimed(`Classified: ${allSourceFilenamesThatAreArticles.length} articles, ${allSourceFilenamesThatAreDirectories.length} dirs, ${existingHtmlFiles.size} HTML [${progress.stopTimer('Filter')}]`);
   profiler.endPhase('Filter & classify');
+
+  // Drop persisted dependency registrations for documents that no longer
+  // exist (or are excluded), so stale entries don't accumulate across runs
+  dependencyTracker.prune(new Set(allSourceFilenamesThatAreArticles));
+
+  // Phase: Document template reconciliation
+  // Must run BEFORE article processing so that any template-driven changes
+  // to source .md files are picked up during rendering.
+  profiler.startPhase('Template reconciliation');
+  progress.startTimer('Templates');
+  const templateReconciliation = await reconcileAll(
+    allSourceFilenamesThatAreArticles,
+    allSourceFilenamesUnfiltered,   // templates live in _templates which is filtered out of articles
+    source
+  );
+  if (templateReconciliation.updated > 0 || templateReconciliation.conflicts > 0 || templateReconciliation.initialized > 0) {
+    progress.logTimed(
+      `📄 Document templates: ${templateReconciliation.initialized} initialized, ` +
+      `${templateReconciliation.updated} auto-merged, ` +
+      `${templateReconciliation.conflicts} conflicts, ` +
+      `${templateReconciliation.unchanged} unchanged, ` +
+      `${templateReconciliation.errors} errors`
+    );
+    if (templateReconciliation.conflicts > 0) {
+      console.warn(`\n⚠️  Template conflicts require manual resolution:`);
+      for (const msg of templateReconciliation.messages) {
+        if (msg.includes('Conflict')) console.warn(`   ${msg}`);
+      }
+      console.warn('');
+    }
+    if (templateReconciliation.errors > 0) {
+      for (const msg of templateReconciliation.messages) {
+        if (msg.includes('Error') || msg.includes('not found')) console.warn(`   ⚠️  ${msg}`);
+      }
+    }
+  }
+  progress.logTimed(`Document templates processed [${progress.stopTimer('Templates')}]`);
+  profiler.endPhase('Template reconciliation');
 
   // Phase: Build navigation and metadata
   profiler.startPhase('Build navigation');
@@ -300,6 +348,9 @@ export async function generate({
   }
   
   profiler.endPhase('Build navigation');
+
+  // Build the _ursa_metadata embedded in every generated JSON file (ursa + doc repo versions)
+  const ursaMetadata = await getUrsaMetadata(_source);
 
   // Phase: Load cache
   profiler.startPhase('Load cache');
@@ -864,6 +915,7 @@ export async function generate({
         metadata: fileMeta,
         sections,
         transformedMetadata: jsonTransformedMeta,
+        _ursa_metadata: ursaMetadata,
       };
       
       // Store minimal data for directory indices, including metadata
@@ -1159,6 +1211,10 @@ export async function generate({
     progress.log(`Saved ${contentTimestamps.size} content timestamps`);
   }
 
+  // Persist the dependency tracker so hash-skipped documents keep their
+  // edges on the next warm start (invalidation plans stay accurate)
+  await saveDependencyTracker(source);
+
   // Populate watch mode cache for fast single-file regeneration
   watchModeCache.templates = templates;
   watchModeCache.menu = menu;
@@ -1173,6 +1229,7 @@ export async function generate({
   watchModeCache.allArticlePaths = [...allSourceFilenamesThatAreArticles];
   watchModeCache.imageMap = imageMap;
   watchModeCache.customMenus = customMenus;
+  watchModeCache.ursaMetadata = ursaMetadata;
   watchModeCache.lastFullBuild = Date.now();
   watchModeCache.isInitialized = true;
   const depStats = dependencyTracker.getStats();
@@ -1323,6 +1380,11 @@ export async function regenerateAffectedDocuments(documentPaths, {
     }
   }
 
+  // Persist updated dependency registrations (e.g. a doc switched templates)
+  if (regenerated > 0) {
+    await saveDependencyTracker(resolve(_source) + "/");
+  }
+
   const elapsed = Date.now() - startTime;
   const msg = `Regenerated ${regenerated}/${documentPaths.length} documents in ${elapsed}ms (${reason})${failed > 0 ? `, ${failed} failed` : ""}`;
   console.log(`✅ ${msg}`);
@@ -1364,8 +1426,8 @@ export async function regenerateSingleFile(changedFile, {
   }
   
   try {
-    const { templates, menu, footer, validPaths, hashCache, cacheBustTimestamp, imageMap, customMenus } = watchModeCache;
-    
+    const { templates, menu, footer, validPaths, hashCache, cacheBustTimestamp, imageMap, customMenus, ursaMetadata } = watchModeCache;
+
     const rawBody = await readFile(changedFile, "utf8");
     const type = parse(changedFile).ext;
     const ext = extname(changedFile);
@@ -1464,9 +1526,10 @@ export async function regenerateSingleFile(changedFile, {
     // Find all CSS files up the tree and create separate link tags
     // (regenerateSingleFile is used in serve mode, so separate tags per level for invalidation)
     let styleLink = "";
+    let cssPaths = [];
     try {
       const dirKey = (dir === "/" || dir === "") ? _source : resolve(_source, dir);
-      const cssPaths = await findAllStyleCss(dirKey, _source);
+      cssPaths = await findAllStyleCss(dirKey, _source);
       if (cssPaths.length > 0) {
         // Copy all CSS files to output (always copy in single-file mode to ensure up to date)
         for (const cssPath of cssPaths) {
@@ -1492,9 +1555,10 @@ export async function regenerateSingleFile(changedFile, {
     // Find all script.js files from docroot to current dir and serve as separate external tags
     // (Serve mode: separate tags per level for individual invalidation)
     let customScript = "";
+    let scriptPaths = [];
     try {
       const dirKey = (dir === "/" || dir === "") ? _source : resolve(_source, dir);
-      const scriptPaths = await findAllScriptJs(dirKey, _source);
+      scriptPaths = await findAllScriptJs(dirKey, _source);
       if (scriptPaths.length > 0) {
         // Copy all script files to output so they can be served
         for (const scriptPath of scriptPaths) {
@@ -1507,6 +1571,18 @@ export async function regenerateSingleFile(changedFile, {
     } catch (e) {
       // ignore
     }
+
+    // Register this document's dependencies (template, inherited CSS/JS) so
+    // invalidation plans stay accurate after frontmatter/template changes.
+    // Persisted to .ursa/dependency-graph.json by regenerateAffectedDocuments.
+    const usedTemplateName = (requestedTemplateName && templates[requestedTemplateName])
+      ? requestedTemplateName
+      : DEFAULT_TEMPLATE_NAME;
+    dependencyTracker.registerDocument(changedFile, {
+      templateName: usedTemplateName,
+      cssPaths,
+      scriptPaths,
+    });
 
     // Check if this file has a custom menu
     const customMenuInfo = customMenus ? getCustomMenuForFile(changedFile, source, customMenus) : null;
@@ -1575,6 +1651,7 @@ export async function regenerateSingleFile(changedFile, {
       metadata: fileMeta,
       sections,
       transformedMetadata,
+      _ursa_metadata: ursaMetadata,
     };
     const json = JSON.stringify(jsonObject);
     await outputFile(jsonOutputFilename, json);

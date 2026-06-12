@@ -50,11 +50,16 @@ h1 {
   text-overflow: ellipsis;
 }
 
+h1,h2,h3 {
+  clear: both;
+}
+
 figure {
   margin: 0.5rem 0;
   padding: 0;
   max-width: 300px;
   float: left;
+  clear: both;
   margin-right: 1.5rem;
   margin-bottom: 0.5rem;
 

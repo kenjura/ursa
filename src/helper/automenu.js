@@ -449,7 +449,7 @@ function collapseSingleDocFolders(items) {
 
 export async function getAutomenu(source, validPaths) {
   const tree = dirTree(source, {
-    exclude: /[\/\\]\.|node_modules/,  // Exclude hidden folders (starting with .) and node_modules
+    exclude: /[\/\\]\.|node_modules|_templates/,  // Exclude hidden folders (starting with .), node_modules, and _templates
   });
   
   // Build menu data WITHOUT debug fields for smaller JSON

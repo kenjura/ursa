@@ -17,6 +17,16 @@
  */
 
 import { dirname, join, relative, resolve } from "path";
+import { existsSync } from "fs";
+import { mkdir, readFile, writeFile } from "fs/promises";
+import { getUrsaDir } from "./contentHash.js";
+
+const DEP_GRAPH_FILE = "dependency-graph.json";
+const DEP_GRAPH_VERSION = 1;
+
+// Static assets in meta (copied verbatim to output/public by copyMetaAssets);
+// these are never embedded in document HTML, so no regeneration is needed.
+const META_STATIC_EXTENSIONS = /\.(jpg|jpeg|png|gif|webp|svg|ico|woff|woff2|ttf|eot|pdf|mp3|mp4|webm|ogg)$/i;
 
 export class DependencyTracker {
   constructor() {
@@ -216,7 +226,13 @@ export class DependencyTracker {
 
     // Template file changed → regenerate all documents using that template
     if (fileName.endsWith(".html")) {
-      const templateName = fileName.replace(".html", "");
+      // New structure: templates/{templateName}/index.html → name is the folder;
+      // legacy flat structure: {templateName}.html at the meta root
+      const parts = relativePath.split("/");
+      const templateName =
+        parts[0] === "templates" && parts.length >= 3
+          ? parts[1]
+          : fileName.replace(".html", "");
       const affected = this.getDocumentsUsingTemplate(templateName);
       if (affected.size > 0) {
         return {
@@ -244,6 +260,17 @@ export class DependencyTracker {
       };
     }
 
+    // Static asset in meta (image, font, PDF, media) → copyMetaAssets already
+    // re-copied it to output/public; documents reference it by URL, so no
+    // document regeneration (and no full rebuild) is needed.
+    if (META_STATIC_EXTENSIONS.test(fileName)) {
+      return {
+        affectedDocuments: [],
+        reason: `Meta static asset copied: ${relativePath}`,
+        requiresFullRebuild: false,
+      };
+    }
+
     // Other meta file → full rebuild to be safe
     return {
       affectedDocuments: [],
@@ -263,7 +290,95 @@ export class DependencyTracker {
       uniqueFiles: this.fileToDocuments.size,
     };
   }
+
+  /**
+   * Serialize the tracker for persistence to .ursa/dependency-graph.json.
+   * @returns {{ version: number, sourceDir: string, documents: Object<string, string[]> }}
+   */
+  serialize() {
+    return {
+      version: DEP_GRAPH_VERSION,
+      sourceDir: this.sourceDir,
+      documents: Object.fromEntries(
+        [...this.documentToFiles.entries()].map(([doc, deps]) => [doc, [...deps]])
+      ),
+    };
+  }
+
+  /**
+   * Load persisted registrations, merging with the current run: documents
+   * already registered in this run keep their (fresher) edges; persisted
+   * edges only fill in documents not yet registered (e.g. hash-skipped docs).
+   * Rejects data from a different source directory or schema version.
+   * @param {object} data - Previously serialized tracker
+   * @returns {boolean} Whether the data was loaded
+   */
+  load(data) {
+    if (!data || data.version !== DEP_GRAPH_VERSION) return false;
+    if (data.sourceDir && this.sourceDir && data.sourceDir !== this.sourceDir) return false;
+    for (const [doc, deps] of Object.entries(data.documents || {})) {
+      if (this.documentToFiles.has(doc)) continue; // live registrations win
+      if (!Array.isArray(deps)) continue;
+      for (const dep of deps) {
+        this.addDependency(doc, dep);
+      }
+    }
+    return true;
+  }
+
+  /**
+   * Drop registrations for documents not in the given set (e.g. deleted or
+   * excluded files), so persisted state doesn't accumulate stale entries.
+   * @param {Set<string>} keepDocuments - Document paths that should survive
+   */
+  prune(keepDocuments) {
+    for (const doc of [...this.documentToFiles.keys()]) {
+      if (!keepDocuments.has(doc)) this.clearDocument(doc);
+    }
+  }
 }
 
 // Singleton instance
 export const dependencyTracker = new DependencyTracker();
+
+/** Path to the persisted dependency graph for a source directory. */
+export function getDependencyGraphPath(sourceDir) {
+  return join(getUrsaDir(sourceDir), DEP_GRAPH_FILE);
+}
+
+/**
+ * Load the persisted dependency tracker state from .ursa/dependency-graph.json
+ * and merge it into the tracker (current-run registrations win).
+ * @param {string} sourceDir - Source directory root
+ * @param {DependencyTracker} [tracker] - Defaults to the singleton
+ * @returns {Promise<boolean>} Whether a valid graph was loaded
+ */
+export async function loadDependencyTracker(sourceDir, tracker = dependencyTracker) {
+  const path = getDependencyGraphPath(sourceDir);
+  try {
+    if (!existsSync(path)) return false;
+    const data = JSON.parse(await readFile(path, "utf8"));
+    return tracker.load(data);
+  } catch (e) {
+    console.warn(`Could not load dependency graph: ${e.message}`);
+    return false;
+  }
+}
+
+/**
+ * Persist the dependency tracker to .ursa/dependency-graph.json so that
+ * hash-skipped documents keep their edges across warm starts.
+ * @param {string} sourceDir - Source directory root
+ * @param {DependencyTracker} [tracker] - Defaults to the singleton
+ * @returns {Promise<boolean>} Whether the graph was saved
+ */
+export async function saveDependencyTracker(sourceDir, tracker = dependencyTracker) {
+  try {
+    await mkdir(getUrsaDir(sourceDir), { recursive: true });
+    await writeFile(getDependencyGraphPath(sourceDir), JSON.stringify(tracker.serialize()));
+    return true;
+  } catch (e) {
+    console.warn(`Could not save dependency graph: ${e.message}`);
+    return false;
+  }
+}
