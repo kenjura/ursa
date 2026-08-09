@@ -16,6 +16,7 @@ import {
   loadHashCache,
   saveHashCache,
   needsRegeneration,
+  outputsExist,
   updateHash,
   getUrsaDir,
 } from "../helper/contentHash.js";
@@ -640,9 +641,19 @@ export async function generate({
         return;
       }
 
-      // Check if file needs regeneration
-      const needsRegen = _clean || needsRegeneration(file, rawBody, hashCache);
-      
+      // Check if file needs regeneration.
+      // An unchanged hash is not enough: the hash cache lives in the source tree
+      // and is shared across output dirs, so also require that every output this
+      // document emits is actually present before skipping it.
+      const needsRegen =
+        _clean ||
+        needsRegeneration(file, rawBody, hashCache) ||
+        !outputsExist([
+          outputFilename,
+          outputFilename.replace(".html", ".json"),
+          outputFilename.replace(".html", ".xml"),
+        ]);
+
       if (!needsRegen) {
         skippedCount++;
         // For directory indices, store minimal data (not full bodyHtml)
@@ -1145,13 +1156,15 @@ export async function generate({
       const fileStat = await stat(file);
       const statKey = `${file}:stat`;
       const newStatHash = `${fileStat.size}:${fileStat.mtimeMs}`;
-      if (hashCache.get(statKey) === newStatHash) {
+      const outputFilename = file.replace(source, output);
+      // As with articles: an unchanged stat only means the source is untouched,
+      // so the output must exist before this copy can be skipped.
+      if (hashCache.get(statKey) === newStatHash && outputsExist([outputFilename])) {
         return; // Skip unchanged static file
       }
       hashCache.set(statKey, newStatHash);
       copiedStatic++;
 
-      const outputFilename = file.replace(source, output);
       await mkdir(dirname(outputFilename), { recursive: true });
 
       if (file.endsWith('.css')) {

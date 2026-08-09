@@ -1,8 +1,13 @@
+# 0.87.3
+2026-08-09
+
+- Fixed silent incomplete builds caused by hash-skipping (the TODO logged in 0.87.2). `needsRegeneration()` compared only the source content hash, but the hash cache lives in the *source* tree (`<source>/.ursa/content-hashes.json`) and is therefore shared by every output directory built from that source. A build to one output dir recorded hashes that made a later build to a different output dir skip those documents entirely — emitting auto-index entries linking to `.html` files that were never written. Deleting or partially losing `output/` had the same effect. Both the article and static-file paths now also require the expected output files to exist before skipping.
+
 # 0.87.2
 2026-08-09
 
 - Fixed a crash when `ursa serve` fell back to an alternative port. The fallback search only checked whether the HTTP port was free, so it could offer a port whose WebSocket port (`port + 1`) was still occupied — e.g. offering 8079 when 8080/8081 were both taken, then dying with `EADDRINUSE` on the hot-reload server. Port selection now requires both ports of the pair to be available.
-- TODO: Hash-skipping in `generate()` assumes the corresponding output files (`.html`/`.json`/`.xml`) still exist on disk. If `output/` is deleted (or partially lost) while `<source>/.ursa/content-hashes.json` survives, a normal (non-clean) build silently produces incomplete output — e.g. the root `index.html` is never written because `docs/index.md` is hash-skipped. Fix: make `needsRegeneration()` also force a rebuild when the expected output file is missing.
+- TODO (fixed in 0.87.3): Hash-skipping in `generate()` assumes the corresponding output files (`.html`/`.json`/`.xml`) still exist on disk. If `output/` is deleted (or partially lost) while `<source>/.ursa/content-hashes.json` survives, a normal (non-clean) build silently produces incomplete output — e.g. the root `index.html` is never written because `docs/index.md` is hash-skipped. Fix: make `needsRegeneration()` also force a rebuild when the expected output file is missing.
 
 # 0.87.1
 2026-06-15

@@ -62,6 +62,25 @@ export function needsRegeneration(filePath, content, hashCache) {
 }
 
 /**
+ * Check whether every expected output file for a source document exists.
+ *
+ * A matching content hash only proves the *source* is unchanged — it says
+ * nothing about whether the output was ever written to this particular output
+ * directory. The hash cache lives in the source tree (`<source>/.ursa/`) and is
+ * shared by every output directory built from that source, so a hash written
+ * during a build to one output dir will hash-skip the same file during a build
+ * to another. Deleting (or partially losing) an output dir has the same effect.
+ * Callers must combine this with needsRegeneration() so a missing output always
+ * forces a rebuild.
+ *
+ * @param {string[]} outputPaths - Absolute paths to every file the build emits for this document
+ * @returns {boolean} True only if all of them are present
+ */
+export function outputsExist(outputPaths) {
+  return outputPaths.every((p) => existsSync(p));
+}
+
+/**
  * Update the hash for a file in the cache
  */
 export function updateHash(filePath, content, hashCache) {
