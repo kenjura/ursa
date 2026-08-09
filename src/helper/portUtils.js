@@ -48,6 +48,35 @@ export async function findClosestAvailablePort(preferred, maxDistance = 100) {
 }
 
 /**
+ * Find the closest port P such that both P (HTTP) and P+1 (WebSocket) are
+ * available. Searches both upward and downward from the preferred port.
+ * @param {number} preferred - The preferred port number
+ * @param {number} [maxDistance=100] - Maximum distance to search from preferred port
+ * @returns {Promise<number|null>} The closest available port pair base, or null if none found
+ */
+export async function findClosestAvailablePortPair(preferred, maxDistance = 100) {
+  for (let offset = 1; offset <= maxDistance; offset++) {
+    const candidates = [];
+    if (preferred + offset <= 65534) candidates.push(preferred + offset);
+    if (preferred - offset >= 1024) candidates.push(preferred - offset);
+
+    // Check both candidates (up and down) in parallel
+    const results = await Promise.all(
+      candidates.map(async (port) => ({
+        port,
+        available: (await isPortAvailable(port)) && (await isPortAvailable(port + 1)),
+      }))
+    );
+
+    // Return the first available candidate (lower offset = closer)
+    // Since we push +offset first, it's preferred over -offset at the same distance
+    const found = results.find((r) => r.available);
+    if (found) return found.port;
+  }
+  return null;
+}
+
+/**
  * Prompt the user via stdin to confirm using an alternative port.
  * @param {number} originalPort
  * @param {number} alternativePort
@@ -96,30 +125,13 @@ export async function resolvePort(port) {
   console.log(`\n⚠️  ${reason}.`);
   console.log(`🔍 Searching for an available port...`);
 
-  const alternative = await findClosestAvailablePort(port);
+  // The alternative must have both its HTTP port and its WebSocket port (port + 1) free
+  const alternative = await findClosestAvailablePortPair(port);
 
   if (!alternative) {
     throw new Error(
-      `Could not find an available port near ${port}. Please free up a port and try again.`
+      `Could not find an available port pair (HTTP + WebSocket) near ${port}. Please free up a port and try again.`
     );
-  }
-
-  // Also verify the ws port for the alternative
-  const altWsAvailable = await isPortAvailable(alternative + 1);
-  if (!altWsAvailable) {
-    // Try again, skipping this one
-    const secondTry = await findClosestAvailablePort(alternative + 1);
-    if (!secondTry) {
-      throw new Error(
-        `Could not find an available port pair (HTTP + WebSocket) near ${port}.`
-      );
-    }
-    const accepted = await promptUser(port, secondTry);
-    if (!accepted) {
-      console.log('👋 Server startup cancelled.');
-      process.exit(0);
-    }
-    return secondTry;
   }
 
   const accepted = await promptUser(port, alternative);
