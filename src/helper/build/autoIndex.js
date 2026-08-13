@@ -273,11 +273,16 @@ export async function generateAutoIndices(output, directories, source, templates
       continue; // Don't overwrite existing source HTML
     }
     
-    // Skip if index.html already exists in output (e.g., created by previous run or current run)
-    if (existsSync(indexPath)) {
-      continue;
-    }
-    
+    // NOTE: an existing index.html in output is deliberately NOT a reason to
+    // skip. This listing describes the folder's contents, so it goes stale the
+    // moment a document or subfolder is added or removed, and warm builds kept
+    // whatever was written the first time — indefinitely. Everything that has a
+    // rightful claim on index.html is already excluded above: folders with a
+    // source index document (dirsWithSourceIndex, built from every source
+    // article rather than only the regenerated ones) and hand-written source
+    // HTML (existingHtmlFiles). Alternates are re-promoted below, so those stay
+    // authoritative too.
+
     // Get folder name for (foldername).html check
     const folderName = basename(dir);
     const folderNameAlternate = `${folderName}.html`;

@@ -40,7 +40,6 @@ import { basename, dirname, extname, join, parse, resolve } from "path";
 import { URL } from "url";
 import o2x from "object-to-xml";
 import { existsSync } from "fs";
-import { fileExists } from "../helper/fileExists.js";
 import { createWhitelistFilter } from "../helper/whitelistFilter.js";
 import { processAllImages, transformImageTags, clearImageCache, copyAllImagesFast } from "../helper/imageProcessor.js";
 import { extractImageReferences } from "../helper/imageExtractor.js";
@@ -641,12 +640,24 @@ export async function generate({
         return;
       }
 
+      // Metadata is needed both for the cache decision below and for rendering.
+      const fileMeta = extractMetadata(rawBody);
+
+      // A document with `generate-auto-index: true` renders a listing of the
+      // source tree, so its output depends on which folders and files exist —
+      // not just on its own text. A content hash cannot see that: adding,
+      // renaming, or deleting a folder anywhere in the tree leaves the hash
+      // untouched and the listing stale forever. Only a handful of documents
+      // opt in, so always rebuild them.
+      const hasAutoIndex = getAutoIndexConfig(fileMeta).enabled;
+
       // Check if file needs regeneration.
       // An unchanged hash is not enough: the hash cache lives in the source tree
       // and is shared across output dirs, so also require that every output this
       // document emits is actually present before skipping it.
       const needsRegen =
         _clean ||
+        hasAutoIndex ||
         needsRegeneration(file, rawBody, hashCache) ||
         !outputsExist([
           outputFilename,
@@ -658,11 +669,10 @@ export async function generate({
         skippedCount++;
         // For directory indices, store minimal data (not full bodyHtml)
         // But include metadata for directory JSON files
-        const skippedMeta = extractMetadata(rawBody);
         dirIndexCache.set(file, {
           name: base,
           url,
-          metadata: skippedMeta,
+          metadata: fileMeta,
         });
         return; // Skip regenerating this file
       }
@@ -671,7 +681,6 @@ export async function generate({
       // Track this path for incremental search index updates
       changedPaths.add(relativePath);
 
-      const fileMeta = extractMetadata(rawBody);
       const rawMeta = extractRawMetadata(rawBody);
       
       // Lazy metadata transform - only compute if template actually uses it
@@ -1059,6 +1068,21 @@ export async function generate({
   // Phase: Process directory indices
   profiler.startPhase('Process directories');
   progress.startTimer('Directories');
+
+  // Output paths that a source document already owns. The generated directory
+  // listing below writes to <dir>.html, which collides with two things: an
+  // article named after its own folder (settings/dying-light.md renders to
+  // settings/dying-light.html) and a hand-written .html copied from the source
+  // tree. Those documents win — the listing must never overwrite them.
+  const documentOwnedOutputs = new Set(
+    allSourceFilenamesThatAreArticles.map((filename) =>
+      filename.replace(source, output).replace(/\.(md|mdx|txt|yml)$/, ".html")
+    )
+  );
+  for (const relativeHtmlPath of existingHtmlFiles) {
+    documentOwnedOutputs.add(join(output, relativeHtmlPath));
+  }
+
   // Process directory indices with batched concurrency
   const totalDirs = allSourceFilenamesThatAreDirectories.length;
   let processedDirs = 0;
@@ -1087,9 +1111,12 @@ export async function generate({
       await outputFile(outputFilename, json);
 
       // html
+      // Rewritten every build: the listing reflects the directory's contents,
+      // so skipping it whenever the file already exists (the old behaviour)
+      // froze it at whatever the tree looked like the first time it was
+      // written, and new or removed documents never showed up again.
       const htmlOutputFilename = dirPath.replace(source, output) + ".html";
-      const indexAlreadyExists = await fileExists(htmlOutputFilename);
-      if (!indexAlreadyExists) {
+      if (!documentOwnedOutputs.has(htmlOutputFilename)) {
         const template = templates["default-template"];
         const indexHtml = `<ul>${pathsInThisDirectory
           .map((path) => {

@@ -1,3 +1,14 @@
+# 0.87.4
+2026-08-13
+
+Fixed three ways an index page could go permanently stale on warm builds, so that adding, renaming, or deleting content stopped appearing in any listing that should have contained it. Symptom: a brand-new folder rendered its own page correctly, but nothing linked to it — the root landing page, the parent folder's listing, and the parent folder's generated `index.html` all kept describing the tree as it looked the first time they were written, sometimes months earlier.
+
+- **Documents with `generate-auto-index: true` are now always regenerated.** Their output is a listing of the source tree, so it depends on which folders and files exist — not just on the document's own text, which is all `needsRegeneration()` hashes. Adding a folder elsewhere in the tree left the hash untouched, so the document was skipped forever and its embedded index never grew. Only a handful of documents opt in, so they are simply rebuilt every pass.
+- **Generated directory listings (`<dir>.html`) are no longer write-once.** The old guard skipped the write whenever the file already existed, which froze the listing at its first build. It now rewrites every pass, guarded instead by ownership: a document that renders to the same path — an article named after its own folder (`settings/starwars/people.md` alongside `settings/starwars/`), or a hand-written `.html` in the source tree — keeps the path, and the listing is not written there at all. That collision is what the old existence check was incidentally protecting against.
+- **Auto-generated folder `index.html` files are no longer write-once**, for the same reason and with the same reasoning: folders with a source index document and hand-written source HTML were already excluded from that code path, and alternates (`_index.html`, `home.html`, `<foldername>.html`) are re-promoted on every pass, so nothing authoritative is at risk.
+
+Cost of rebuilding these listings on every warm build, measured on a 465-directory site: 3.01s → 3.24s total.
+
 # 0.87.3
 2026-08-09
 
