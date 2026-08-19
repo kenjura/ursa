@@ -4,6 +4,7 @@ import { getAutomenu } from "../helper/automenu.js";
 import { filterAsync } from "../helper/filterAsync.js";
 import { isDirectory } from "../helper/isDirectory.js";
 import { isFolderHidden, clearConfigCache } from "../helper/folderConfig.js";
+import { isHiddenOrSystemPath } from "../helper/hiddenPaths.js";
 import {
   extractMetadata,
   extractRawMetadata,
@@ -220,20 +221,23 @@ export async function generate({
 
   // read all articles, process them, copy them to build
   const articleExtensions = /\.(md|mdx|txt|yml)$/;
-  const hiddenOrSystemDirs = /[\/\\]\.(?!\.)|[\/\\]node_modules[\/\\]|[\/\\]_templates[\/\\]|[\/\\]_templates$/;  // Matches hidden folders (starting with .), node_modules, or _templates
+  // Hidden/system folders are judged RELATIVE to the docroot — see
+  // helper/hiddenPaths.js for why testing the absolute path silently produces
+  // an empty site when the checkout lives under a dot-directory.
+  const isHiddenOrSystem = (filename) => isHiddenOrSystemPath(filename, source);
   const allSourceFilenamesThatAreArticles = allSourceFilenames.filter(
-    (filename) => filename.match(articleExtensions) && !filename.match(hiddenOrSystemDirs) && !isInHiddenFolder(filename)
+    (filename) => filename.match(articleExtensions) && !isHiddenOrSystem(filename) && !isInHiddenFolder(filename)
   );
   const allSourceFilenamesThatAreDirectories = (await filterAsync(
     allSourceFilenames,
     (filename) => isDirectory(filename)
-  )).filter((filename) => !filename.match(hiddenOrSystemDirs) && !isFolderHidden(filename, source));
+  )).filter((filename) => !isHiddenOrSystem(filename) && !isFolderHidden(filename, source));
 
   // Build set of existing HTML files in source directory (these should not be overwritten)
   const htmlExtensions = /\.html$/;
   const existingHtmlFiles = new Set(
     allSourceFilenames
-      .filter(f => f.match(htmlExtensions) && !f.match(hiddenOrSystemDirs))
+      .filter(f => f.match(htmlExtensions) && !isHiddenOrSystem(f))
       .map(f => f.replace(source, '')) // Store relative paths for easy lookup
   );
   
@@ -447,7 +451,7 @@ export async function generate({
   // Identify all image files from the filtered source list
   const imageExtensions = /\.(jpg|jpeg|png|gif|webp|svg|ico)/;
   let allSourceFilenamesThatAreImages = allSourceFilenames.filter(
-    (filename) => filename.match(imageExtensions) && !filename.match(hiddenOrSystemDirs)
+    (filename) => filename.match(imageExtensions) && !isHiddenOrSystem(filename)
   );
   
   // When using a whitelist, also include images referenced by whitelisted documents
@@ -468,7 +472,7 @@ export async function generate({
     
     // Get all images from the unfiltered source list that are referenced
     const allImagesUnfiltered = allSourceFilenamesUnfiltered.filter(
-      (filename) => filename.match(imageExtensions) && !filename.match(hiddenOrSystemDirs)
+      (filename) => filename.match(imageExtensions) && !isHiddenOrSystem(filename)
     );
     
     // Add referenced images that aren't already in the list
@@ -1165,7 +1169,7 @@ export async function generate({
   
   // Also copy existing HTML files from source to output (they're treated as static)
   const allSourceFilenamesThatAreHtml = allSourceFilenames.filter(
-    (filename) => filename.match(/\.html$/) && !filename.match(hiddenOrSystemDirs)
+    (filename) => filename.match(/\.html$/) && !isHiddenOrSystem(filename)
   );
   
   const allStaticFiles = allSourceFilenamesThatAreHtml;

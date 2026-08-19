@@ -1,4 +1,5 @@
 import dirTree from "directory-tree";
+import { isHiddenOrSystemPath } from "./hiddenPaths.js";
 import { extname, basename, join, dirname } from "path";
 import { existsSync, readFileSync } from "fs";
 import { getFolderConfig, isFolderHidden, getRootConfig } from "./folderConfig.js";
@@ -447,10 +448,49 @@ function collapseSingleDocFolders(items) {
   });
 }
 
+/**
+ * Drop hidden/system nodes from a directory-tree, judging each node's path
+ * RELATIVE to the docroot. See helper/hiddenPaths.js for why relative.
+ *
+ * Returns a new tree; the input is not mutated.
+ *
+ * @param {object} node - A directory-tree node
+ * @param {string} source - Absolute path of the docroot
+ * @returns {object} The pruned node
+ */
+export function pruneHiddenNodes(node, source) {
+  if (!node.children) return node;
+  return {
+    ...node,
+    children: node.children
+      .filter((child) => !isHiddenOrSystemPath(child.path, source))
+      .map((child) => pruneHiddenNodes(child, source)),
+  };
+}
+
 export async function getAutomenu(source, validPaths) {
-  const tree = dirTree(source, {
-    exclude: /[\/\\]\.|node_modules|_templates/,  // Exclude hidden folders (starting with .), node_modules, and _templates
-  });
+  /*
+   * Walk first, prune second.
+   *
+   * `dirTree`'s `exclude` is tested against each item's ABSOLUTE path,
+   * including the root's. A docroot that merely lives under a dot-directory —
+   * a git worktree under `.claude/worktrees/…`, anything in `~/.config` —
+   * therefore excluded ITSELF, and `dirTree` returned null, which reached
+   * `buildMenuData` as `Cannot read properties of null (reading 'children')`.
+   *
+   * Pruning afterwards judges each node relative to the docroot instead, which
+   * is what "hidden folder" was always meant to mean. The cost is that a
+   * `node_modules` sitting inside a docroot is now walked before being
+   * discarded; docroots do not normally contain one, and correctness on every
+   * ordinary path is worth more than speed on a pathological one.
+   */
+  const fullTree = dirTree(source);
+  if (!fullTree) {
+    throw new Error(
+      `Cannot read docroot for menu generation: ${source} (does it exist and is it a directory?)`
+    );
+  }
+  const tree = pruneHiddenNodes(fullTree, source);
   
   // Build menu data WITHOUT debug fields for smaller JSON
   let menuData = buildMenuData(tree, source, validPaths, '', false);

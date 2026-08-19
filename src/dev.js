@@ -33,6 +33,7 @@ import { generateBreadcrumbs } from "./helper/breadcrumbs.js";
 import { extractImageReferences } from "./helper/imageExtractor.js";
 import { recurse } from "./helper/recursive-readdir.js";
 import { isFolderHidden, clearConfigCache } from "./helper/folderConfig.js";
+import { isHiddenOrSystemPath, HIDDEN_OR_SYSTEM_DIRS_DEV } from "./helper/hiddenPaths.js";
 import { extractSections } from "./helper/sectionExtractor.js";
 import { getTemplates, getMenu, findAllCustomMenus, getCustomMenuForFile, getTransformedMetadata, getFooter, getUrsaMetadata, toTitleCase, addTrailingSlash, generateAutoIndexHtmlFromSource, copyMetaAssets } from "./helper/build/index.js";
 import { findCustomMenu, extractMenuFrontmatter, parseCustomMenu, combineAutoAndManualMenu } from "./helper/customMenu.js";
@@ -597,11 +598,14 @@ async function buildBackgroundCaches() {
     const allSourceFiles = await recurse(source, [() => false]);
     
     // Filter hidden folders
-    const hiddenOrSystemDirs = /[\/\\]\.(?!\.)|[\/\\]node_modules[\/\\]/;
+    // Judged RELATIVE to the docroot — see helper/hiddenPaths.js for why
+    // testing the absolute path silently yields an empty site.
+    const isHiddenOrSystem = (f) =>
+      isHiddenOrSystemPath(f, source, HIDDEN_OR_SYSTEM_DIRS_DEV);
     const articleExtensions = /\.(md|mdx|txt|yml)/;
     
     const allArticles = allSourceFiles.filter(f => 
-      f.match(articleExtensions) && !f.match(hiddenOrSystemDirs) && !isFolderHidden(dirname(f), source)
+      f.match(articleExtensions) && !isHiddenOrSystem(f) && !isFolderHidden(dirname(f), source)
     );
     
     const allDirectories = [];
@@ -609,7 +613,7 @@ async function buildBackgroundCaches() {
     for (const f of allSourceFiles) {
       try {
         const s = await stat(f);
-        if (s.isDirectory() && !f.match(hiddenOrSystemDirs) && !isFolderHidden(f, source)) {
+        if (s.isDirectory() && !isHiddenOrSystem(f) && !isFolderHidden(f, source)) {
           if (!seenDirs.has(f)) {
             seenDirs.add(f);
             allDirectories.push(f);
@@ -623,7 +627,7 @@ async function buildBackgroundCaches() {
       let dir = dirname(article);
       while (dir.startsWith(source) && !seenDirs.has(dir)) {
         seenDirs.add(dir);
-        if (!dir.match(hiddenOrSystemDirs)) {
+        if (!isHiddenOrSystem(dir)) {
           allDirectories.push(dir);
         }
         dir = dirname(dir);

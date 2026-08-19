@@ -1,3 +1,16 @@
+# 0.87.5
+2026-08-19
+
+Fixed a build that silently produced nothing when the docroot lived under a dot-directory — a git worktree inside `.claude/worktrees/`, anything under `~/.config` or `~/.local`. Two independent places tested hidden-folder patterns against the **absolute** path rather than the path relative to the docroot, so the docroot's own ancestry marked the entire site hidden.
+
+The symptom was unhelpful in both halves. `generate` classified **0 articles** out of 31 scanned files and carried on, so a build could report success and write an empty site; and `getAutomenu` then died on `Cannot read properties of null (reading 'children')`, because `directory-tree` had excluded the root and returned `null` — a stack trace pointing at menu construction for a problem that was neither about menus nor about that file.
+
+- **`helper/hiddenPaths.js` (new)** — `toSourceRelative()` and `isHiddenOrSystemPath()`, the single place that decides what "hidden" means. Judged relative to the docroot, always separator-prefixed so a genuinely hidden top-level folder (`<source>/.drafts`) still matches.
+- **`jobs/generate.js` and `dev.js`** now route every hidden/system test through it, instead of matching absolute paths in seven places.
+- **`helper/automenu.js`** walks the tree first and prunes after, rather than handing `directory-tree` an absolute-path `exclude` that can reject the root itself. A docroot containing `node_modules` is now walked before being discarded, which is the price of being right about every ordinary path. Also raises a legible error if the docroot genuinely cannot be read, rather than passing `null` downstream.
+
+Output for a docroot on an ordinary path is byte-for-byte unchanged.
+
 # 0.87.4
 2026-08-13
 
