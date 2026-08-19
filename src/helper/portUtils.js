@@ -106,11 +106,30 @@ function promptUser(originalPort, alternativePort) {
  *
  * Also checks wsPort (port + 1) availability since the WebSocket server needs it.
  *
+ * ## Why `strict` and the TTY check exist
+ *
+ * `ursa serve` is increasingly run as one process among several — a `pnpm dev`
+ * that starts an app, an API and this wiki in parallel. Two things go wrong
+ * there that do not go wrong at an interactive terminal:
+ *
+ * 1. **The prompt has nobody to answer it.** Sibling processes share stdin, so
+ *    the question either hangs the whole dev command or eats a keystroke meant
+ *    for another process. Hence: never prompt when stdin is not a TTY.
+ * 2. **A different port is not automatically a good outcome.** Whatever embeds
+ *    the wiki — an iframe, a proxy, a link — was configured with the port that
+ *    was asked for. Silently serving on another one produces a broken embed
+ *    with no error anywhere. Hence `strict`: fail loudly instead.
+ *
  * @param {number} port - The desired port
- * @returns {Promise<number>} The port to use (original or user-accepted alternative)
- * @throws {Error} If no available port is found or user declines the alternative
+ * @param {object} [options]
+ * @param {boolean} [options.strict=false] - Fail rather than use another port
+ * @param {boolean} [options.interactive] - Defaults to whether stdin is a TTY
+ * @returns {Promise<number>} The port to use
+ * @throws {Error} If no port is available, or `strict` and the port is taken
  */
-export async function resolvePort(port) {
+export async function resolvePort(port, options = {}) {
+  const { strict = false, interactive = Boolean(process.stdin.isTTY) } = options;
+
   const httpAvailable = await isPortAvailable(port);
   const wsAvailable = await isPortAvailable(port + 1);
 
@@ -120,7 +139,14 @@ export async function resolvePort(port) {
 
   const reason = !httpAvailable
     ? `Port ${port} is already in use`
-    : `WebSocket port ${port + 1} is already in use`;
+    : `WebSocket port ${port + 1} is already in use (ursa serves hot-reload there)`;
+
+  if (strict) {
+    throw new Error(
+      `${reason}. Refusing to use a different port because --strict-port was ` +
+        `given. Free the port, or pass --port <n> to choose another deliberately.`
+    );
+  }
 
   console.log(`\n⚠️  ${reason}.`);
   console.log(`🔍 Searching for an available port...`);
@@ -132,6 +158,17 @@ export async function resolvePort(port) {
     throw new Error(
       `Could not find an available port pair (HTTP + WebSocket) near ${port}. Please free up a port and try again.`
     );
+  }
+
+  if (!interactive) {
+    // Nobody can answer the prompt; asking would hang. Be loud instead, since
+    // anything pointed at the original port is now pointed at nothing.
+    console.log(
+      `⚠️  stdin is not a TTY, so using port ${alternative} without asking.\n` +
+        `   Anything configured for port ${port} must be updated, or pass ` +
+        `--strict-port to fail instead.`
+    );
+    return alternative;
   }
 
   const accepted = await promptUser(port, alternative);

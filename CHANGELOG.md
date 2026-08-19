@@ -1,3 +1,16 @@
+# 0.88.0
+2026-08-19
+
+`ursa serve` gains `--strict-port`, and stops prompting when nobody can answer.
+
+Serving a wiki is increasingly one process among several — a `pnpm dev` that starts an app, an API and a docs site in parallel. The interactive "Port 8080 is already in use. Use port 8082 instead? (Y/n)" fallback is wrong in that setting twice over: sibling processes share stdin, so the question either hangs the whole dev command or eats a keystroke meant for something else; and a different port is not a good outcome anyway, because whatever embeds the wiki — an iframe, a proxy, a link — was configured with the port that was asked for, so moving silently produces a broken embed with no error anywhere.
+
+- **`--strict-port`** fails with a clear message instead of falling back. This is what a dev script wants.
+- **Without it, a non-TTY stdin no longer prompts.** It picks the fallback port and says so loudly, including that anything pointed at the original port must be updated. Interactive terminals are unchanged.
+- `resolvePort(port, { strict, interactive })` is the programmatic form; `interactive` defaults to `process.stdin.isTTY`.
+
+The error for an occupied WebSocket port now says that is what happened — hot reload listens on `port + 1`, and being told "port 8081 is in use" when you asked for 8080 reads as a bug in ursa.
+
 # 0.87.5
 2026-08-19
 

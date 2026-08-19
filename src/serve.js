@@ -355,7 +355,8 @@ export async function serve({
   port = 8080,
   _whitelist = null,
   _clean = false,
-  _exclude = null
+  _exclude = null,
+  strictPort = false
 } = {}) {
   const sourceDir = resolve(_source);
   const metaDir = resolve(_meta);
@@ -364,7 +365,7 @@ export async function serve({
   console.log({ source: sourceDir, meta: metaDir, output: outputDir, port, whitelist: _whitelist, exclude: _exclude, clean: _clean });
 
   // Resolve port (prompt user if occupied)
-  port = await resolvePort(port);
+  port = await resolvePort(port, { strict: strictPort });
 
   // Ensure output directory exists and start server immediately
   await mkdir(outputDir, { recursive: true });

@@ -123,6 +123,11 @@ yargs(hideBin(process.argv))
           describe: 'Port to serve on',
           type: 'number'
         })
+        .option('strict-port', {
+          describe: 'Fail if the port is taken instead of falling back to another',
+          type: 'boolean',
+          default: false
+        })
         .option('whitelist', {
           alias: 'w',
           describe: 'Path to whitelist file containing patterns for files to include',
@@ -177,7 +182,8 @@ yargs(hideBin(process.argv))
           port: port,
           _whitelist: whitelist,
           _exclude: exclude,
-          _clean: clean
+          _clean: clean,
+          strictPort: argv['strict-port']
         });
       } catch (error) {
         console.error('Error starting development server:', error.message);
