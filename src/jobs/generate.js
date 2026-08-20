@@ -5,6 +5,7 @@ import { filterAsync } from "../helper/filterAsync.js";
 import { isDirectory } from "../helper/isDirectory.js";
 import { isFolderHidden, clearConfigCache } from "../helper/folderConfig.js";
 import { isHiddenOrSystemPath } from "../helper/hiddenPaths.js";
+import { IMAGE_EXTENSIONS, isMedia } from "../helper/staticAssets.js";
 import {
   extractMetadata,
   extractRawMetadata,
@@ -449,7 +450,7 @@ export async function generate({
   const copiedCssFiles = new Set();
 
   // Identify all image files from the filtered source list
-  const imageExtensions = /\.(jpg|jpeg|png|gif|webp|svg|ico)/;
+  const imageExtensions = IMAGE_EXTENSIONS;
   let allSourceFilenamesThatAreImages = allSourceFilenames.filter(
     (filename) => filename.match(imageExtensions) && !isHiddenOrSystem(filename)
   );
@@ -1172,11 +1173,23 @@ export async function generate({
     (filename) => filename.match(/\.html$/) && !isHiddenOrSystem(filename)
   );
   
-  const allStaticFiles = allSourceFilenamesThatAreHtml;
+  // Fonts, audio, video, PDFs: copied through untouched. Images are handled
+  // separately above because they also get previews; everything else that is
+  // neither an article nor a stylesheet belongs here. Leaving this out is what
+  // let `ursa serve` and `ursa generate` disagree — serve reads these straight
+  // off disk, so the missing copy step only ever showed up in a built site.
+  const allSourceFilenamesThatAreMedia = allSourceFilenames.filter(
+    (filename) => isMedia(filename) && !isHiddenOrSystem(filename)
+  );
+
+  const allStaticFiles = [...allSourceFilenamesThatAreHtml, ...allSourceFilenamesThatAreMedia];
   const totalStatic = allStaticFiles.length;
   let processedStatic = 0;
   let copiedStatic = 0;
-  progress.log(`Processing ${totalStatic} static HTML files...`);
+  progress.log(
+    `Processing ${totalStatic} static files ` +
+    `(${allSourceFilenamesThatAreHtml.length} HTML, ${allSourceFilenamesThatAreMedia.length} media)...`
+  );
   await processBatched(allStaticFiles, async (file) => {
     try {
       processedStatic++;

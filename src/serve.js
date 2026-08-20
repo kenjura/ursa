@@ -7,6 +7,7 @@ import fs from "fs";
 import { promises } from "fs";
 import { copy as copyDir, outputFile } from "fs-extra";
 import { processImage } from "./helper/imageProcessor.js";
+import { STATIC_ASSET_EXTENSIONS, IMAGE_EXTENSIONS } from "./helper/staticAssets.js";
 import { watchModeCache } from "./helper/build/watchCache.js";
 import { dependencyTracker } from "./helper/dependencyTracker.js";
 import { bundleMetaTemplateAssets, clearMetaBundleCache } from "./helper/assetBundler.js";
@@ -297,10 +298,9 @@ async function copyCssFile(cssPath, sourceDir, outputDir) {
   }
 }
 
-// Static file extensions that should be copied (images, fonts, etc.)
-const STATIC_FILE_EXTENSIONS = /\.(jpg|jpeg|png|gif|webp|svg|ico|woff|woff2|ttf|eot|pdf|mp3|mp4|webm|ogg)$/i;
-// Image extensions that get preview processing
-const IMAGE_EXTENSIONS = /\.(jpg|jpeg|png|gif|webp|svg|ico)$/i;
+// Shared with generate so the two cannot drift apart again — that drift is
+// exactly how fonts and video came to work in dev and 404 in production.
+const STATIC_FILE_EXTENSIONS = STATIC_ASSET_EXTENSIONS;
 
 /**
  * Copy a single static file to the output directory

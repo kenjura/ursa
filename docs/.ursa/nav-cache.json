@@ -1,0 +1,160 @@
+{
+  "version": 1,
+  "timestamp": 1787209829349,
+  "fileListHash": "7b64a0df6e94eaf3",
+  "fileStatsHash": "d41d8cd98f00b204",
+  "menuData": [
+    {
+      "label": "Home",
+      "path": "",
+      "href": "/index.html",
+      "hasChildren": true,
+      "icon": "<span class=\"menu-icon\">🏠</span>",
+      "children": [
+        {
+          "label": "PATH LOGIC",
+          "sortKey": "PATH_LOGIC",
+          "path": "PATH_LOGIC",
+          "href": "/PATH_LOGIC.html",
+          "hasChildren": false,
+          "icon": "<span class=\"menu-icon\">📄</span>",
+          "isIndex": false
+        },
+        {
+          "label": "RELEASE PROTOCOL",
+          "sortKey": "RELEASE_PROTOCOL",
+          "path": "RELEASE_PROTOCOL",
+          "href": "/RELEASE_PROTOCOL.html",
+          "hasChildren": false,
+          "icon": "<span class=\"menu-icon\">📄</span>",
+          "isIndex": false
+        }
+      ]
+    },
+    {
+      "label": "1",
+      "sortKey": "1",
+      "path": "1",
+      "href": "/1.0/index.html",
+      "hasChildren": true,
+      "icon": "<span class=\"menu-icon\">📁</span>",
+      "isIndex": false,
+      "children": [
+        {
+          "label": "Home",
+          "sortKey": "1.0",
+          "path": "1/1.0",
+          "href": "/1.0/1.0.html",
+          "hasChildren": false,
+          "icon": "<span class=\"menu-icon\">📄</span>",
+          "isIndex": true
+        },
+        {
+          "label": "REGENERATION",
+          "sortKey": "REGENERATION",
+          "path": "1/REGENERATION",
+          "href": "/1.0/REGENERATION.html",
+          "hasChildren": false,
+          "icon": "<span class=\"menu-icon\">📄</span>",
+          "isIndex": false
+        }
+      ]
+    },
+    {
+      "label": "Changes",
+      "sortKey": "changes",
+      "path": "changes",
+      "href": "/changes/index.html",
+      "hasChildren": true,
+      "icon": "<span class=\"menu-icon\">📁</span>",
+      "isIndex": false,
+      "children": [
+        {
+          "label": "Serve Logic",
+          "sortKey": "serve-logic",
+          "path": "changes/serve-logic",
+          "href": "/changes/serve-logic.html",
+          "hasChildren": false,
+          "icon": "<span class=\"menu-icon\">📄</span>",
+          "isIndex": false
+        }
+      ]
+    }
+  ],
+  "menuHtml": "<script type=\"application/json\" id=\"menu-config\">{\"openMenuItems\":[]}</script>\n<div class=\"menu-breadcrumb\" style=\"display: none;\">\n  <button class=\"menu-back\" title=\"Go back\">←</button>\n  <button class=\"menu-home\" title=\"Go to root\">🏠</button>\n  <span class=\"menu-current-path\"></span>\n</div><ul class=\"menu-level\" data-level=\"0\">\n<li class=\"menu-item has-children\" data-path=\"\">\n  <div class=\"menu-item-row\">\n    <span class=\"menu-icon\">🏠</span>\n    <a href=\"/index.html\" class=\"menu-label\">Home</a>\n    <span class=\"menu-more\">⋯</span>\n  </div>\n</li>\n<li class=\"menu-item has-children\" data-path=\"1\">\n  <div class=\"menu-item-row\">\n    <span class=\"menu-icon\">📁</span>\n    <a href=\"/1.0/index.html\" class=\"menu-label\">1</a>\n    <span class=\"menu-more\">⋯</span>\n  </div>\n</li>\n<li class=\"menu-item has-children\" data-path=\"changes\">\n  <div class=\"menu-item-row\">\n    <span class=\"menu-icon\">📁</span>\n    <a href=\"/changes/index.html\" class=\"menu-label\">Changes</a>\n    <span class=\"menu-more\">⋯</span>\n  </div>\n</li></ul>",
+  "validPaths": [
+    [
+      "/path_logic",
+      "/PATH_LOGIC.html"
+    ],
+    [
+      "/path_logic.html",
+      "/PATH_LOGIC.html"
+    ],
+    [
+      "/release_protocol",
+      "/RELEASE_PROTOCOL.html"
+    ],
+    [
+      "/release_protocol.html",
+      "/RELEASE_PROTOCOL.html"
+    ],
+    [
+      "/changes/serve-logic",
+      "/changes/serve-logic.html"
+    ],
+    [
+      "/changes/serve-logic.html",
+      "/changes/serve-logic.html"
+    ],
+    [
+      "/1.0/1.0",
+      "/1.0/1.0.html"
+    ],
+    [
+      "/1.0/1.0.html",
+      "/1.0/1.0.html"
+    ],
+    [
+      "/1.0",
+      "/1.0/index.html"
+    ],
+    [
+      "/1.0/",
+      "/1.0/index.html"
+    ],
+    [
+      "/1.0/index.html",
+      "/1.0/index.html"
+    ],
+    [
+      "/1.0/regeneration",
+      "/1.0/REGENERATION.html"
+    ],
+    [
+      "/1.0/regeneration.html",
+      "/1.0/REGENERATION.html"
+    ],
+    [
+      "/changes",
+      "/changes/index.html"
+    ],
+    [
+      "/changes/",
+      "/changes/index.html"
+    ],
+    [
+      "/changes/index.html",
+      "/changes/index.html"
+    ],
+    [
+      "/",
+      "/index.html"
+    ],
+    [
+      "/index.html",
+      "/index.html"
+    ]
+  ],
+  "customMenus": []
+}

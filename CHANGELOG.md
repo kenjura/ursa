@@ -1,3 +1,14 @@
+# 0.89.0
+2026-08-20
+
+Fixed `generate` dropping every static file that was not an image or an HTML page — fonts, video, audio, PDFs. A site that used any of them worked perfectly in `ursa serve` and shipped broken.
+
+`serve` reads static files straight off disk through one list of extensions, while `generate` had two narrower ideas of what to copy: images, and `.html`. Nothing else ever reached the output. Because dev and build disagreed rather than both being wrong, the gap was invisible until deploy — and then invisible again, since a static host that rewrites 404s to `index.html` answers a missing `.mp4` with a page of HTML rather than an error.
+
+- **`generate` now copies fonts, audio, video, documents and archives**: `woff`, `woff2`, `ttf`, `eot`, `otf`, `pdf`, `mp3`, `m4a`, `wav`, `flac`, `mp4`, `m4v`, `webm`, `ogv`, `ogg`, `zip`. Images keep their own path, because they also get previews.
+- **One shared list**, in `helper/staticAssets.js`, used by both `generate` and `serve`, so they cannot drift apart again. It is the drift, not either list, that caused this.
+- The static-files progress line now counts HTML and media separately.
+
 # 0.88.0
 2026-08-19
 
