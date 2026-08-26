@@ -1,0 +1,248 @@
+/* Image hover controls and the full-screen viewer (see lightbox.js). */
+
+/* --- hover controls --- */
+
+.ursa-image-frame {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+  line-height: 0;
+}
+
+.ursa-image-controls {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  gap: 6px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  line-height: 0;
+}
+
+.ursa-image-frame:hover .ursa-image-controls,
+.ursa-image-frame:focus-within .ursa-image-controls {
+  opacity: 1;
+}
+
+/* No hover to reveal them on touch devices, so keep them visible but quiet. */
+@media (hover: none) {
+  .ursa-image-controls {
+    opacity: 0.65;
+  }
+}
+
+.ursa-image-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.55);
+  color: white;
+  cursor: pointer;
+  backdrop-filter: blur(2px);
+  transition: background-color 0.15s ease;
+}
+
+.ursa-image-btn:hover,
+.ursa-image-btn:focus-visible {
+  background: rgba(0, 0, 0, 0.8);
+}
+
+.ursa-image-btn svg {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* --- full-screen viewer --- */
+
+body.ursa-lightbox-open {
+  overflow: hidden;
+}
+
+.ursa-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: flex;
+}
+
+.ursa-lightbox[hidden] {
+  display: none;
+}
+
+.ursa-lightbox-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.85);
+}
+
+.ursa-lightbox-stage {
+  position: relative;
+  flex: 1;
+  display: flex;
+  overflow: auto;
+  padding: 32px;
+  box-sizing: border-box;
+  outline: none;
+  overscroll-behavior: contain;
+}
+
+/* margin:auto centres the image while it fits, and collapses to 0 once it is
+   larger than the stage, so the overflow stays scrollable in both directions. */
+.ursa-lightbox-image {
+  margin: auto;
+  display: block;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+.ursa-lightbox-image.is-placeholder {
+  filter: blur(1px);
+}
+
+.ursa-lightbox-stage.is-pannable {
+  cursor: grab;
+}
+
+.ursa-lightbox-stage.is-panning {
+  cursor: grabbing;
+}
+
+/* Centred over the blurred placeholder, clear of the toolbar. */
+.ursa-lightbox-loading {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  padding: 10px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.55);
+  pointer-events: none;
+}
+
+.ursa-lightbox-loading[hidden] {
+  display: none;
+}
+
+.ursa-lightbox-loading .ursa-spinner {
+  width: 18px;
+  height: 18px;
+  border-color: rgba(255, 255, 255, 0.3);
+  border-top-color: rgba(255, 255, 255, 0.9);
+}
+
+.ursa-lightbox-toolbar {
+  position: absolute;
+  left: 50%;
+  bottom: 20px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(2px);
+}
+
+.ursa-lightbox-zoom {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.ursa-lightbox-zoom[hidden] {
+  display: none;
+}
+
+.ursa-lightbox-level {
+  min-width: 3.5em;
+  text-align: center;
+  color: white;
+  font-family: sans-serif;
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.ursa-lightbox-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: white;
+  font-size: 1.2rem;
+  font-family: sans-serif;
+  line-height: 1;
+  cursor: pointer;
+  transition: background-color 0.15s ease, opacity 0.15s ease;
+}
+
+.ursa-lightbox-btn:hover,
+.ursa-lightbox-btn:focus-visible {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.ursa-lightbox-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+  background: transparent;
+}
+
+.ursa-lightbox-btn svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.ursa-lightbox-close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.6);
+  color: white;
+  cursor: pointer;
+  backdrop-filter: blur(2px);
+  transition: background-color 0.15s ease;
+}
+
+.ursa-lightbox-close:hover,
+.ursa-lightbox-close:focus-visible {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.ursa-lightbox-close svg {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+}

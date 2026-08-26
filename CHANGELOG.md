@@ -1,3 +1,18 @@
+# 0.90.0
+2026-08-26
+
+Article images get a zoom and a download button on hover, and a full-screen viewer behind the zoom.
+
+Images in a built site are downscaled WebP previews — 800px at quality 80 — wrapped in a link to the original. That is right for page weight and wrong for looking at anything: the only way to see the pixels that were actually shot was to click through to a raw image file in a new tab, losing the page, and the only way to keep a copy was the browser's context menu, which on that page would have saved the preview rather than the original.
+
+- **Hover controls** on every article image large enough to be a picture rather than an icon (80px in both axes). Zoom opens the viewer; download saves the **original** — not the preview — under its own filename. On touch devices, where there is no hover, they are simply always visible.
+- **The viewer** opens the original at native resolution when it fits the viewport, and contained within it when it does not, over the standard translucent black backdrop. It loads the preview first as a placeholder, so a multi-megabyte original arrives into a full-size blurred image rather than an empty box.
+- **Zoom in/out appear only when there is resolution left to see** — an image already showing every pixel it has gets no zoom controls. Steps of 1.5× between contain-fit and 100%, keeping the centre of the view fixed; drag to pan, double-click to toggle fit and 100%.
+- **Closing**: the backdrop, the letterboxing around the image, the X, or Escape. Tab stays inside the dialog while it is open, and focus returns to where it was on close.
+- `meta/templates/default-template/lightbox.js` and `lightbox.css`, picked up by the existing asset bundler; `data-no-lightbox` on an image or any ancestor opts out.
+
+Clicking the image itself is unchanged — it still opens the original in a new tab.
+
 # 0.89.0
 2026-08-20
 
