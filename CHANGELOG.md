@@ -1,3 +1,18 @@
+
+# 0.91.0
+2026-08-27
+
+Ursa's built-in CSS is scoped with `@scope` and layered with `@layer`, so a site's own stylesheet no longer has to fight it.
+
+Styling a site had turned into a specificity war. Ursa's stylesheet is loaded before the site's, but it styles content through selectors like `article#main-content h1` — an ID and two elements — so a site author writing the obvious `h1 { … }` lost, and kept losing until they either copied Ursa's selectors or reached for `!important`. Worse, rules meant for the frame leaked into documents and rules meant for documents leaked into the frame, because everything shared one flat global scope.
+
+- **Content styles are layered.** Everything Ursa applies to a document body — headings, images, figures, the article box, the sticky headings — now lives in `@layer ursa.content`. A site's `style.css` is unlayered, and an unlayered declaration beats a layered one regardless of specificity, so `h1 { position: static }` or `#main-content { width: 1000px }` in a site stylesheet simply wins, at any specificity.
+- **Chrome is scoped, not layered.** The top bar, menus, widgets, search and footer sit in `@scope (body) to (#main-content > *, article > *, .ursa-unstyled)`, so none of it can reach into a document's own markup — and, being unlayered, a stray `a { … }` in a site stylesheet still can't wreck the navigation. Chrome's selectors are unchanged, so overriding them works the way it always did — with a more specific selector, since a scoped rule now wins a specificity tie against an unscoped one. Breadcrumbs, the image hover controls and the lightbox get their own scopes on the same terms, since they are Ursa's furniture even though they render inside — or on top of — the document.
+- **`class="ursa-unstyled"`** on any element puts it and everything inside it outside every one of Ursa's scopes. Not "override the defaults" — Ursa's CSS does not apply in there at all, down to the strike-through on dead links. The lightbox leaves images in there alone too, rather than injecting controls it has no styles for.
+- **Nothing looks different.** The reorganisation is a pure cascade change. Verified by diffing every computed property and every bounding box of every element, before and after, across four pages, both colour schemes, desktop and mobile widths, and eight interaction states (top menu, collapsed and open side menu, stuck headings, open widgets, search results, inactive links, open lightbox): zero differences outside `.ursa-unstyled`.
+
+Requires `@scope`: Chrome 118+, Safari 17.4+, Firefox 128+.
+
 # 0.90.1
 2026-08-29
 

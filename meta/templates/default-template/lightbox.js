@@ -101,6 +101,9 @@
   function decorate(img) {
     if (img.dataset.ursaLightbox) return;
     if (img.closest('[data-no-lightbox]')) return;
+    // Ursa's CSS does not reach inside .ursa-unstyled, so controls injected
+    // there would render unstyled.  Leave those images alone entirely.
+    if (img.closest('.ursa-unstyled')) return;
 
     const url = fullSizeUrl(img);
     if (!url) return;

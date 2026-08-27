@@ -216,6 +216,19 @@ your-project/
 └── output/          # Generated site (created automatically)
 ```
 
+## Styling a Site
+
+Drop a `style.css` (or `style-ursa.css`, or `_style.css`) in any source folder and it applies to every document in that folder and below. Every such file from the docroot down to the document's own folder is included, nearest last, so a deeper file overrides a shallower one.
+
+Ursa's own stylesheet is scoped and layered so that your CSS wins without a fight:
+
+- **Document content** — headings, images, figures, the article box itself — is styled inside `@layer ursa.content`. Your stylesheet is unlayered, and an unlayered rule beats a layered one no matter how specific it is, so a plain `h1 { position: static }` or `#main-content { width: 1000px }` overrides whatever Ursa sets. No `article#main-content h1` escalation, no `!important`.
+- **Chrome** — the top bar, menus, widgets, search, footer, breadcrumbs, image hover controls and lightbox — is scoped but *not* layered, so a broad rule like `a { color: … }` in your stylesheet cannot bleed into the navigation. Overriding chrome works as it always did: use a more specific selector than the built-in one.
+- **Nothing built in reaches into content it shouldn't.** Chrome rules stop at the article's children; content rules stop at the article's edge.
+- **`class="ursa-unstyled"`** on any element puts it and its descendants outside every one of Ursa's scopes — none of Ursa's CSS applies in there at all, and the lightbox leaves images in there alone.
+
+This uses the CSS `@scope` and `@layer` rules: Chrome 118+, Safari 17.4+, Firefox 128+.
+
 ## Auto-Index Generation
 
 Ursa automatically generates index pages for folders that don't have one. You can also explicitly control auto-index generation in your index documents using frontmatter:
