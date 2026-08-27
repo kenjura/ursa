@@ -1,28 +1,36 @@
-# 0.76.0 - serve resilience
+# 0.76.0 - serve resilience ✅
 
 Issues:
-- When 8081 is in use, 'ursa serve' fails silently, serving files with unfinished generation.
-- Many use cases require --clean option or even rm -rf output/ before serve. In theory, the cache:
-  - Should invalidate every document when the document is changed
-  - Should invalidate every document affected by a changed style.css or menu.md in that file's "catchment area"
-  - Should invalidate every document using a template when that template's html, js, or css is changed in meta (especially the default template)
-  - Should invalidate any document affected by an add/edit/delete event on a static file (examples: images, directly referenced static files other than nearest style.css)
-  - Should invalidate the entire cache if ursa's version or hash changes, either in real time, or if the cache has a different version and/or hash from the current one that is running
+- [x] When 8081 is in use, 'ursa serve' fails silently, serving files with unfinished generation. (0.87.2, 0.88.0 `--strict-port`)
+- [x] Many use cases require --clean option or even rm -rf output/ before serve. In theory, the cache:
+  - [x] Should invalidate every document when the document is changed
+  - [x] Should invalidate every document affected by a changed style.css or menu.md in that file's "catchment area"
+  - [x] Should invalidate every document using a template when that template's html, js, or css is changed in meta (especially the default template)
+  - [x] Should invalidate any document affected by an add/edit/delete event on a static file (examples: images, directly referenced static files other than nearest style.css)
+  - [x] Should invalidate the entire cache if ursa's version or hash changes, either in real time, or if the cache has a different version and/or hash from the current one that is running (0.92.0)
+
+The first four rules live in `DependencyTracker.getInvalidationPlan` /
+`getMetaInvalidationPlan`; the version rule is `enforceCacheVersion` in
+`src/helper/contentHash.js`, which stamps `.ursa/` and drops it wholesale on a
+mismatch.
 
 # 0.75.0 - navigation overhaul
 
+Mostly shipped; verified against generated output on 2026-08-27. What is left is
+the custom-menu-in-a-subfolder question and the Top Nav Container widget work.
+
 ## Top Menu
-- [ ] Top menu is now the default option. For sites with no menu.md, or with a handwritten menu.md that doesn't specify left menu, use the new top menu (#nav-main-top) to render the menu.
-- [ ] In desktop mode, replace the hamburger icon in the top left of the viewport with a "home" icon, which navigates to the root page ("/"). This allows users to "back out" of a custom menu.
-- [ ] On small screens (viewport width < css var article-width), the top menu should disappear. The home icon (previously hamburger) in the top left should once again be a hamburger icon, which opens a vertically-oriented side menu containing the same menu items as the top menu, with a "root" item at the very beginning which goes to. This allows access to the menu on mobile devices, while keeping the desktop experience optimized for wide screens.
+- [x] Top menu is now the default option. For sites with no menu.md, or with a handwritten menu.md that doesn't specify left menu, use the new top menu (#nav-main-top) to render the menu.
+- [x] In desktop mode, replace the hamburger icon in the top left of the viewport with a "home" icon, which navigates to the root page ("/"). This allows users to "back out" of a custom menu.
+- [x] On small screens (viewport width < css var article-width), the top menu should disappear. The home icon (previously hamburger) in the top left should once again be a hamburger icon, which opens a vertically-oriented side menu containing the same menu items as the top menu, with a "root" item at the very beginning which goes to. This allows access to the menu on mobile devices, while keeping the desktop experience optimized for wide screens.
 - [ ] When rendering a custom menu in a folder that is not root...TBD
-- [ ] Files in the top-level folder should not be top-level menu items. Instead, they should be children of the "home" item in the menu.
+- [x] Files in the top-level folder should not be top-level menu items. Instead, they should be children of the "home" item in the menu.
 - [x] When a folder has only an index.md (or {foldername}.md) and no other files, it should be rendered as a single menu item linking to that document, rather than a folder with a child item.
-- [ ] Submenus should show all folders (a-z) before all files (a-z).
-- [ ] Whenever an index page appears in a menu, it should be sorted before all other filenames, regardless of alphabetical order, and the label (if not overridden) should be "Home" rather than Index.
+- [x] Submenus should show all folders (a-z) before all files (a-z).
+- [x] Whenever an index page appears in a menu, it should be sorted before all other filenames, regardless of alphabetical order, and the label (if not overridden) should be "Home" rather than Index.
 
 ## Default Header
-- [ ] When a document does not begin with an H1, the title of the document (from frontmatter or filename) should be rendered as a default H1 header at the top of the article. 
+- [x] When a document does not begin with an H1, the title of the document (from frontmatter or filename) should be rendered as a default H1 header at the top of the article. 
 
 ## Top Nav Container changes
 Instead of the TOC being a special element that just happens to be in the top right, and search being displaced by the new top menu, there is a new, consistent approach:

@@ -1,27 +1,8 @@
 // Helper for building the _ursa_metadata field embedded in generated JSON files
 import { existsSync } from "fs";
 import { readFile } from "fs/promises";
-import { dirname, join, resolve } from "path";
-import { URL } from "url";
-
-/**
- * Read the ursa version from ursa's own package.json
- * @returns {Promise<string>} The ursa version, or 'unknown' if it can't be read
- */
-async function getUrsaVersion() {
-  try {
-    // From src/helper/build/ursaMetadata.js, go up to the package root
-    const currentDir = dirname(new URL(import.meta.url).pathname);
-    const ursaPackagePath = resolve(currentDir, "..", "..", "..", "package.json");
-    if (existsSync(ursaPackagePath)) {
-      const ursaPackage = JSON.parse(await readFile(ursaPackagePath, "utf8"));
-      if (ursaPackage.version) return ursaPackage.version;
-    }
-  } catch (e) {
-    console.error(`Error reading ursa package.json: ${e.message}`);
-  }
-  return "unknown";
-}
+import { join, resolve } from "path";
+import { getUrsaVersion } from "../ursaVersion.js";
 
 /**
  * Read the documentation repo version from its package.json.
@@ -54,9 +35,5 @@ async function getDocVersion(_source) {
  * @returns {Promise<{ursaVersion: string, docVersion: string}>}
  */
 export async function getUrsaMetadata(_source) {
-  const [ursaVersion, docVersion] = await Promise.all([
-    getUrsaVersion(),
-    getDocVersion(_source),
-  ]);
-  return { ursaVersion, docVersion };
+  return { ursaVersion: getUrsaVersion(), docVersion: await getDocVersion(_source) };
 }

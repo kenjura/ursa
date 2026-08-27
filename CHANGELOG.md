@@ -1,3 +1,15 @@
+# 0.92.0
+2026-08-27
+
+Upgrading ursa now invalidates the build cache, so an upgrade takes effect without `--clean`.
+
+`.ursa/` caches a content hash per source document, and a document whose hash is unchanged is skipped entirely. But the hash only describes the *source*. It says nothing about the templates, renderers and asset bundles that turned that source into HTML — all of which live in ursa itself. So installing a new ursa over a warm cache left every unchanged document frozen at whatever the previous version produced: new template markup didn't appear, renderer fixes didn't apply, and even the ursa version in the page footer stayed at the old number. The workaround was to remember to run `--clean` after every upgrade, which is most of what made `--clean` feel mandatory in the first place.
+
+- **`.ursa/` is stamped with the ursa version that wrote it.** On a mismatch the whole directory is discarded — hashes, dependency graph, nav cache and search index together — and the build starts cold. Upgrades and downgrades both count; so does a cache left by a version too old to have written a stamp, and a stamp that can't be parsed.
+- **Matching stamps cost nothing.** A warm rebuild on the same version still skips every unchanged document, exactly as before.
+- **`--clean` is unaffected**, and leaves behind a stamp the next run accepts, so it no longer costs an extra cold build.
+
+This was the last unimplemented rule in the 0.76.0 cache-invalidation list; the other four (document, inherited `style.css`/`menu.md`, template, static asset) were already in place.
 
 # 0.91.0
 2026-08-27

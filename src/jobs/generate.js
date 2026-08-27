@@ -21,6 +21,7 @@ import {
   outputsExist,
   updateHash,
   getUrsaDir,
+  enforceCacheVersion,
 } from "../helper/contentHash.js";
 import {
   buildValidPaths,
@@ -168,7 +169,20 @@ export async function generate({
     progress.logTimed(`Clean build: clearing output directory ${output}`);
     await emptyDir(output);
     progress.logTimed(`Clean complete [${progress.stopTimer('Clean')}]`);
-  } else {
+  }
+
+  // Stamp the cache with ursa's version, discarding it if a different ursa
+  // wrote it. Hash-skipping only compares source content, so without this an
+  // upgrade leaves every unchanged document frozen at whatever the previous
+  // version's templates and renderers produced.
+  const cacheStamp = await enforceCacheVersion(source);
+  if (cacheStamp.reset) {
+    progress.logTimed(
+      `Cache discarded: written by ursa ${cacheStamp.previous ?? '(unstamped)'}, now running ${cacheStamp.version}`
+    );
+  }
+
+  if (!_clean) {
     // Warm start: reload persisted dependency registrations so hash-skipped
     // documents keep their edges (current-run registrations take precedence)
     const loaded = await loadDependencyTracker(source);
