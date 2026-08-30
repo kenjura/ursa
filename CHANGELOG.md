@@ -1,3 +1,11 @@
+# 0.90.1
+2026-08-29
+
+Upgraded `sharp` to the current 0.34 line and updated install-script allowlisting for pnpm.
+
+- `sharp` is now `^0.34.5`.
+- Added `sharp` to `pnpm.onlyBuiltDependencies` so its native install step runs consistently in pnpm-managed environments.
+
 # 0.90.0
 2026-08-26
 
