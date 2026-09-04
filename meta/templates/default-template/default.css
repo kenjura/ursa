@@ -122,13 +122,27 @@
     z-index: 1001;
 
     button.menu-button {
+      display: flex;
+      align-items: center;
+      justify-content: center;
       color: var(--text-color);
-      font-size: calc(var(--global-nav-height) / 2);
       line-height: 1;
       padding: 8px;
       background: none;
       border: none;
       cursor: pointer;
+    }
+
+    /* Three icons live in this button; menu.js says which one is showing by
+       putting its name in data-icon. The attribute is on the markup too, so the
+       hamburger is up before any script runs. */
+    button.menu-button > .ursa-icon {
+      display: none;
+    }
+    button.menu-button[data-icon="menu"] > .ursa-icon[data-icon="menu"],
+    button.menu-button[data-icon="close"] > .ursa-icon[data-icon="close"],
+    button.menu-button[data-icon="home"] > .ursa-icon[data-icon="home"] {
+      display: block;
     }
     button.menu-button:hover {
       opacity: 0.7;
@@ -262,6 +276,21 @@
 
   .widget-icon {
     pointer-events: none;
+    display: flex;
+  }
+
+  /* Tabler's outline icons, inlined in index.html. Everything the whole set
+     shares is here rather than repeated as presentation attributes on each of
+     them — which also means a theme can restyle them as CSS, and that they take
+     their colour from whatever the button they sit in is using. */
+  .ursa-icon {
+    width: 20px;
+    height: 20px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
   }
 
   /* Widget dropdown panel (right-side, default) */
@@ -335,6 +364,144 @@
 
   .widget-content.active {
     display: block;
+  }
+
+  /* The TOC panel.
+
+     Every other widget is a drawer: you pull it open, read it, and shut it
+     again, so an opaque slab pinned to the corner of the screen is the right
+     shape for one. The TOC is not that — it is open more or less permanently
+     (see defaultOpen in widgets.js), and a permanent opaque slab overlapping
+     the article is just a piece of the page missing.
+
+     So when the right-hand dropdown is showing the TOC it stops being a drawer
+     and becomes a panel standing in the margin beside the article: translucent,
+     hairline-bordered, and narrow enough that it never reaches the text.
+
+     The width is the margin itself, less a gutter at each end. `50%` on a fixed
+     element is half the viewport *excluding* the scrollbar, which is what the
+     centred article is centred in — 100vw includes the scrollbar and would put
+     the panel a few pixels into the text. --ursa-toc-max is only a ceiling, for
+     very wide screens where the whole margin would be an absurd measure to read
+     a list of headings across. */
+  .widget-dropdown[data-active-widget="toc"] {
+    --ursa-toc-gutter: 1rem;
+    --ursa-toc-max: 20rem;
+
+    top: calc(var(--global-nav-height) + var(--ursa-toc-gutter));
+    right: var(--ursa-toc-gutter);
+    width: min(
+      var(--ursa-toc-max),
+      calc(50% - var(--article-width) / 2 - var(--ursa-toc-gutter) * 2)
+    );
+    max-height: calc(100vh - var(--global-nav-height) - var(--ursa-toc-gutter) * 2);
+
+    /* A translucent version of whatever the theme's panel colour is, so a site
+       that sets --widget-bg gets its own tint here for free. */
+    background: color-mix(in srgb, var(--widget-bg) 48%, transparent);
+    backdrop-filter: blur(5px);
+    -webkit-backdrop-filter: blur(5px);
+    border: 1px solid var(--widget-border);
+    border-radius: 8px;
+    box-shadow: none;
+  }
+
+  /* Below this there is no margin worth standing in: a panel there would be a
+     column of broken words, or would have to sit on top of the article. So the
+     TOC changes shape instead of going away — the same list, laid on its side,
+     one line tall, along the bottom of the viewport. It is still the same
+     widget: the same button opens and closes it, and toc-generator.js is what
+     keeps the current section in the middle of it.
+
+     The figure is --article-width (50rem = 800px by default) plus room for a
+     usable panel either side of it. It has to be a plain length because media
+     queries cannot read custom properties; a site that moves --article-width
+     a long way will want to move this with it. */
+  @media (max-width: 1280px) {
+    .widget-dropdown[data-active-widget="toc"] {
+      /* How much of each end is fade rather than solid. The list carries the
+         same figure as padding, so at either extreme of the scroll the first
+         and last entries sit past the fade and are not dimmed by it — the fade
+         only ever covers the overrun. */
+      --ursa-toc-fade: 1.5rem;
+
+      top: auto;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      width: auto;
+      max-height: none;
+      border: none;
+      border-top: 1px solid var(--widget-border);
+      border-radius: 0;
+      overflow: hidden;
+    }
+
+    /* The title and close button are drawer furniture; the strip is one line
+       tall and the nav button is what closes it. */
+    .widget-dropdown[data-active-widget="toc"] .widget-header {
+      display: none;
+    }
+
+    .widget-dropdown[data-active-widget="toc"] #widget-content-toc {
+      padding: 0;
+      /* Scrolled by script, and by hand: a drag or a swipe along the strip
+         works, which is worth having on the touch screens this width mostly
+         means. The scrollbar itself would be half the height of the strip. */
+      overflow-x: auto;
+      overflow-y: hidden;
+      scrollbar-width: none;
+      -webkit-mask-image: linear-gradient(to right,
+        transparent 0,
+        #000 var(--ursa-toc-fade),
+        #000 calc(100% - var(--ursa-toc-fade)),
+        transparent 100%);
+              mask-image: linear-gradient(to right,
+        transparent 0,
+        #000 var(--ursa-toc-fade),
+        #000 calc(100% - var(--ursa-toc-fade)),
+        transparent 100%);
+    }
+
+    .widget-dropdown[data-active-widget="toc"] #widget-content-toc::-webkit-scrollbar {
+      display: none;
+    }
+
+    .widget-dropdown[data-active-widget="toc"] #widget-content-toc ul {
+      display: flex;
+      flex-wrap: nowrap;
+      width: max-content;
+      padding-inline: var(--ursa-toc-fade);
+    }
+
+    .widget-dropdown[data-active-widget="toc"] #widget-content-toc li {
+      margin-bottom: 0;
+    }
+
+    /* Every heading level is one entry in a line, so the left-hand indent that
+       shows depth in the panel has nothing to indent from here. Depth is told
+       by weight and size instead, and the active marker moves from the left
+       edge to underneath. */
+    .widget-dropdown[data-active-widget="toc"] #widget-content-toc li > a {
+      white-space: nowrap;
+      padding: 0.4rem 0.7rem;
+      border-left: none;
+      border-bottom: 2px solid transparent;
+    }
+
+    .widget-dropdown[data-active-widget="toc"] #widget-content-toc li > a:hover {
+      border-left-color: transparent;
+      border-bottom-color: var(--text-color);
+    }
+
+    .widget-dropdown[data-active-widget="toc"] #widget-content-toc li > a.active {
+      border-left-color: transparent;
+      border-bottom-color: aqua;
+    }
+
+    .widget-dropdown[data-active-widget="toc"] #widget-content-toc li.toc-h1 > a { padding-left: 0.7rem; }
+    .widget-dropdown[data-active-widget="toc"] #widget-content-toc li.toc-h2 > a { padding-left: 0.7rem; }
+    .widget-dropdown[data-active-widget="toc"] #widget-content-toc li.toc-h3 > a { padding-left: 0.7rem; }
   }
 
   /* --- TOC Widget --- */
@@ -1168,13 +1335,18 @@
       display: block !important;
     }
 
-    /* Hide widget buttons on mobile — they're accessible via the inline search and mobile menu */
-    .widget-bar {
+    /* Hide widget buttons on mobile — they're accessible via the inline search
+       and mobile menu. The TOC is the exception: its strip presentation was
+       built for a viewport this narrow, so its button stays. An empty
+       .widget-bar is a flex box with no children and takes up no room, so the
+       left-hand bar needs no rule of its own. */
+    .widget-button:not([data-widget="toc"]) {
       display: none !important;
     }
 
-    /* Hide widget dropdown on mobile */
-    .widget-dropdown {
+    /* Hide widget dropdowns on mobile — except the TOC, which becomes the strip
+       along the bottom of the viewport rather than a drawer over the article. */
+    .widget-dropdown:not([data-active-widget="toc"]) {
       display: none !important;
     }
 

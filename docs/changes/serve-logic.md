@@ -1,5 +1,9 @@
 # Serve Logic Revamp: Dependency-Graph Invalidation
 
+> **Superseded (2026-09-03):** the design and TODO sections below are replaced by
+> [`docs/SERVE.md`](../SERVE.md), which is now the source of truth for `ursa serve`.
+> The problem statement and root-cause analysis here remain accurate.
+
 **Status:** Phases 0–1 shipped in 0.87.0; Phases 2–4 pending
 **Written:** 2026-06-10 (file/line references are as of v0.86.0)
 

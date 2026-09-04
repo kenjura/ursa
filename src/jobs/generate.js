@@ -748,7 +748,7 @@ export async function generate({
       }
 
       // Inject breadcrumbs before the H1
-      const breadcrumbs = generateBreadcrumbs(dir, base, fileMeta);
+      const breadcrumbs = generateBreadcrumbs(dir, base, fileMeta, source);
       if (breadcrumbs) {
         body = breadcrumbs + body;
       }
@@ -1566,7 +1566,7 @@ export async function regenerateSingleFile(changedFile, {
     }
 
     // Inject breadcrumbs before the H1
-    const breadcrumbs = generateBreadcrumbs(dir, base, fileMeta);
+    const breadcrumbs = generateBreadcrumbs(dir, base, fileMeta, source);
     if (breadcrumbs) {
       body = breadcrumbs + body;
     }

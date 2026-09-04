@@ -3,8 +3,15 @@ import { isHiddenOrSystemPath } from "./hiddenPaths.js";
 import { extname, basename, join, dirname } from "path";
 import { existsSync, readFileSync } from "fs";
 import { getFolderConfig, isFolderHidden, getRootConfig } from "./folderConfig.js";
-import { extractMetadata, isMetadataOnly } from "./metadataExtractor.js";
-import { stripHtml } from "./stripHtml.js";
+import { isMetadataOnly } from "./metadataExtractor.js";
+import {
+  INDEX_EXTENSIONS,
+  toDisplayName,
+  getMenuLabelFromFile,
+  getMenuSortAsFromFile,
+  getFolderLabel,
+  getFolderSortKey,
+} from "./menuLabels.js";
 
 // Icon extensions to check for custom icons
 const ICON_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.ico'];
@@ -13,93 +20,6 @@ const ICON_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.ico
 const FOLDER_ICON = '📁';
 const DOCUMENT_ICON = '📄';
 const HOME_ICON = '🏠';
-
-// Index file extensions to check for folder links
-const INDEX_EXTENSIONS = ['.md', '.mdx', '.txt', '.yml', '.yaml'];
-
-// Convert filename to display name (e.g., "foo-bar" -> "Foo Bar")
-function toDisplayName(filename) {
-  return filename
-    .replace(/[-_]/g, ' ')  // Replace dashes and underscores with spaces
-    .replace(/\b\w/g, c => c.toUpperCase());  // Capitalize first letter of each word
-}
-
-/**
- * Get the menu label from a file's frontmatter
- * @param {string} filePath - Path to the markdown file
- * @returns {string|null} The menu-label value (with HTML stripped), or null if not found
- */
-function getMenuLabelFromFile(filePath) {
-  try {
-    if (!existsSync(filePath)) return null;
-    const content = readFileSync(filePath, 'utf8');
-    const metadata = extractMetadata(content);
-    if (metadata && metadata['menu-label']) {
-      return stripHtml(String(metadata['menu-label']));
-    }
-  } catch (e) {
-    // Ignore read errors
-  }
-  return null;
-}
-
-/**
- * Get the menu-sort-as value from a file's frontmatter
- * @param {string} filePath - Path to the markdown file
- * @returns {string|null} The menu-sort-as value (with HTML stripped), or null if not found
- */
-function getMenuSortAsFromFile(filePath) {
-  try {
-    if (!existsSync(filePath)) return null;
-    const content = readFileSync(filePath, 'utf8');
-    const metadata = extractMetadata(content);
-    if (metadata && metadata['menu-sort-as']) {
-      return stripHtml(String(metadata['menu-sort-as']));
-    }
-  } catch (e) {
-    // Ignore read errors
-  }
-  return null;
-}
-
-/**
- * Get the menu label for a folder from its index.md frontmatter
- * Falls back to config.json label (deprecated), then display name
- * @param {string} dirPath - Path to the folder
- * @param {object|null} folderConfig - The folder's config.json if any
- * @param {string} baseName - The folder's base name
- * @returns {string} The label to display
- */
-function getFolderLabel(dirPath, folderConfig, baseName) {
-  // First, check index.md for menu-label (preferred method)
-  for (const ext of INDEX_EXTENSIONS) {
-    const indexPath = join(dirPath, `index${ext}`);
-    const label = getMenuLabelFromFile(indexPath);
-    if (label) return label;
-  }
-  
-  // Fall back to config.json label (deprecated)
-  if (folderConfig?.label) {
-    return folderConfig.label;
-  }
-  
-  // Default to display name from folder name
-  return toDisplayName(baseName);
-}
-
-/**
- * Get the sort key for a folder from its index.md frontmatter
- * @param {string} dirPath - Path to the folder
- * @returns {string|null} The menu-sort-as value, or null if not found
- */
-function getFolderSortKey(dirPath) {
-  for (const ext of INDEX_EXTENSIONS) {
-    const indexPath = join(dirPath, `index${ext}`);
-    const sortKey = getMenuSortAsFromFile(indexPath);
-    if (sortKey) return sortKey;
-  }
-  return null;
-}
 
 /**
  * Check if a file is an index file

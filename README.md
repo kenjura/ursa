@@ -229,6 +229,28 @@ Ursa's own stylesheet is scoped and layered so that your CSS wins without a figh
 
 This uses the CSS `@scope` and `@layer` rules: Chrome 118+, Safari 17.4+, Firefox 128+.
 
+### Styling one widget at a time
+
+The two widget panels are shared containers — the right-hand one holds the table
+of contents, search and profile in turn — so styling `.widget-dropdown` styles
+all of them at once. While a panel is open it carries `data-active-widget` naming
+whichever widget is showing, and the attribute is removed when it closes, so a
+site can give each one its own treatment:
+
+```css
+/* Only the table of contents; search and profile keep the default panel. */
+.widget-dropdown[data-active-widget="toc"] {
+  background: rgba(20, 24, 28, 0.78);
+  backdrop-filter: blur(10px);
+}
+```
+
+Both panels carry it: `#widget-dropdown` for the right-hand widgets (`toc`,
+`search`, `profile`) and `#widget-dropdown-left` for the left-hand ones
+(`recent-activity`, `suggested`). The value is the widget's `data-widget` name.
+Ursa uses this hook itself, to lay the TOC out along the bottom of the viewport
+on a narrow screen.
+
 ## Auto-Index Generation
 
 Ursa automatically generates index pages for folders that don't have one. You can also explicitly control auto-index generation in your index documents using frontmatter:

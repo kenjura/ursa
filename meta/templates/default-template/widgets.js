@@ -6,10 +6,15 @@
  * dropdown panels. One widget can be open per side at a time.
  * 
  * Widget state (open/closed) is persisted in localStorage so it survives page reloads.
+ *
+ * An open panel carries data-active-widget naming whichever widget is showing,
+ * and loses it when it closes. The panels are shared containers, so this is what
+ * lets CSS — Ursa's own and a site's — tell one widget's panel from another's.
+ * See "Styling one widget at a time" in the README.
  * 
  * Built-in widgets:
  *   Left: Recent Activity (open by default)
- *   Right: TOC, Search, Profile
+ *   Right: TOC (open by default, persistent), Search, Profile
  */
 class WidgetManager {
   constructor() {
@@ -19,8 +24,31 @@ class WidgetManager {
     this.activeRight = null;
     this.activeLeft = null;
 
-    // Widgets that default to open on first visit
-    this.defaultOpen = new Set(['recent-activity']);
+    // Widgets that default to open on first visit. The TOC is here because it
+    // is reference furniture rather than a tool you go and fetch: it belongs
+    // beside the article the way page numbers belong on a page. It costs
+    // nothing to leave up — the stylesheet gives it the right margin, and
+    // takes it away again on a viewport with no margin to spare.
+    this.defaultOpen = new Set(['recent-activity', 'toc']);
+
+    // Widgets that are furniture rather than a drawer. Two things follow.
+    //
+    // A click elsewhere on the page does not dismiss them. Light dismissal is
+    // right for something you pull open, glance at and are done with, but the
+    // first half of following a link is a click on the page — so for a widget
+    // meant to stay up it fired constantly, and, because dismissal is recorded,
+    // it wrote down "the reader closed this" every time. One click on an
+    // article and the TOC was off for good, on that page and every page after.
+    // Escape is out for the same reason: it would be remembered.
+    //
+    // And they own their side of the nav. Another widget opening there is
+    // borrowing it, not replacing them — the loan is not recorded as a closure,
+    // and they come back when it is handed back.
+    //
+    // Which leaves the button in the nav and the panel's own close button as
+    // the only two things that decide whether a persistent widget is showing.
+    // Those are unambiguous, and those are remembered.
+    this.persistent = new Set(['toc']);
     
     if (this.buttons.length === 0) return;
     
@@ -86,12 +114,14 @@ class WidgetManager {
     document.addEventListener('click', (e) => {
       // Close right-side widget if click is outside
       if (this.activeRight && this.dropdownRight &&
+          !this.persistent.has(this.activeRight) &&
           !this.dropdownRight.contains(e.target) &&
           !e.target.closest('.widget-button')) {
         this.close('right');
       }
       // Close left-side widget if click is outside
       if (this.activeLeft && this.dropdownLeft &&
+          !this.persistent.has(this.activeLeft) &&
           !this.dropdownLeft.contains(e.target) &&
           !e.target.closest('.widget-button')) {
         this.close('left');
@@ -101,8 +131,8 @@ class WidgetManager {
     // Close on Escape
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
-        if (this.activeRight) this.close('right');
-        if (this.activeLeft) this.close('left');
+        if (this.activeRight && !this.persistent.has(this.activeRight)) this.close('right');
+        if (this.activeLeft && !this.persistent.has(this.activeLeft)) this.close('left');
       }
     });
 
@@ -131,6 +161,29 @@ class WidgetManager {
   }
   
   /**
+   * Whether a widget should be showing, as far as the reader's own choices go:
+   * what they last decided, or the default if they have not decided anything.
+   */
+  wantsToBeOpen(widgetName) {
+    let saved;
+    try {
+      saved = localStorage.getItem(`ursa-widget-${widgetName}`);
+    } catch (e) { /* localStorage not available */ }
+    
+    return saved === 'open' || (saved == null && this.defaultOpen.has(widgetName));
+  }
+  
+  /**
+   * The widget that owns a side of the nav when nothing else is using it.
+   */
+  residentOf(side) {
+    for (const widgetName of this.persistent) {
+      if (this.getSide(widgetName) === side) return widgetName;
+    }
+    return null;
+  }
+  
+  /**
    * Restore widget states from localStorage. 
    * For widgets with no saved state, use their default (defaultOpen set).
    */
@@ -140,19 +193,24 @@ class WidgetManager {
     this.buttons.forEach(btn => widgetNames.add(btn.dataset.widget));
     
     for (const widgetName of widgetNames) {
-      const key = `ursa-widget-${widgetName}`;
-      let saved;
-      try {
-        saved = localStorage.getItem(key);
-      } catch (e) { /* localStorage not available */ }
-      
-      const shouldOpen = saved === 'open' || (saved === null && this.defaultOpen.has(widgetName));
-      if (shouldOpen) {
+      if (this.wantsToBeOpen(widgetName) && this.hasContent(widgetName)) {
         this.open(widgetName);
       }
     }
   }
   
+  /**
+   * Whether a widget has anything to show. A widget that has hidden its own
+   * button has nothing — the TOC generator does exactly that on a page with no
+   * headings — and restoring it would put an empty panel on screen with no
+   * button to shut it again. Only relevant on restore: a widget the reader
+   * opens by hand plainly has a button to have clicked.
+   */
+  hasContent(widgetName) {
+    const btn = document.querySelector(`.widget-button[data-widget="${widgetName}"]`);
+    return !btn || btn.style.display !== 'none';
+  }
+
   /**
    * Toggle a widget open/closed.
    */
@@ -178,8 +236,12 @@ class WidgetManager {
     const currentActive = this.getActive(side);
     if (currentActive) {
       this.deactivateContent(currentActive);
-      // Save the closed widget's state
-      this.saveState(currentActive, false);
+      // Save the closed widget's state — unless it is only lending its side out,
+      // in which case it has not been closed and should not be written down as
+      // closed. close() hands the side back when the borrower is done.
+      if (!this.persistent.has(currentActive)) {
+        this.saveState(currentActive, false);
+      }
     }
     
     this.setActive(side, widgetName);
@@ -233,6 +295,17 @@ class WidgetManager {
     
     // Fire event
     document.dispatchEvent(new CustomEvent('widget-closed', { detail: { widget: active, side } }));
+    
+    // Give the side back to its resident, if it has one and the reader has not
+    // put it away themselves. Guarded against the resident being the very thing
+    // just closed — otherwise closing the TOC would reopen it. (It cannot
+    // recurse either way: the side is already empty by this point, so the open()
+    // below finds nothing to displace.)
+    const resident = this.residentOf(side);
+    if (resident && resident !== active &&
+        this.wantsToBeOpen(resident) && this.hasContent(resident)) {
+      this.open(resident);
+    }
   }
   
   /**

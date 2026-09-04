@@ -2,7 +2,7 @@
   "name": "@kenjura/ursa",
   "author": "Andrew London <andrew@kenjura.com>",
   "type": "module",
-  "version": "0.92.0",
+  "version": "0.93.0",
   "description": "static site generator from MD/wikitext/YML",
   "main": "lib/index.js",
   "bin": {
@@ -51,6 +51,7 @@
     "yargs": "^17.7.2"
   },
   "devDependencies": {
+    "@tabler/icons": "^3.46.0",
     "jest": "^29.6.2",
     "node-static": "^0.7.11",
     "nodemon": "^2.0.15"

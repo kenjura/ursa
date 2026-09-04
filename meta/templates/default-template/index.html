@@ -13,13 +13,43 @@
 <body data-template-id="default">
     <nav id="nav-global">
         <div class="nav-left-controls">
-            <button class="menu-button" aria-label="Menu">☰</button>
+            <!-- Tabler icons (outline), inlined: see @tabler/icons in devDependencies.
+             The bounding <path> Tabler ships in each file is dropped — the viewBox
+             already fixes the coordinate system — and the six shared presentation
+             attributes live on .ursa-icon in default.css rather than on every tag.
+
+             This button is three icons in one: a house on desktop, where it goes
+             home, and a hamburger that becomes a cross on mobile, where it opens
+             the menu. menu.js picks between them with data-icon, so the artwork
+             stays here with the rest of it instead of being pasted into strings. -->
+        <button class="menu-button" data-icon="menu" aria-label="Menu">
+            <svg class="ursa-icon" data-icon="menu" viewBox="0 0 24 24" aria-hidden="true"><!-- tabler: menu-2 -->
+                <path d="M4 6l16 0" /><path d="M4 12l16 0" /><path d="M4 18l16 0" />
+            </svg>
+            <svg class="ursa-icon" data-icon="close" viewBox="0 0 24 24" aria-hidden="true"><!-- tabler: x -->
+                <path d="M18 6l-12 12" /><path d="M6 6l12 12" />
+            </svg>
+            <svg class="ursa-icon" data-icon="home" viewBox="0 0 24 24" aria-hidden="true"><!-- tabler: home -->
+                <path d="M5 12l-2 0l9 -9l9 9l-2 0" />
+                <path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2 -2v-7" />
+                <path d="M9 21v-6a2 2 0 0 1 2 -2h2a2 2 0 0 1 2 2v6" />
+            </svg>
+        </button>
             <div class="widget-bar widget-bar-left">
                 <button class="widget-button" data-widget="recent-activity" data-widget-side="left" aria-label="Recent Activity" title="Recent Activity">
-                    <span class="widget-icon">🕒</span>
+                    <span class="widget-icon">
+                        <svg class="ursa-icon" viewBox="0 0 24 24" aria-hidden="true"><!-- tabler: history -->
+                        <path d="M12 8l0 4l2 2" />
+                        <path d="M3.05 11a9 9 0 1 1 .5 4m-.5 5v-5h5" />
+                        </svg>
+                    </span>
                 </button>
                 <button class="widget-button" data-widget="suggested" data-widget-side="left" aria-label="Suggested Content" title="Suggested Content">
-                    <span class="widget-icon">⭐</span>
+                    <span class="widget-icon">
+                        <svg class="ursa-icon" viewBox="0 0 24 24" aria-hidden="true"><!-- tabler: star -->
+                        <path d="M12 17.75l-6.172 3.245l1.179 -6.873l-5 -4.867l6.9 -1l3.086 -6.253l3.086 6.253l6.9 1l-5 4.867l1.179 6.873l-6.158 -3.245" />
+                        </svg>
+                    </span>
                 </button>
             </div>
             <div id="ursa-update-indicator" class="ursa-update-indicator" style="display:none;" title="Updating...">
@@ -40,13 +70,29 @@
         <div class="nav-right-controls">
             <div class="widget-bar">
                 <button class="widget-button" data-widget="toc" aria-label="Table of Contents" title="Table of Contents">
-                    <span class="widget-icon">≡</span>
+                    <span class="widget-icon">
+                        <svg class="ursa-icon" viewBox="0 0 24 24" aria-hidden="true"><!-- tabler: list-details -->
+                        <path d="M13 5h8" /><path d="M13 9h5" /><path d="M13 15h8" /><path d="M13 19h5" />
+                        <path d="M3 5a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v4a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1l0 -4" />
+                        <path d="M3 15a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v4a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1l0 -4" />
+                        </svg>
+                    </span>
                 </button>
                 <button class="widget-button" data-widget="search" aria-label="Search" title="Search">
-                    <span class="widget-icon">🔍</span>
+                    <span class="widget-icon">
+                        <svg class="ursa-icon" viewBox="0 0 24 24" aria-hidden="true"><!-- tabler: search -->
+                        <path d="M3 10a7 7 0 1 0 14 0a7 7 0 1 0 -14 0" /><path d="M21 21l-6 -6" />
+                        </svg>
+                    </span>
                 </button>
                 <button class="widget-button" data-widget="profile" aria-label="Profile" title="Profile">
-                    <span class="widget-icon">👤</span>
+                    <span class="widget-icon">
+                        <svg class="ursa-icon" viewBox="0 0 24 24" aria-hidden="true"><!-- tabler: user-circle -->
+                        <path d="M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0" />
+                        <path d="M9 10a3 3 0 1 0 6 0a3 3 0 1 0 -6 0" />
+                        <path d="M6.168 18.849a4 4 0 0 1 3.832 -2.849h4a4 4 0 0 1 3.834 2.855" />
+                        </svg>
+                    </span>
                 </button>
             </div>
         </div>

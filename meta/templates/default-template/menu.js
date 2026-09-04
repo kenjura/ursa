@@ -501,7 +501,7 @@ document.addEventListener('DOMContentLoaded', () => {
     
     if (menuButton) {
         function updateButtonIcon(isOpen) {
-            menuButton.textContent = isOpen ? '✕' : '☰';
+            menuButton.dataset.icon = isOpen ? 'close' : 'menu';
         }
 
         menuButton.addEventListener('click', (e) => {
@@ -574,8 +574,11 @@ function initTopMenu() {
 
 /**
  * Set up the menu button:
- * - Desktop: shows 🏠 (home icon), navigates to "/" on click
- * - Mobile: shows ☰ (hamburger), toggles mobile side menu on click
+ * - Desktop: shows the house, navigates to "/" on click
+ * - Mobile: shows the hamburger, toggles mobile side menu on click
+ *
+ * All three icons are in the button already (index.html); data-icon is how one
+ * of them is chosen, so nothing here has to know what any of them look like.
  */
 function setupMenuButton(menuButton, navMain) {
     if (!menuButton) return;
@@ -585,10 +588,10 @@ function setupMenuButton(menuButton, navMain) {
     function updateButtonIcon() {
         if (isMobile()) {
             const isActive = navMain?.classList.contains('active');
-            menuButton.textContent = isActive ? '✕' : '☰';
+            menuButton.dataset.icon = isActive ? 'close' : 'menu';
             menuButton.setAttribute('aria-label', isActive ? 'Close menu' : 'Menu');
         } else {
-            menuButton.textContent = '🏠';
+            menuButton.dataset.icon = 'home';
             menuButton.setAttribute('aria-label', 'Home');
         }
     }
@@ -606,7 +609,7 @@ function setupMenuButton(menuButton, navMain) {
             // Mobile: toggle side menu
             if (navMain) {
                 const isNowActive = navMain.classList.toggle('active');
-                menuButton.textContent = isNowActive ? '✕' : '☰';
+                menuButton.dataset.icon = isNowActive ? 'close' : 'menu';
                 menuButton.setAttribute('aria-label', isNowActive ? 'Close menu' : 'Menu');
             }
         } else {

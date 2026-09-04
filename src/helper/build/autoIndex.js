@@ -5,10 +5,18 @@ import { basename, dirname, extname, join } from "path";
 import { outputFile } from "fs-extra";
 import { findStyleCss, findAllStyleCss } from "../findStyleCss.js";
 import { findAllScriptJs } from "../findScriptJs.js";
-import { toTitleCase } from "./titleCase.js";
 import { addTimestampToHtmlStaticRefs } from "./cacheBust.js";
 import { isMetadataOnly, extractMetadata, getAutoIndexConfig } from "../metadataExtractor.js";
 import { getCustomMenuForFile } from "./menu.js";
+import { getFolderConfig } from "../folderConfig.js";
+import {
+  toDisplayName,
+  getFolderLabel,
+  getFolderSortKey,
+  getMenuSortAsFromFile,
+  getFileLabel,
+  findSourceDocument,
+} from "../menuLabels.js";
 import { generateBreadcrumbs } from "../breadcrumbs.js";
 import { bundleDocumentCss, bundleDocumentJs } from "../assetBundler.js";
 
@@ -41,15 +49,56 @@ async function directoryHasDocuments(dir, extensions) {
 }
 
 /**
+ * Resolve the label and sort key for one auto-index entry, using the same
+ * rules as the site-wide automenu: `menu-label` frontmatter wins, then
+ * config.json `label` for folders, then the prettified file/folder name.
+ *
+ * @param {boolean} isDir - Whether the entry is a directory
+ * @param {string} baseName - Name without extension
+ * @param {string|null} sourceDir - Source directory holding this entry, if known
+ * @returns {{label: string, sortKey: string}}
+ */
+function resolveEntryNaming(isDir, baseName, sourceDir) {
+  if (!sourceDir) {
+    return { label: toDisplayName(baseName), sortKey: baseName };
+  }
+  if (isDir) {
+    const childDir = join(sourceDir, baseName);
+    return {
+      label: getFolderLabel(childDir, getFolderConfig(childDir), baseName),
+      sortKey: getFolderSortKey(childDir) || baseName,
+    };
+  }
+  const sourceFile = findSourceDocument(sourceDir, baseName);
+  return {
+    label: getFileLabel(sourceFile, baseName),
+    sortKey: (sourceFile && getMenuSortAsFromFile(sourceFile)) || baseName,
+  };
+}
+
+/**
+ * Sort auto-index entries the way the automenu does: folders first, then by
+ * sort key (case-insensitive).
+ */
+function compareEntries(a, b) {
+  if (a.isDir && !b.isDir) return -1;
+  if (!a.isDir && b.isDir) return 1;
+  return a.sortKey.toLowerCase().localeCompare(b.sortKey.toLowerCase());
+}
+
+/**
  * Generate auto-index HTML content for a directory from the OUTPUT folder
  * (used by fallback auto-index generation after all files are generated)
  * @param {string} dir - The directory path to generate index for (in output folder)
  * @param {number} depth - How deep to recurse (1 = current level only, 2 = current + children, etc.)
  * @param {number} [currentDepth=0] - Current recursion depth (internal use)
  * @param {string} [pathPrefix=''] - Path prefix for generating correct hrefs (internal use)
+ * @param {string|null} [sourceDir=null] - Matching source directory, so `menu-label`
+ *   frontmatter and config.json labels can be honored. Without it, entries fall
+ *   back to their prettified file names.
  * @returns {Promise<string>} HTML content for the auto-index
  */
-export async function generateAutoIndexHtml(dir, depth = 1, currentDepth = 0, pathPrefix = '') {
+export async function generateAutoIndexHtml(dir, depth = 1, currentDepth = 0, pathPrefix = '', sourceDir = null) {
   try {
     const children = await readdir(dir, { withFileTypes: true });
     
@@ -65,12 +114,12 @@ export async function generateAutoIndexHtml(dir, depth = 1, currentDepth = 0, pa
         // Include directories and html files
         return child.isDirectory() || child.name.endsWith('.html');
       })
-      .sort((a, b) => {
-        // Directories first, then files, alphabetically within each group
-        if (a.isDirectory() && !b.isDirectory()) return -1;
-        if (!a.isDirectory() && b.isDirectory()) return 1;
-        return a.name.localeCompare(b.name);
-      });
+      .map(child => {
+        const isDir = child.isDirectory();
+        const baseName = isDir ? child.name : child.name.replace(/\.html$/, '');
+        return { child, isDir, baseName, ...resolveEntryNaming(isDir, baseName, sourceDir) };
+      })
+      .sort(compareEntries);
     
     if (filteredChildren.length === 0) {
       return '';
@@ -78,26 +127,26 @@ export async function generateAutoIndexHtml(dir, depth = 1, currentDepth = 0, pa
     
     const items = [];
     
-    for (const child of filteredChildren) {
-      const isDir = child.isDirectory();
+    for (const { child, isDir, label } of filteredChildren) {
       // Skip directories that contain no documents
       if (isDir) {
         const childDir = join(dir, child.name);
         if (!await directoryHasDocuments(childDir, OUTPUT_DOC_EXTENSIONS)) continue;
       }
-      const name = isDir ? child.name : child.name.replace('.html', '');
       // Use pathPrefix to ensure hrefs are correct relative to the document root
       const childPath = pathPrefix ? `${pathPrefix}/${child.name}` : child.name;
       const href = isDir ? `${childPath}/index.html` : (pathPrefix ? `${pathPrefix}/${child.name}` : child.name);
-      const displayName = toTitleCase(name);
       const icon = isDir ? '📁' : '📄';
       
-      let itemHtml = `<li>${icon} <a href="${href}">${displayName}</a>`;
+      let itemHtml = `<li>${icon} <a href="${href}">${label}</a>`;
       
       // If this is a directory and we need to go deeper, recurse
       if (isDir && currentDepth + 1 < depth) {
         const childDir = join(dir, child.name);
-        const childHtml = await generateAutoIndexHtml(childDir, depth, currentDepth + 1, childPath);
+        const childHtml = await generateAutoIndexHtml(
+          childDir, depth, currentDepth + 1, childPath,
+          sourceDir ? join(sourceDir, child.name) : null
+        );
         if (childHtml) {
           itemHtml += `\n${childHtml}`;
         }
@@ -140,12 +189,12 @@ export async function generateAutoIndexHtmlFromSource(sourceDir, depth = 1, curr
         // Include directories and article files (md, mdx, txt, yml, html)
         return child.isDirectory() || child.name.match(/\.(md|mdx|txt|yml|html)$/i);
       })
-      .sort((a, b) => {
-        // Directories first, then files, alphabetically within each group
-        if (a.isDirectory() && !b.isDirectory()) return -1;
-        if (!a.isDirectory() && b.isDirectory()) return 1;
-        return a.name.localeCompare(b.name);
-      });
+      .map(child => {
+        const isDir = child.isDirectory();
+        const baseName = isDir ? child.name : basename(child.name, extname(child.name));
+        return { child, isDir, baseName, ...resolveEntryNaming(isDir, baseName, sourceDir) };
+      })
+      .sort(compareEntries);
     
     if (filteredChildren.length === 0) {
       return '';
@@ -153,24 +202,19 @@ export async function generateAutoIndexHtmlFromSource(sourceDir, depth = 1, curr
     
     const items = [];
     
-    for (const child of filteredChildren) {
-      const isDir = child.isDirectory();
+    for (const { child, isDir, baseName, label } of filteredChildren) {
       // Skip directories that contain no documents
       if (isDir) {
         const childDir = join(sourceDir, child.name);
         if (!await directoryHasDocuments(childDir, SOURCE_DOC_EXTENSIONS)) continue;
       }
-      // Get name without extension for display
-      const ext = isDir ? '' : extname(child.name);
-      const nameWithoutExt = isDir ? child.name : basename(child.name, ext);
       // Generate href - directories link to folder/index.html, files convert to .html
       // Use pathPrefix to ensure hrefs are correct relative to the document root
       const childPath = pathPrefix ? `${pathPrefix}/${child.name}` : child.name;
-      const href = isDir ? `${childPath}/index.html` : `${pathPrefix ? pathPrefix + '/' : ''}${nameWithoutExt}.html`;
-      const displayName = toTitleCase(nameWithoutExt);
+      const href = isDir ? `${childPath}/index.html` : `${pathPrefix ? pathPrefix + '/' : ''}${baseName}.html`;
       const icon = isDir ? '📁' : '📄';
       
-      let itemHtml = `<li>${icon} <a href="${href}">${displayName}</a>`;
+      let itemHtml = `<li>${icon} <a href="${href}">${label}</a>`;
       
       // If this is a directory and we need to go deeper, recurse
       if (isDir && currentDepth + 1 < depth) {
@@ -313,28 +357,32 @@ export async function generateAutoIndices(output, directories, source, templates
         const children = await readdir(dir, { withFileTypes: true });
         
         // Filter to only include relevant files and folders
-        const filteredItems = children.filter(child => {
-          // Skip hidden files and index alternates we just checked
-          if (child.name.startsWith('.')) return false;
-          if (child.name === 'index.html') return false;
-          // Include directories and html files
-          return child.isDirectory() || child.name.endsWith('.html');
-        });
+        const filteredItems = children
+          .filter(child => {
+            // Skip hidden files and index alternates we just checked
+            if (child.name.startsWith('.')) return false;
+            if (child.name === 'index.html') return false;
+            // Include directories and html files
+            return child.isDirectory() || child.name.endsWith('.html');
+          })
+          .map(child => {
+            const isDir = child.isDirectory();
+            const baseName = isDir ? child.name : child.name.replace(/\.html$/, '');
+            return { child, isDir, baseName, ...resolveEntryNaming(isDir, baseName, sourceDir) };
+          })
+          .sort(compareEntries);
 
         // Build items, skipping directories with no documents
         const items = [];
-        for (const child of filteredItems) {
-          const isDir = child.isDirectory();
+        for (const { child, isDir, label } of filteredItems) {
           if (isDir) {
             const childDir = join(dir, child.name);
             if (!await directoryHasDocuments(childDir, OUTPUT_DOC_EXTENSIONS)) continue;
           }
-          const name = isDir ? child.name : child.name.replace('.html', '');
           // For directories, link to /folder/index.html; for files, use the filename directly
           const href = isDir ? `${child.name}/index.html` : child.name;
-          const displayName = toTitleCase(name);
           const icon = isDir ? '📁' : '📄';
-          items.push(`<li>${icon} <a href="${href}">${displayName}</a></li>`);
+          items.push(`<li>${icon} <a href="${href}">${label}</a></li>`);
         }
         
         if (items.length === 0) {
@@ -342,12 +390,16 @@ export async function generateAutoIndices(output, directories, source, templates
           continue;
         }
         
-        const folderDisplayName = dir === outputNorm ? 'Home' : toTitleCase(folderName);
+        // The page's own heading and <title> follow the same naming rules, so a
+        // folder labelled "BNW - Brave New World" in the menu is not "Bnw" here.
+        const folderDisplayName = dir === outputNorm
+          ? 'Home'
+          : getFolderLabel(sourceDir, getFolderConfig(sourceDir), folderName);
 
         // Generate breadcrumbs for auto-index pages
         const relDir = dir.replace(outputNorm, '').replace(/^\//, '');
         const breadcrumbDir = relDir ? relDir + '/' : '/';
-        const breadcrumbHtml = generateBreadcrumbs(breadcrumbDir, 'index', null);
+        const breadcrumbHtml = generateBreadcrumbs(breadcrumbDir, 'index', null, sourceNorm);
 
         const indexHtml = `${breadcrumbHtml}<h1>${folderDisplayName}</h1>\n<ul class="auto-index">\n${items.join('\n')}\n</ul>`;
         

@@ -103,6 +103,64 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
     
+    /* --- Keeping the current entry in view -------------------------------
+     *
+     * Below the panel breakpoint the stylesheet lays this same list on its
+     * side: one line tall, along the bottom of the viewport. A line that long
+     * cannot show every heading at once, so the entry the reader is currently
+     * under has to be brought to them rather than looked for.
+     *
+     * It goes to the middle where there is room to put it there. Where there is
+     * not — a document with too few headings to fill the line, or a reader
+     * still near the top of a long one — asking for the middle would mean
+     * scrolling past the start of the list and showing blank strip before the
+     * first entry. Nothing below special-cases either of those: scrollLeft is
+     * clamped to the content by the browser, so both come to rest in their
+     * natural position on their own. In the vertical panel there is no
+     * horizontal overflow to begin with and the same call does nothing at all.
+     *
+     * Measured from bounding rects rather than offsetLeft because the offset
+     * parent here is the widget dropdown, not the scrolling element, and a
+     * theme is free to move one without the other.
+     */
+    function centreActiveEntry(behavior) {
+        const active = tocTarget.querySelector('a.active');
+        if (!active) return;
+        
+        const container = tocTarget.getBoundingClientRect();
+        const entry = active.getBoundingClientRect();
+        if (!container.width) return; // panel is closed; nothing is laid out
+        
+        const delta = (entry.left + entry.width / 2) - (container.left + container.width / 2);
+        tocTarget.scrollTo({ left: tocTarget.scrollLeft + delta, behavior: behavior || 'smooth' });
+    }
+    
+    // Both highlighters — the scroll handler below and the sentinel observer in
+    // toc.js — say which entry is current by putting .active on its link, and
+    // neither knows the strip exists. Watching for the class is what lets the
+    // two stay that way. Coalesced to a frame because marking the new entry
+    // means unmarking every other one, which is a mutation apiece.
+    let centreQueued = false;
+    function queueCentreActiveEntry() {
+        if (centreQueued) return;
+        centreQueued = true;
+        requestAnimationFrame(() => {
+            centreQueued = false;
+            centreActiveEntry();
+        });
+    }
+    
+    new MutationObserver(queueCentreActiveEntry)
+        .observe(tocList, { subtree: true, attributeFilter: ['class'] });
+    
+    // Nothing has a width until the widget is open, so the first placement has
+    // to wait for it — and it is a first appearance, not a move, so it does not
+    // animate. Same for a resize, which can change what fits either way.
+    document.addEventListener('widget-opened', (event) => {
+        if (event.detail.widget === 'toc') centreActiveEntry('auto');
+    });
+    window.addEventListener('resize', () => centreActiveEntry('auto'), { passive: true });
+    
     // Listen for heading stuck state changes from sticky.js
     document.addEventListener('headingStuckStateChanged', (event) => {
         if (event.detail.currentStuckHeading) {

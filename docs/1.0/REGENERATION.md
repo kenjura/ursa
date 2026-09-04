@@ -1,5 +1,7 @@
 # Regeneration
 
+> **Superseded (2026-09-03)** by [`docs/SERVE.md`](../SERVE.md). Kept for history.
+
 In 'serve' mode, Ursa watches for file changes and regenerates the site as needed. This regeneration process is designed to be efficient, only updating the parts of the site that are affected by the change, but also as fast as possible to provide a smooth development experience. This process can be quite complex, so it is described in detail here.
 
 

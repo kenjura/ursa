@@ -428,7 +428,7 @@ async function renderDocument(urlPath) {
   }
 
   // Inject breadcrumbs before the H1
-  const breadcrumbs = generateBreadcrumbs(dir, base, fileMeta);
+  const breadcrumbs = generateBreadcrumbs(dir, base, fileMeta, source);
   if (breadcrumbs) {
     body = breadcrumbs + body;
   }

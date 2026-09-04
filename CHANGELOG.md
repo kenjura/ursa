@@ -1,3 +1,22 @@
+# 0.93.0
+2026-09-03
+
+`menu-label` now renames a folder everywhere it appears, not just in the sidebar.
+
+A folder could already override its menu label — `menu-label` in its `index.md` frontmatter, or `label` in its `config.json` — and the site-wide menu honoured it. Nothing else did. A folder called `bnw` labelled "BNW - Brave New World" in the sidebar was still "Bnw" in the auto-index listing of its parent, "Bnw" in the `<h1>` and `<title>` of its own generated index page, and "Bnw" in every breadcrumb trail passing through it. The label was doing a quarter of its job, and there was no way to fix the other three without renaming the folder on disk.
+
+- **Auto-index listings resolve labels the same way the menu does**: `menu-label` frontmatter, then `config.json` `label`, then the folder name. This covers all three listing paths — the inline listing from `generate-auto-index: true`, the fallback index generated for folders without one, and the output-scanning variant.
+- **Individual documents honour `menu-label` too**, so a single article can be renamed in a listing without renaming its file.
+- **Auto-generated index pages take the folder's label** for their `<h1>` and `<title>`, instead of the raw folder name.
+- **Breadcrumbs use folder labels** for every folder segment in the trail. The current page's own crumb now prefers its `menu-label` over its `title`; with neither, nothing changes.
+- **`menu-sort-as` orders auto-index listings**, matching how it already orders the menu. Folders still sort ahead of files.
+
+One naming change reaches folders with no label at all. Auto-index entries and breadcrumbs used to title-case names by lowercasing everything after the first letter, so a folder named `SoL` rendered as "Sol" and `WWII` as "Wwii". They now use the menu's own rule, which leaves interior capitals alone — the two places agree, and the disagreement they had was the bug.
+
+The resolution rules live in `helper/menuLabels.js`, which the menu, the auto-index and the breadcrumbs all import, so the three cannot drift apart again.
+
+Auto-index pages still have no dependency edge to the documents they list, so on a warm incremental rebuild a label edit in one folder does not regenerate a sibling listing that names it. That predates this change — adding or renaming a document went stale the same way — and `--clean` or a full generate is unaffected.
+
 # 0.92.0
 2026-08-27
 
