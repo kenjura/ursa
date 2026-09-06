@@ -11,9 +11,16 @@ const configCache = new Map();
  * {
  *   label?: string,       // Custom label for menu display
  *   icon?: string,        // URL to icon image for menu
- *   hidden?: boolean,     // If true, hide from menu and don't generate files
+ *   hidden?: boolean,     // If true, ignore the folder entirely (see below)
  *   openMenuItems?: string[]  // (root only) Array of folder names to expand by default
  * }
+ * 
+ * `hidden: true` means *ignored*, not merely unlisted. The folder and its
+ * whole subtree take no part in the build: no HTML is rendered from its
+ * documents, its images and other static assets are not copied, it does not
+ * appear in the sidebar menu, in any auto-index, in breadcrumbs, or in the
+ * search index, and `ursa serve` will not render its pages on demand. The
+ * files stay in the docroot; the site behaves as if they were not there.
  */
 
 /**
@@ -60,10 +67,33 @@ export function getRootConfig(sourceRoot) {
 }
 
 /**
- * Check if a folder or any of its ancestors is hidden via config.json
- * @param {string} folderPath - Absolute path to check
+ * True when this exact folder's own config.json says `hidden: true`, ignoring
+ * its ancestors.
+ *
+ * Use this where the ancestors have already been ruled out — walking a tree
+ * top-down, say, where reaching a node means every folder above it was
+ * visible. It needs no docroot, which is what makes it usable in the
+ * auto-index builders, where only the folder being listed is known.
+ *
+ * @param {string} folderPath - Absolute path to a folder
+ * @returns {boolean} True if that folder is marked hidden
+ */
+export function isFolderSelfHidden(folderPath) {
+  return getFolderConfig(folderPath.replace(/\/$/, ''))?.hidden === true;
+}
+
+/**
+ * Check if a path lies in a folder — its own, or any ancestor up to the
+ * docroot — that config.json marks `hidden: true`.
+ *
+ * Accepts file paths as well as directories: the walk starts at `folderPath`
+ * itself, and a file simply has no config.json of its own, so the first step
+ * misses and the ancestors decide. That is what lets the build filter a mixed
+ * list of files and directories through one predicate.
+ *
+ * @param {string} folderPath - Absolute path to check (file or directory)
  * @param {string} sourceRoot - The source root directory (stop checking at this level)
- * @returns {boolean} True if this folder should be hidden
+ * @returns {boolean} True if this path should be ignored
  */
 export function isFolderHidden(folderPath, sourceRoot) {
   let currentPath = folderPath.replace(/\/$/, '');

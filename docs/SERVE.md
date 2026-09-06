@@ -936,9 +936,12 @@ answers are proposals.
     files of deleted, hidden or excluded sources (today it never does without
     `--clean`). Spec §5.6 says yes, always. This changes `generate`'s
     behaviour for users who rely on `output/` accumulating.
-11. **Hidden-folder semantics.** `config.json { hidden: true }` is documented
-    as "hide from menu and don't generate files", yet a folder hidden after
-    its files were generated keeps them. Follows from item 10.
+11. **Hidden-folder semantics.** `config.json { hidden: true }` now means
+    ignored: no HTML, no static assets copied, absent from the menu, from
+    auto-indices and from the search index, and 404 from `serve`. What remains
+    is that a folder hidden *after* its files were generated keeps the files
+    already sitting in `output/` — nothing links to them any more, but they are
+    not deleted without `--clean`. Follows from item 10.
 12. **Debounce.** `serve-logic.md` says "keep 500 ms"; nothing specifies an
     upper bound. Spec §3.3 adds 2000 ms.
 13. **Whitelist/exclude in serve.** Nothing says whether editing the whitelist

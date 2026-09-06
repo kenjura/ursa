@@ -132,6 +132,26 @@ const progress = new ProgressReporter();
 const DEFAULT_TEMPLATE_NAME =
   process.env.DEFAULT_TEMPLATE_NAME ?? "default-template";
 
+/**
+ * Build a site from `_source` into `_output`.
+ *
+ * ## JSON-ONLY MODE (`_jsonOnly`)
+ *
+ * Emits only the `.json` data files — every document's `<name>.json` and every
+ * directory's `<dir>.json` record list — and nothing else. Skipped: HTML, XML,
+ * images and their previews, meta/template assets, the React runtime, per-folder
+ * CSS/JS bundles, static file copying, the search and full-text indices,
+ * recent-activity and menu data, and auto-generated index pages.
+ *
+ * The emitted JSON is byte-identical to what a full build writes. Every step
+ * that is skipped operates on the assembled *page*; the JSON's `bodyHtml` is the
+ * pre-template render, which none of them touch.
+ *
+ * For pipelines that consume ursa's JSON as data rather than publishing a site.
+ * Mixing modes against one source tree is safe: the two share a hash cache, and
+ * the per-document output check (`expectedOutputs`) asks only for the outputs
+ * the current mode emits.
+ */
 export async function generate({
   _source = join(process.cwd(), "."),
   _meta = join(process.cwd(), "meta"),
@@ -142,11 +162,12 @@ export async function generate({
   _clean = false,  // When true, ignore cache and regenerate all files
   _deferImages = false,  // When true, copy images without processing, return promise for background processing
   _deferSearchIndex = false,  // When true, return promise for search index building (for faster startup)
+  _jsonOnly = false,  // When true, emit only the .json data files (see JSON-ONLY MODE below)
 } = {}) {
   // Initialize profiler for this build
   const profiler = getProfiler(true);
   
-  console.log({ _source, _meta, _output, _whitelist, _exclude, _clean, _deferImages, _deferSearchIndex });
+  console.log({ _source, _meta, _output, _whitelist, _exclude, _clean, _deferImages, _deferSearchIndex, _jsonOnly });
   const source = resolve(_source) + "/";
   const meta = resolve(_meta);
   const output = resolve(_output) + "/";
@@ -203,6 +224,9 @@ export async function generate({
   profiler.startPhase('Filter & classify');
   progress.startTimer('Filter');
   
+  // Clear config cache at start of generation to pick up any changes
+  clearConfigCache();
+
   // Apply include filter (existing functionality)
   const includeFilter = process.env.INCLUDE_FILTER
     ? (fileName) => fileName.match(process.env.INCLUDE_FILTER)
@@ -225,14 +249,23 @@ export async function generate({
     progress.logTimed(`Whitelist applied: ${allSourceFilenames.length} files after filtering`);
   }
 
-  // Clear config cache at start of generation to pick up any changes
-  clearConfigCache();
-
-  // Helper to check if a path is inside a config-hidden folder
-  const isInHiddenFolder = (filePath) => {
-    const dir = dirname(filePath);
-    return isFolderHidden(dir, source);
-  };
+  // Drop everything inside a folder that config.json marks `hidden: true`.
+  //
+  // Applied once, to the whole file list, rather than to each category
+  // downstream. `hidden` means the folder takes no part in the build at all,
+  // and filtering here is the only way to actually mean it: articles,
+  // directories, images, fonts and other media, and hand-written HTML are all
+  // derived from this list, so each of them inherits the exclusion instead of
+  // needing its own check (and instead of silently missing one — images and
+  // media used to be copied out of hidden folders for exactly that reason).
+  const beforeHiddenCount = allSourceFilenames.length;
+  allSourceFilenames = allSourceFilenames.filter(
+    (filename) => !isFolderHidden(filename, source)
+  );
+  const hiddenCount = beforeHiddenCount - allSourceFilenames.length;
+  if (hiddenCount > 0) {
+    progress.logTimed(`Hidden folders: ${hiddenCount} paths ignored`);
+  }
 
   // read all articles, process them, copy them to build
   const articleExtensions = /\.(md|mdx|txt|yml)$/;
@@ -241,12 +274,12 @@ export async function generate({
   // an empty site when the checkout lives under a dot-directory.
   const isHiddenOrSystem = (filename) => isHiddenOrSystemPath(filename, source);
   const allSourceFilenamesThatAreArticles = allSourceFilenames.filter(
-    (filename) => filename.match(articleExtensions) && !isHiddenOrSystem(filename) && !isInHiddenFolder(filename)
+    (filename) => filename.match(articleExtensions) && !isHiddenOrSystem(filename)
   );
   const allSourceFilenamesThatAreDirectories = (await filterAsync(
     allSourceFilenames,
     (filename) => isDirectory(filename)
-  )).filter((filename) => !isHiddenOrSystem(filename) && !isFolderHidden(filename, source));
+  )).filter((filename) => !isHiddenOrSystem(filename));
 
   // Build set of existing HTML files in source directory (these should not be overwritten)
   const htmlExtensions = /\.html$/;
@@ -393,9 +426,15 @@ export async function generate({
   profiler.endPhase('Load cache');
 
   // Phase: Copy meta/public files
+  //
+  // Entirely HTML support: templates, their bundled CSS/JS, the React runtime
+  // for MDX hydration, and a cache-bust rewrite over every .css/.js already in
+  // the output tree. A JSON-only build renders no page, so none of it is
+  // reachable — and the cache-bust pass alone walks the whole output dir.
   profiler.startPhase('Copy meta files');
   progress.startTimer('Meta');
-  
+
+  if (!_jsonOnly) {
   // create public folder
   const pub = join(output, "public");
   await mkdir(pub, { recursive: true });
@@ -443,6 +482,9 @@ export async function generate({
   }
   
   progress.logTimed(`Meta files copied and processed [${progress.stopTimer('Meta')}]`);
+  } else {
+    progress.logTimed(`JSON-only: skipped meta assets, template bundles and React runtime [${progress.stopTimer('Meta')}]`);
+  }
   profiler.endPhase('Copy meta files');
 
   // Track errors for error report
@@ -463,15 +505,17 @@ export async function generate({
   // Track CSS files that have been copied to avoid duplicates
   const copiedCssFiles = new Set();
 
-  // Identify all image files from the filtered source list
+  // Identify all image files from the filtered source list.
+  // A JSON-only build copies and resizes nothing, so the list stays empty and
+  // the whitelist reference scan below (which reads every article) is skipped.
   const imageExtensions = IMAGE_EXTENSIONS;
-  let allSourceFilenamesThatAreImages = allSourceFilenames.filter(
+  let allSourceFilenamesThatAreImages = _jsonOnly ? [] : allSourceFilenames.filter(
     (filename) => filename.match(imageExtensions) && !isHiddenOrSystem(filename)
   );
   
   // When using a whitelist, also include images referenced by whitelisted documents
   // This ensures that images used in whitelisted articles are processed even if not explicitly whitelisted
-  if (_whitelist) {
+  if (_whitelist && !_jsonOnly) {
     progress.logTimed('Scanning whitelisted articles for image references...');
     const referencedImages = new Set();
     
@@ -509,7 +553,13 @@ export async function generate({
   let imageMap = new Map();
   let deferredImageProcessingPromise = null;
   
-  if (_deferImages) {
+  if (_jsonOnly) {
+    // `bodyHtml` in the JSON is the pre-template render; `transformImageTags`
+    // only ever rewrote the assembled page, never this. So skipping image
+    // processing leaves the JSON byte-identical to a full build's.
+    progress.done('Images', `skipped (JSON-only) [${progress.stopTimer('Images')}]`);
+    profiler.endPhase('Process images');
+  } else if (_deferImages) {
     // Fast mode: just copy images without processing, defer preview generation
     progress.logTimed(`Copying ${allSourceFilenamesThatAreImages.length} images (preview generation deferred)...`);
     await copyAllImagesFast(
@@ -674,15 +724,23 @@ export async function generate({
       // An unchanged hash is not enough: the hash cache lives in the source tree
       // and is shared across output dirs, so also require that every output this
       // document emits is actually present before skipping it.
+      //
+      // In JSON-only mode only the .json is required. That is what lets the two
+      // modes share one hash cache safely: a JSON-only run after a full build
+      // skips (the .json is there and is identical either way), and a full build
+      // after a JSON-only run regenerates (the .html and .xml are missing).
+      const expectedOutputs = _jsonOnly
+        ? [outputFilename.replace(".html", ".json")]
+        : [
+            outputFilename,
+            outputFilename.replace(".html", ".json"),
+            outputFilename.replace(".html", ".xml"),
+          ];
       const needsRegen =
         _clean ||
         hasAutoIndex ||
         needsRegeneration(file, rawBody, hashCache) ||
-        !outputsExist([
-          outputFilename,
-          outputFilename.replace(".html", ".json"),
-          outputFilename.replace(".html", ".xml"),
-        ]);
+        !outputsExist(expectedOutputs);
 
       if (!needsRegen) {
         skippedCount++;
@@ -777,165 +835,171 @@ export async function generate({
         }
       }
 
-      // Find all style.css files up the tree and bundle them into a single CSS file per folder path
-      // (Generate mode: one CSS bundle per unique folder, minimizing requests per page load)
-      let styleLink = "";
-      try {
-        const dirKey = (dir === "/" || dir === "") ? _source : resolve(_source, dir);
-        const folderRelative = (dir === "/" || dir === "") ? "" : dir;
+      // Everything from here to the HTML write is page assembly: per-folder
+      // CSS/JS bundles, the template, the custom menu, link resolution and
+      // image-tag rewriting. The JSON below is built from `body`, which is
+      // already final — none of it feeds the JSON, so JSON-only skips it all.
+      if (!_jsonOnly) {
+        // Find all style.css files up the tree and bundle them into a single CSS file per folder path
+        // (Generate mode: one CSS bundle per unique folder, minimizing requests per page load)
+        let styleLink = "";
+        try {
+          const dirKey = (dir === "/" || dir === "") ? _source : resolve(_source, dir);
+          const folderRelative = (dir === "/" || dir === "") ? "" : dir;
 
-        // Check bundle cache first (dirs with same CSS ancestry share the same bundle)
-        let cachedBundleUrl = docBundleCache.get(`css:${dirKey}`);
-        if (cachedBundleUrl !== undefined) {
-          if (cachedBundleUrl) {
-            styleLink = `<link rel="stylesheet" href="${cachedBundleUrl}" />`;
-          }
-        } else {
-          let cssPaths = cssPathCache.get(dirKey);
-          if (cssPaths === undefined) {
-            cssPaths = await findAllStyleCss(dirKey, _source);
-            cssPathCache.set(dirKey, cssPaths);
-          }
-          if (cssPaths.length > 0) {
-            // Copy all source CSS files to output (still needed for serve mode fallback)
-            for (const cssPath of cssPaths) {
-              if (!copiedCssFiles.has(cssPath)) {
-                const cssOutputPath = cssPath.replace(source, output);
-                const cssContent = await readFile(cssPath, 'utf8');
-                await outputFile(cssOutputPath, cssContent);
-                copiedCssFiles.add(cssPath);
-              }
+          // Check bundle cache first (dirs with same CSS ancestry share the same bundle)
+          let cachedBundleUrl = docBundleCache.get(`css:${dirKey}`);
+          if (cachedBundleUrl !== undefined) {
+            if (cachedBundleUrl) {
+              styleLink = `<link rel="stylesheet" href="${cachedBundleUrl}" />`;
             }
-            // Bundle into a single file
-            const bundleUrl = await bundleDocumentCss(cssPaths, output, source, folderRelative, { minify: true });
-            docBundleCache.set(`css:${dirKey}`, bundleUrl);
-            styleLink = `<link rel="stylesheet" href="${bundleUrl}" />`;
           } else {
-            docBundleCache.set(`css:${dirKey}`, null);
+            let cssPaths = cssPathCache.get(dirKey);
+            if (cssPaths === undefined) {
+              cssPaths = await findAllStyleCss(dirKey, _source);
+              cssPathCache.set(dirKey, cssPaths);
+            }
+            if (cssPaths.length > 0) {
+              // Copy all source CSS files to output (still needed for serve mode fallback)
+              for (const cssPath of cssPaths) {
+                if (!copiedCssFiles.has(cssPath)) {
+                  const cssOutputPath = cssPath.replace(source, output);
+                  const cssContent = await readFile(cssPath, 'utf8');
+                  await outputFile(cssOutputPath, cssContent);
+                  copiedCssFiles.add(cssPath);
+                }
+              }
+              // Bundle into a single file
+              const bundleUrl = await bundleDocumentCss(cssPaths, output, source, folderRelative, { minify: true });
+              docBundleCache.set(`css:${dirKey}`, bundleUrl);
+              styleLink = `<link rel="stylesheet" href="${bundleUrl}" />`;
+            } else {
+              docBundleCache.set(`css:${dirKey}`, null);
+            }
           }
+        } catch (e) {
+          // ignore
+          console.error(e);
         }
-      } catch (e) {
-        // ignore
-        console.error(e);
-      }
 
-      // Find all script.js files from docroot to current dir and bundle them
-      // (Generate mode: one JS bundle per unique folder, external not inlined)
-      let customScript = "";
-      try {
-        const dirKey = (dir === "/" || dir === "") ? _source : resolve(_source, dir);
-        const folderRelative = (dir === "/" || dir === "") ? "" : dir;
+        // Find all script.js files from docroot to current dir and bundle them
+        // (Generate mode: one JS bundle per unique folder, external not inlined)
+        let customScript = "";
+        try {
+          const dirKey = (dir === "/" || dir === "") ? _source : resolve(_source, dir);
+          const folderRelative = (dir === "/" || dir === "") ? "" : dir;
 
-        let cachedBundleUrl = docBundleCache.get(`js:${dirKey}`);
-        if (cachedBundleUrl !== undefined) {
-          if (cachedBundleUrl) {
-            customScript = `<script src="${cachedBundleUrl}"></script>`;
+          let cachedBundleUrl = docBundleCache.get(`js:${dirKey}`);
+          if (cachedBundleUrl !== undefined) {
+            if (cachedBundleUrl) {
+              customScript = `<script src="${cachedBundleUrl}"></script>`;
+            }
+          } else {
+            let scriptPaths = scriptPathCache.get(dirKey);
+            if (scriptPaths === undefined) {
+              scriptPaths = await findAllScriptJs(dirKey, _source);
+              scriptPathCache.set(dirKey, scriptPaths);
+            }
+            if (scriptPaths.length > 0) {
+              const bundleUrl = await bundleDocumentJs(scriptPaths, output, source, folderRelative, { minify: true });
+              docBundleCache.set(`js:${dirKey}`, bundleUrl);
+              customScript = `<script src="${bundleUrl}"></script>`;
+            } else {
+              docBundleCache.set(`js:${dirKey}`, null);
+            }
           }
+        } catch (e) {
+          // ignore
+          console.error(e);
+        }
+
+        const requestedTemplateName = fileMeta && fileMeta.template;
+        const templateName = requestedTemplateName || DEFAULT_TEMPLATE_NAME;
+        const template = templates[templateName];
+
+        if (!template) {
+          throw new Error(`Template not found. Requested: "${templateName}". Available templates: ${Object.keys(templates).join(', ') || 'none'}`);
+        }
+
+        // Register this document's dependencies for invalidation tracking
+        {
+          const dirKey = (dir === "/" || dir === "") ? _source : resolve(_source, dir);
+          const cssDeps = cssPathCache.get(dirKey) || [];
+          const jsDeps = scriptPathCache.get(dirKey) || [];
+          dependencyTracker.registerDocument(file, {
+            templateName,
+            cssPaths: cssDeps,
+            scriptPaths: jsDeps,
+          });
+        }
+
+        // Check if this file has a custom menu
+        const customMenuInfo = getCustomMenuForFile(file, source, customMenus);
+
+        // Lazy evaluation of transformed metadata - only compute if template uses it
+        // This defers expensive custom transform function loading until actually needed
+        const templateUsesTransformedMeta = template.includes('${transformedMetadata}');
+        const lazyTransformedMeta = templateUsesTransformedMeta 
+          ? await getTransformedMeta() 
+          : '';
+
+        // Build final HTML with all replacements in a single regex pass
+        // This avoids creating 8 intermediate strings
+        // Append hydration script to customScript if present (for MDX with hydrate: true)
+        const finalCustomScript = hydrationScript 
+          ? customScript + '\n' + hydrationScript 
+          : customScript;
+      
+        const replacements = {
+          "${title}": fileMeta?.title || title,
+          "${menu}": menu,
+          "${meta}": JSON.stringify(fileMeta),
+          "${transformedMetadata}": lazyTransformedMeta,
+          "${body}": body,
+          "${styleLink}": styleLink,
+          "${customScript}": finalCustomScript,
+          "${searchIndex}": "[]", // Placeholder - search index written separately as JSON file
+          "${footer}": footer
+        };
+        // Single-pass replacement using regex alternation
+        const pattern = /\$\{(title|menu|meta|transformedMetadata|body|styleLink|customScript|searchIndex|footer)\}/g;
+        let finalHtml = template.replace(pattern, (match) => replacements[match] ?? match);
+
+        // Add menu data attributes to body
+        if (customMenuInfo) {
+          const menuPosition = customMenuInfo.menuPosition || 'top';
+          finalHtml = finalHtml.replace(
+            /<body([^>]*)>/,
+            `<body$1 data-custom-menu="${customMenuInfo.menuJsonPath}" data-menu-position="${menuPosition}">`
+          );
         } else {
-          let scriptPaths = scriptPathCache.get(dirKey);
-          if (scriptPaths === undefined) {
-            scriptPaths = await findAllScriptJs(dirKey, _source);
-            scriptPathCache.set(dirKey, scriptPaths);
-          }
-          if (scriptPaths.length > 0) {
-            const bundleUrl = await bundleDocumentJs(scriptPaths, output, source, folderRelative, { minify: true });
-            docBundleCache.set(`js:${dirKey}`, bundleUrl);
-            customScript = `<script src="${bundleUrl}"></script>`;
-          } else {
-            docBundleCache.set(`js:${dirKey}`, null);
-          }
+          // No custom menu — default to top menu
+          finalHtml = finalHtml.replace(
+            /<body([^>]*)>/,
+            `<body$1 data-menu-position="top">`
+          );
         }
-      } catch (e) {
-        // ignore
-        console.error(e);
-      }
 
-      const requestedTemplateName = fileMeta && fileMeta.template;
-      const templateName = requestedTemplateName || DEFAULT_TEMPLATE_NAME;
-      const template = templates[templateName];
-
-      if (!template) {
-        throw new Error(`Template not found. Requested: "${templateName}". Available templates: ${Object.keys(templates).join(', ') || 'none'}`);
-      }
-
-      // Register this document's dependencies for invalidation tracking
-      {
-        const dirKey = (dir === "/" || dir === "") ? _source : resolve(_source, dir);
-        const cssDeps = cssPathCache.get(dirKey) || [];
-        const jsDeps = scriptPathCache.get(dirKey) || [];
-        dependencyTracker.registerDocument(file, {
-          templateName,
-          cssPaths: cssDeps,
-          scriptPaths: jsDeps,
-        });
-      }
-
-      // Check if this file has a custom menu
-      const customMenuInfo = getCustomMenuForFile(file, source, customMenus);
-
-      // Lazy evaluation of transformed metadata - only compute if template uses it
-      // This defers expensive custom transform function loading until actually needed
-      const templateUsesTransformedMeta = template.includes('${transformedMetadata}');
-      const lazyTransformedMeta = templateUsesTransformedMeta 
-        ? await getTransformedMeta() 
-        : '';
-
-      // Build final HTML with all replacements in a single regex pass
-      // This avoids creating 8 intermediate strings
-      // Append hydration script to customScript if present (for MDX with hydrate: true)
-      const finalCustomScript = hydrationScript 
-        ? customScript + '\n' + hydrationScript 
-        : customScript;
+        // Resolve relative URLs in raw HTML elements (img src, etc.)
+        finalHtml = resolveRelativeUrls(finalHtml, docUrlPath);
       
-      const replacements = {
-        "${title}": fileMeta?.title || title,
-        "${menu}": menu,
-        "${meta}": JSON.stringify(fileMeta),
-        "${transformedMetadata}": lazyTransformedMeta,
-        "${body}": body,
-        "${styleLink}": styleLink,
-        "${customScript}": finalCustomScript,
-        "${searchIndex}": "[]", // Placeholder - search index written separately as JSON file
-        "${footer}": footer
-      };
-      // Single-pass replacement using regex alternation
-      const pattern = /\$\{(title|menu|meta|transformedMetadata|body|styleLink|customScript|searchIndex|footer)\}/g;
-      let finalHtml = template.replace(pattern, (match) => replacements[match] ?? match);
+        // Resolve links and mark broken internal links as inactive
+        finalHtml = markInactiveLinks(finalHtml, validPaths, docUrlPath, false);
 
-      // Add menu data attributes to body
-      if (customMenuInfo) {
-        const menuPosition = customMenuInfo.menuPosition || 'top';
-        finalHtml = finalHtml.replace(
-          /<body([^>]*)>/,
-          `<body$1 data-custom-menu="${customMenuInfo.menuJsonPath}" data-menu-position="${menuPosition}">`
-        );
-      } else {
-        // No custom menu — default to top menu
-        finalHtml = finalHtml.replace(
-          /<body([^>]*)>/,
-          `<body$1 data-menu-position="top">`
-        );
-      }
+        // Transform image tags to use preview images with data-fullsrc for originals
+        // Skip in deferred mode - images will use original paths until preview generation completes
+        if (!_deferImages) {
+          finalHtml = transformImageTags(finalHtml, imageMap, docUrlPath);
+        }
 
-      // Resolve relative URLs in raw HTML elements (img src, etc.)
-      finalHtml = resolveRelativeUrls(finalHtml, docUrlPath);
+        // Add cache-busting timestamps to static file references
+        finalHtml = addTimestampToHtmlStaticRefs(finalHtml, cacheBustTimestamp);
+
+        await outputFile(outputFilename, finalHtml);
       
-      // Resolve links and mark broken internal links as inactive
-      finalHtml = markInactiveLinks(finalHtml, validPaths, docUrlPath, false);
-
-      // Transform image tags to use preview images with data-fullsrc for originals
-      // Skip in deferred mode - images will use original paths until preview generation completes
-      if (!_deferImages) {
-        finalHtml = transformImageTags(finalHtml, imageMap, docUrlPath);
+        // Clear finalHtml reference to allow GC
+        finalHtml = null;
       }
-
-      // Add cache-busting timestamps to static file references
-      finalHtml = addTimestampToHtmlStaticRefs(finalHtml, cacheBustTimestamp);
-
-      await outputFile(outputFilename, finalHtml);
-      
-      // Clear finalHtml reference to allow GC
-      finalHtml = null;
 
       // JSON output
       const jsonOutputFilename = outputFilename.replace(".html", ".json");
@@ -968,9 +1032,11 @@ export async function generate({
       await outputFile(jsonOutputFilename, json);
 
       // XML output
-      const xmlOutputFilename = outputFilename.replace(".html", ".xml");
-      const xml = `<article>${o2x(jsonObject)}</article>`;
-      await outputFile(xmlOutputFilename, xml);
+      if (!_jsonOnly) {
+        const xmlOutputFilename = outputFilename.replace(".html", ".xml");
+        const xml = `<article>${o2x(jsonObject)}</article>`;
+        await outputFile(xmlOutputFilename, xml);
+      }
       
       // Update the content hash for this file
       updateHash(file, rawBody, hashCache);
@@ -1029,7 +1095,14 @@ export async function generate({
     return { entries: searchIndex.length, words: wordCount, elapsed };
   };
   
-  if (_deferSearchIndex) {
+  if (_jsonOnly) {
+    // Search and full-text indices exist for the site's client-side search UI,
+    // which a JSON-only build does not emit. The full-text build is also the
+    // most expensive step after rendering.
+    profiler.startPhase('Write search index');
+    progress.done('Search index', 'skipped (JSON-only)');
+    profiler.endPhase('Write search index');
+  } else if (_deferSearchIndex) {
     // Deferred mode: start building in background, return promise
     profiler.startPhase('Write search index (deferred)');
     progress.startTimer('Search index');
@@ -1052,17 +1125,26 @@ export async function generate({
   // Phase: Write recent activity data
   profiler.startPhase('Write recent activity');
   progress.startTimer('Recent activity');
-  // Sort by mtime descending, keep top 10
-  recentActivity.sort((a, b) => b.mtime - a.mtime);
-  const top10 = recentActivity.slice(0, 10);
-  const recentActivityPath = join(output, 'public', 'recent-activity.json');
-  await outputFile(recentActivityPath, JSON.stringify(top10));
-  progress.done('Recent activity', `${top10.length} entries [${progress.stopTimer('Recent activity')}]`);
+  if (!_jsonOnly) {
+    // Sort by mtime descending, keep top 10
+    recentActivity.sort((a, b) => b.mtime - a.mtime);
+    const top10 = recentActivity.slice(0, 10);
+    const recentActivityPath = join(output, 'public', 'recent-activity.json');
+    await outputFile(recentActivityPath, JSON.stringify(top10));
+    progress.done('Recent activity', `${top10.length} entries [${progress.stopTimer('Recent activity')}]`);
+  } else {
+    progress.done('Recent activity', `skipped (JSON-only) [${progress.stopTimer('Recent activity')}]`);
+  }
   profiler.endPhase('Write recent activity');
 
   // Phase: Write menu data
   profiler.startPhase('Write menu data');
   progress.startTimer('Menu data');
+  if (_jsonOnly) {
+    // menu-data.json and the custom-menu files are read by the page shell's
+    // script at runtime. No pages, no readers.
+    progress.done('Menu data', `skipped (JSON-only) [${progress.stopTimer('Menu data')}]`);
+  } else {
   // Write menu data as a separate JSON file (not embedded in each page)
   // This dramatically reduces HTML file sizes for large sites
   const menuDataPath = join(output, 'public', 'menu-data.json');
@@ -1082,6 +1164,7 @@ export async function generate({
     await outputFile(customMenuPath, customMenuJson);
   }
   progress.done('Menu data', `${customMenus.size + 1} files [${progress.stopTimer('Menu data')}]`);
+  }
   profiler.endPhase('Write menu data');
 
   // Phase: Process directory indices
@@ -1134,8 +1217,11 @@ export async function generate({
       // so skipping it whenever the file already exists (the old behaviour)
       // froze it at whatever the tree looked like the first time it was
       // written, and new or removed documents never showed up again.
+      //
+      // The <dir>.json above is NOT skipped in JSON-only mode: it is the
+      // directory's record list, which is the main thing a data consumer wants.
       const htmlOutputFilename = dirPath.replace(source, output) + ".html";
-      if (!documentOwnedOutputs.has(htmlOutputFilename)) {
+      if (!_jsonOnly && !documentOwnedOutputs.has(htmlOutputFilename)) {
         const template = templates["default-template"];
         const indexHtml = `<ul>${pathsInThisDirectory
           .map((path) => {
@@ -1196,7 +1282,10 @@ export async function generate({
     (filename) => isMedia(filename) && !isHiddenOrSystem(filename)
   );
 
-  const allStaticFiles = [...allSourceFilenamesThatAreHtml, ...allSourceFilenamesThatAreMedia];
+  // JSON-only emits data, not a servable site, so nothing is copied through.
+  const allStaticFiles = _jsonOnly
+    ? []
+    : [...allSourceFilenamesThatAreHtml, ...allSourceFilenamesThatAreMedia];
   const totalStatic = allStaticFiles.length;
   let processedStatic = 0;
   let copiedStatic = 0;
@@ -1263,9 +1352,15 @@ export async function generate({
   profiler.startPhase('Auto-index generation');
   progress.startTimer('Auto-index');
   // Automatic index generation for folders without index.html
-  progress.log(`Checking for missing index files...`);
-  await generateAutoIndices(output, allSourceFilenamesThatAreDirectories, source, templates, menu, footer, allSourceFilenamesThatAreArticles, copiedCssFiles, existingHtmlFiles, cacheBustTimestamp, progress, customMenus);
-  progress.done('Auto-index', `checked ${allSourceFilenamesThatAreDirectories.length} directories [${progress.stopTimer('Auto-index')}]`);
+  if (_jsonOnly) {
+    // Auto-indices only ever emit index.html for a folder that has no index
+    // document of its own.
+    progress.done('Auto-index', `skipped (JSON-only) [${progress.stopTimer('Auto-index')}]`);
+  } else {
+    progress.log(`Checking for missing index files...`);
+    await generateAutoIndices(output, allSourceFilenamesThatAreDirectories, source, templates, menu, footer, allSourceFilenamesThatAreArticles, copiedCssFiles, existingHtmlFiles, cacheBustTimestamp, progress, customMenus);
+    progress.done('Auto-index', `checked ${allSourceFilenamesThatAreDirectories.length} directories [${progress.stopTimer('Auto-index')}]`);
+  }
   profiler.endPhase('Auto-index generation');
 
   // Phase: Finalization
@@ -1283,10 +1378,21 @@ export async function generate({
   }
 
   // Persist the dependency tracker so hash-skipped documents keep their
-  // edges on the next warm start (invalidation plans stay accurate)
-  await saveDependencyTracker(source);
+  // edges on the next warm start (invalidation plans stay accurate).
+  //
+  // Not in JSON-only mode: it registers nothing (registration lives in the page
+  // assembly it skips), so saving would overwrite a full build's graph with an
+  // empty one. The hash cache is safe to share — see `expectedOutputs` above —
+  // but the dependency graph is not, because nothing rebuilds it.
+  if (!_jsonOnly) {
+    await saveDependencyTracker(source);
+  }
 
-  // Populate watch mode cache for fast single-file regeneration
+  // Populate watch mode cache for fast single-file regeneration.
+  // A JSON-only build never bundled the template assets and never processed
+  // images, so seeding the cache from it would make a later single-file
+  // regeneration emit a page with no styles.
+  if (!_jsonOnly) {
   watchModeCache.templates = templates;
   watchModeCache.menu = menu;
   watchModeCache.footer = footer;
@@ -1305,6 +1411,7 @@ export async function generate({
   watchModeCache.isInitialized = true;
   const depStats = dependencyTracker.getStats();
   progress.log(`Watch cache initialized (${depStats.totalDocuments} documents, ${depStats.uniqueFiles} dependencies tracked)`);
+  }
 
   // Write error report if there were any errors
   if (errors.length > 0) {

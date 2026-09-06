@@ -1,3 +1,35 @@
+# 0.95.0
+2026-09-06
+
+`generate --json-only` builds the data and skips the site.
+
+ursa emits a `.json` beside every document and a `<dir>.json` record list beside every directory, and those files are useful on their own — an application can ingest a docs repo at build time and never serve the HTML. Getting them, though, meant paying for the whole site: rendering every page, resizing every image, bundling the React runtime, and writing a full-text index nobody would query. On the system8 docs that is 2.85s and 88 MB to obtain 8.8 MB of JSON.
+
+- **`--json-only` (`-j`) emits only the data files.** Skipped: HTML, XML, images and their previews, meta/template assets, the React runtime, per-folder CSS/JS bundles, static file copying (fonts, audio, video, PDFs), the search and full-text indices, `menu-data.json`, `recent-activity.json`, and auto-generated index pages. On the system8 docs: **1.12s and 8.8 MB**, down from 2.85s and 88 MB.
+- **The JSON is byte-identical to a full build's**, not merely similar — verified across all 1,475 content files of the system8 docs, and asserted in the test suite. Every step the mode skips operates on the assembled *page*: `bodyHtml` in the JSON is the pre-template render, and `transformImageTags`, `markInactiveLinks` and `resolveRelativeUrls` only ever rewrote the finished HTML. So there is nothing for image processing or template bundling to contribute to it.
+- **The directory record lists are kept.** They are the one thing a data consumer most wants — `character/powers.json` is the list of every power with its frontmatter — so only the directory's *listing page* is skipped, never its `.json`.
+
+Mixing modes against one source tree is safe. The `.ursa` hash cache lives in the source and is shared, so the per-document output check now asks only for the outputs the current mode emits: a JSON-only run after a full build skips work (the `.json` is present and identical either way), and a full build after a JSON-only run regenerates, because its `.html` and `.xml` are missing. That check already existed for a related reason — one hash cache serving several output directories — and it extends to modes for free.
+
+Two pieces of build state are deliberately not written by a JSON-only run. The dependency graph is skipped because registration lives inside the page assembly the mode skips, so saving would replace a full build's graph with an empty one. The watch-mode cache is skipped because it would be seeded with unbundled templates and an empty image map, which would make a later single-file regeneration emit an unstyled page.
+
+# 0.94.0
+2026-09-04
+
+`config.json { hidden: true }` now actually ignores a folder.
+
+It was documented as "hide from menu and don't generate files", and it did neither reliably. `generate` filtered articles and directories, but every other category was derived from an unfiltered list, so a hidden folder still had its images, fonts, audio and video copied into the output and its hand-written HTML carried across. Auto-index listings never consulted the setting at all, so a hidden folder was listed — with working-looking links — in its parent's index. `serve` rendered its pages on request, which is the worst version of the bug: the page works all through development and 404s in production, exactly the failure the setting exists to prevent.
+
+- **One filter, applied once.** `generate` now drops hidden paths from the whole source file list, ahead of classification, instead of re-checking in each category. Articles, directories, images, media and hand-written HTML all inherit it, so no category can be missed — which is how images and media came to be copied out of hidden folders in the first place.
+- **Auto-indices skip hidden folders**, in all three listing paths: from source, from output, and the fallback index generated for a folder without one. The output-scanning path checks the *source* tree, so a folder hidden after it was generated does not reappear from stale files left in `output/`.
+- **A folder holding nothing but a hidden subfolder is no longer treated as having content**, and so is not linked as if it had pages.
+- **`serve` returns 404 for anything under a hidden folder** — documents, images, `config.json` itself — from a single gate ahead of the static-file fallbacks. `serve` and `generate` now agree.
+- **The menu check no longer depends on the folder having children**, so an empty hidden folder is skipped too.
+
+`isFolderHidden()` accepts file paths as well as directories: the walk begins at the path itself, and a file has no `config.json` of its own, so its ancestors decide. That is what lets one predicate filter a mixed list of files and directories. Its shallow companion `isFolderSelfHidden()` tests one folder without a docroot, for the auto-index builders, which know only the folder they are listing.
+
+Files already written to `output/` before a folder was hidden are still not deleted — nothing links to them any more, but removing them needs `--clean`. That is the general "generate never deletes" behaviour, unchanged here.
+
 # 0.93.0
 2026-09-03
 

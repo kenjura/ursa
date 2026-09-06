@@ -372,6 +372,15 @@ async function renderDocument(urlPath) {
   }
   
   const { sourcePath, type } = resolved;
+
+  // `hidden: true` means the folder takes no part in the build. `generate`
+  // writes nothing for it, so serving it on demand would make `serve` and
+  // `generate` disagree — the page works all through development and 404s in
+  // production, the exact failure mode this is meant to prevent.
+  if (isFolderHidden(dirname(sourcePath), source)) {
+    return null;
+  }
+
   const ext = type;
   const base = basename(sourcePath, ext);
   const dir = addTrailingSlash(dirname(sourcePath)).replace(source, "");
@@ -833,6 +842,26 @@ export async function dev({
   // Dev mode document handler
   app.use(async (req, res, next) => {
     const url = req.url;
+    
+    // Nothing under a folder that config.json marks `hidden: true` is served.
+    //
+    // This gate sits ahead of everything, including the `express.static`
+    // fallbacks mounted below — falling through with `next()` would just hand
+    // the file to them. `generate` writes no output for a hidden folder, so
+    // anything served here would work all through development and 404 in
+    // production, which is precisely what the setting exists to avoid.
+    let requestedSourcePath = null;
+    try {
+      requestedSourcePath = join(sourceDir, decodeURIComponent(url.split('?')[0]));
+    } catch (e) {
+      // Malformed percent-encoding — not a path we can classify; let it fall through
+    }
+    // Tested against the path itself, not its parent: `/foo/_art/` and
+    // `/foo/_art/index.html` must both be refused, and a file simply has no
+    // config.json of its own, so the ancestors decide either way.
+    if (requestedSourcePath && isFolderHidden(requestedSourcePath, sourceDir)) {
+      return res.status(404).send('<h1>404 Not Found</h1>');
+    }
     
     // Handle search index requests
     if (url === '/public/search-index.json' || url === '/public/fulltext-index.json') {

@@ -8,7 +8,7 @@ import { findAllScriptJs } from "../findScriptJs.js";
 import { addTimestampToHtmlStaticRefs } from "./cacheBust.js";
 import { isMetadataOnly, extractMetadata, getAutoIndexConfig } from "../metadataExtractor.js";
 import { getCustomMenuForFile } from "./menu.js";
-import { getFolderConfig } from "../folderConfig.js";
+import { getFolderConfig, isFolderSelfHidden } from "../folderConfig.js";
 import {
   toDisplayName,
   getFolderLabel,
@@ -26,11 +26,18 @@ const OUTPUT_DOC_EXTENSIONS = ['.html'];
 
 /**
  * Recursively check if a directory contains any document files.
+ *
+ * Documents inside a config-hidden subfolder do not count: they produce no
+ * output, so a folder whose only contents are hidden must not be linked as if
+ * it had pages. When `dir` is an output directory, pass the matching source
+ * directory as `sourceDir` — the config.json lives in the source tree.
+ *
  * @param {string} dir - Directory path to check
  * @param {string[]} extensions - File extensions that count as documents
+ * @param {string|null} [sourceDir=dir] - Matching source directory, for hidden lookups
  * @returns {Promise<boolean>} True if the directory (or any subdirectory) contains at least one document
  */
-async function directoryHasDocuments(dir, extensions) {
+async function directoryHasDocuments(dir, extensions, sourceDir = dir) {
   try {
     const children = await readdir(dir, { withFileTypes: true });
     for (const child of children) {
@@ -38,7 +45,9 @@ async function directoryHasDocuments(dir, extensions) {
       const fullPath = join(dir, child.name);
       if (child.isDirectory()) {
         if (child.name === 'img') continue;
-        if (await directoryHasDocuments(fullPath, extensions)) return true;
+        if (sourceDir && isFolderSelfHidden(join(sourceDir, child.name))) continue;
+        const childSource = sourceDir ? join(sourceDir, child.name) : null;
+        if (await directoryHasDocuments(fullPath, extensions, childSource)) return true;
       } else {
         const ext = extname(child.name).toLowerCase();
         if (extensions.includes(ext)) return true;
@@ -111,6 +120,9 @@ export async function generateAutoIndexHtml(dir, depth = 1, currentDepth = 0, pa
         if (child.name === 'index.html') return false;
         // Skip img folders (contain images, not content)
         if (child.isDirectory() && child.name === 'img') return false;
+        // Skip folders config.json marks hidden — they are ignored entirely,
+        // so a stale output directory must not resurrect them in a listing
+        if (child.isDirectory() && sourceDir && isFolderSelfHidden(join(sourceDir, child.name))) return false;
         // Include directories and html files
         return child.isDirectory() || child.name.endsWith('.html');
       })
@@ -131,7 +143,8 @@ export async function generateAutoIndexHtml(dir, depth = 1, currentDepth = 0, pa
       // Skip directories that contain no documents
       if (isDir) {
         const childDir = join(dir, child.name);
-        if (!await directoryHasDocuments(childDir, OUTPUT_DOC_EXTENSIONS)) continue;
+        const childSource = sourceDir ? join(sourceDir, child.name) : null;
+        if (!await directoryHasDocuments(childDir, OUTPUT_DOC_EXTENSIONS, childSource)) continue;
       }
       // Use pathPrefix to ensure hrefs are correct relative to the document root
       const childPath = pathPrefix ? `${pathPrefix}/${child.name}` : child.name;
@@ -186,6 +199,8 @@ export async function generateAutoIndexHtmlFromSource(sourceDir, depth = 1, curr
         if (child.name.match(/^index\.(md|mdx|txt|yml|html)$/i)) return false;
         // Skip img folders (contain images, not content)
         if (child.isDirectory() && child.name === 'img') return false;
+        // Skip folders config.json marks hidden — they produce no output
+        if (child.isDirectory() && isFolderSelfHidden(join(sourceDir, child.name))) return false;
         // Include directories and article files (md, mdx, txt, yml, html)
         return child.isDirectory() || child.name.match(/\.(md|mdx|txt|yml|html)$/i);
       })
@@ -362,6 +377,8 @@ export async function generateAutoIndices(output, directories, source, templates
             // Skip hidden files and index alternates we just checked
             if (child.name.startsWith('.')) return false;
             if (child.name === 'index.html') return false;
+            // Skip folders config.json marks hidden — they produce no output
+            if (child.isDirectory() && isFolderSelfHidden(join(sourceDir, child.name))) return false;
             // Include directories and html files
             return child.isDirectory() || child.name.endsWith('.html');
           })
@@ -377,7 +394,7 @@ export async function generateAutoIndices(output, directories, source, templates
         for (const { child, isDir, label } of filteredItems) {
           if (isDir) {
             const childDir = join(dir, child.name);
-            if (!await directoryHasDocuments(childDir, OUTPUT_DOC_EXTENSIONS)) continue;
+            if (!await directoryHasDocuments(childDir, OUTPUT_DOC_EXTENSIONS, join(sourceDir, child.name))) continue;
           }
           // For directories, link to /folder/index.html; for files, use the filename directly
           const href = isDir ? `${child.name}/index.html` : child.name;

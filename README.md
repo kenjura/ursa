@@ -67,6 +67,35 @@ Start a development server that:
 - `--whitelist, -w` - Path to whitelist file containing patterns for files to include
 - `--exclude, -e` - Folders to exclude: comma-separated paths relative to source, or path to file with one folder per line
 - `--clean` - Delete the `.ursa` cache folder and clear output directory, forcing full regeneration
+- `--json-only, -j` - Emit only the `.json` data files (generate command only)
+
+### JSON-Only Builds
+
+`--json-only` builds the data and skips the site:
+
+```bash
+ursa content --json-only --output data
+```
+
+What it emits: every document's `<name>.json` and every directory's `<dir>.json`
+record list — the same files a normal build writes, byte for byte.
+
+What it skips: HTML, XML, images and their previews, meta/template assets, the
+React runtime, per-folder CSS/JS bundles, static file copying (fonts, audio,
+video, PDFs), the search and full-text indices, `menu-data.json`,
+`recent-activity.json`, and auto-generated index pages.
+
+This is for pipelines that consume ursa's JSON as data rather than publishing a
+site — ingesting a docs repo into an application at build time, for example.
+Everything skipped operates on the assembled *page*; the JSON's `bodyHtml` is
+the pre-template render, which none of those steps touch. That is why the output
+is identical rather than merely similar.
+
+Mixing modes against one source tree is safe. The two share the `.ursa` hash
+cache, but each asks only for the outputs its own mode emits, so a full build
+following a JSON-only build still writes the HTML it is missing. A JSON-only
+build does not write the dependency graph or seed the watch cache, so it cannot
+degrade a later `serve`.
 
 ### Whitelist File Format
 
@@ -123,6 +152,44 @@ drafts
 old-content/v1
 test/fixtures
 ```
+
+### Ignoring a Folder
+
+To keep a folder out of the build permanently — working notes, prompt
+scratchpads, raw source material — put a `config.json` in it:
+
+```json
+{
+  "hidden": true
+}
+```
+
+The folder and everything beneath it then take no part in the build:
+
+- no HTML is rendered from its documents
+- its images, fonts and other static assets are not copied to the output
+- it does not appear in the sidebar menu, in any auto-index, or in breadcrumbs
+- its text is not added to the search index
+- `ursa serve` returns 404 for anything under it, matching what `generate`
+  produces
+
+The files stay where they are in the source tree; the site simply behaves as
+though they were not there.
+
+This differs from `--exclude` in scope and in lifetime: `--exclude` is a flag on
+one invocation, useful for a one-off or a per-environment build, while
+`config.json` travels with the content and applies to every build and every
+person who checks the repo out.
+
+`config.json` accepts a few other keys, all of which apply to the folder it
+sits in:
+
+| Key | Type | Meaning |
+| --- | --- | --- |
+| `hidden` | boolean | Ignore this folder and its subtree entirely (above) |
+| `label` | string | Name to show for this folder in menus and indices |
+| `icon` | string | URL of an icon to show beside it in the menu |
+| `openMenuItems` | string[] | Root `config.json` only: folders to expand by default |
 
 ### Large Workloads
 

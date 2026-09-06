@@ -3,6 +3,7 @@ import { mkdtemp, mkdir, writeFile, rm, readFile } from "fs/promises";
 import { existsSync } from "fs";
 import { tmpdir } from "os";
 import { generateAutoIndices, generateAutoIndexHtmlFromSource } from "../autoIndex.js";
+import { clearConfigCache } from "../../folderConfig.js";
 
 let tempDir;
 let source;
@@ -158,5 +159,71 @@ describe("auto-index naming matches the automenu", () => {
     expect(bnwIndex).toContain("<h1>BNW - Brave New World</h1>");
     const rootIndex = await readFile(join(output, "index.html"), "utf8");
     expect(rootIndex).toContain('<a href="bnw/index.html">BNW - Brave New World</a>');
+  });
+});
+
+describe("folders ignored via config.json { hidden: true }", () => {
+  beforeEach(() => {
+    // getFolderConfig memoizes per absolute path; temp dirs are unique per
+    // test, but clearing keeps the cache from growing across the suite.
+    clearConfigCache();
+  });
+
+  it("omits a hidden folder from an auto-index built from source", async () => {
+    await mkdir(join(source, "_art"), { recursive: true });
+    await writeFile(join(source, "_art", "config.json"), JSON.stringify({ hidden: true }));
+    await writeFile(join(source, "_art", "prompts.md"), "# Prompts\n");
+    await mkdir(join(source, "people"), { recursive: true });
+    await writeFile(join(source, "people", "alice.md"), "# Alice\n");
+
+    const html = await generateAutoIndexHtmlFromSource(source, 2);
+
+    expect(html).toContain("people");
+    expect(html).not.toContain("_art");
+    expect(html).not.toContain("prompts");
+  });
+
+  it("omits a hidden folder even when stale output for it still exists", async () => {
+    // A folder generated before it was hidden leaves files behind in output.
+    // The listing is built from output, so without a source-side check the
+    // hidden folder would reappear in the index.
+    await mkdir(join(source, "_art"), { recursive: true });
+    await writeFile(join(source, "_art", "config.json"), JSON.stringify({ hidden: true }));
+    await mkdir(join(source, "people"), { recursive: true });
+    await writeFile(join(source, "people", "alice.md"), "# Alice\n");
+
+    await mkdir(join(output, "_art"), { recursive: true });
+    await writeFile(join(output, "_art", "prompts.html"), "<html><body>stale</body></html>");
+    await mkdir(join(output, "people"), { recursive: true });
+    await writeFile(join(output, "people", "alice.html"), "<html><body>Alice</body></html>");
+
+    const progress = makeProgress();
+    await runAutoIndices(
+      [source, join(source, "people")],
+      [join(source, "people", "alice.md")],
+      progress
+    );
+
+    const index = await readFile(join(output, "index.html"), "utf8");
+    expect(index).toContain("people");
+    expect(index).not.toContain("_art");
+  });
+
+  it("does not count documents inside a hidden subfolder when deciding a folder has content", async () => {
+    // `notes` holds nothing but a hidden subfolder, so it produces no pages
+    // and must not be linked as though it did.
+    await mkdir(join(source, "notes", "_art"), { recursive: true });
+    await writeFile(
+      join(source, "notes", "_art", "config.json"),
+      JSON.stringify({ hidden: true })
+    );
+    await writeFile(join(source, "notes", "_art", "prompts.md"), "# Prompts\n");
+    await mkdir(join(source, "people"), { recursive: true });
+    await writeFile(join(source, "people", "alice.md"), "# Alice\n");
+
+    const html = await generateAutoIndexHtmlFromSource(source, 2);
+
+    expect(html).toContain("people");
+    expect(html).not.toContain("notes");
   });
 });

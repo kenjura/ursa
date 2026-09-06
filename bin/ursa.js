@@ -54,6 +54,12 @@ yargs(hideBin(process.argv))
         .option('promote-changelog', {
           describe: 'Path to a markdown file to render at the output root (sibling of index.html)',
           type: 'string'
+        })
+        .option('json-only', {
+          alias: 'j',
+          describe: 'Emit only the .json data files — no HTML, XML, images, static assets, search indices or menu data',
+          type: 'boolean',
+          default: false
         });
     },
     async (argv) => {
@@ -64,7 +70,8 @@ yargs(hideBin(process.argv))
       const exclude = argv.exclude || null;
       const clean = argv.clean;
       const promoteChangelog = argv['promote-changelog'] || null;
-      
+      const jsonOnly = argv['json-only'];
+
       console.log(`Generating site from ${source} to ${output} using meta from ${meta}`);
       if (whitelist) {
         console.log(`Using whitelist: ${whitelist}`);
@@ -75,7 +82,10 @@ yargs(hideBin(process.argv))
       if (clean) {
         console.log(`Clean build: ignoring cached hashes`);
       }
-      
+      if (jsonOnly) {
+        console.log(`JSON-only build: emitting .json data files only`);
+      }
+
       let promoted = { stagedFile: null, cleanup: async () => {} };
       try {
         promoted = await stagePromotedChangelog({ changelogPath: promoteChangelog, sourceDir: source });
@@ -85,7 +95,8 @@ yargs(hideBin(process.argv))
           _output: output,
           _whitelist: whitelist,
           _exclude: exclude,
-          _clean: clean
+          _clean: clean,
+          _jsonOnly: jsonOnly
         });
         console.log('Site generation completed successfully!');
       } catch (error) {

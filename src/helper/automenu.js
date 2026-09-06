@@ -218,8 +218,10 @@ function buildMenuData(tree, source, validPaths, parentPath = '', includeDebug =
       }
     }
     
-    // Check if this folder is hidden via config.json
-    if (hasChildren && isFolderHidden(item.path, source)) {
+    // Check if this folder is hidden via config.json.
+    // Not gated on hasChildren: a hidden folder is ignored whether or not the
+    // tree walker found children under it.
+    if (isFolderHidden(item.path, source)) {
       continue; // Skip hidden folders
     }
     
