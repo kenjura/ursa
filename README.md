@@ -318,6 +318,48 @@ Both panels carry it: `#widget-dropdown` for the right-hand widgets (`toc`,
 Ursa uses this hook itself, to lay the TOC out along the bottom of the viewport
 on a narrow screen.
 
+## Recent Activity
+
+The site's Recent Activity widget lists the ten most recently edited documents. A document is dated by the last git commit that touched it — one `git log` pass over the source directory at the start of a build — or by its file mtime if it has uncommitted changes, is untracked, or the source is not in a git work tree. The build's own time never enters into it, so `--clean` does not reset the feed.
+
+This needs git history to be present. A shallow checkout (GitHub Actions' `actions/checkout` defaults to depth 1) makes every document look edited in the one fetched commit; ursa warns when it sees one. Use `fetch-depth: 0`.
+
+## MDX and Interactive Components
+
+A `.mdx` document is Markdown that can import and use React components. Put components in a `_components/` folder anywhere from the docroot down to the document's own folder, and import them without a relative prefix:
+
+```mdx
+---
+hydrate: true
+---
+import PowerList from '_components/PowerList.jsx';
+
+# Spells
+
+<PowerList class="Witch" groupBy="school" />
+```
+
+Every document is rendered to HTML at build time, components included, so a page reads the same with JavaScript off. `hydrate: true` in the frontmatter additionally ships the page's components to the browser so they can run there.
+
+Hydration works per component, not per page. Each component imported directly into the `.mdx` file becomes an **island**: the build wraps its output in `<ursa-island data-island="N">`, and in the browser each island is hydrated as its own React root against exactly the markup the build produced for it. The Markdown around the islands is never handed to React, so the template is free to rearrange it — section wrappers for sticky headings, breadcrumbs, the table of contents — without any hydration mismatch. Two things follow from this:
+
+- A component's first render must produce the same markup in the browser as it did at build time (the usual hydration contract). Fetch data in an effect and render a placeholder first.
+- React context does not cross from one island to another. Components that need to share state should be one island, with the shared state inside it.
+
+`island` wrapping applies to the default export of any `.jsx`/`.tsx` file the `.mdx` imports, and of `.js`/`.ts` files under `_components/`. Components that a component imports are not islands themselves — they render inside their parent's root. Non-function imports (JSON, data) pass through untouched.
+
+### Telling the template the article changed
+
+The template's scripts read the article once, when the page loads: the sticky headings and the table of contents are both built from the headings present at that moment. A component that renders content later — a list fetched from a JSON file, say, with headings of its own — should say so once it has:
+
+```jsx
+useEffect(() => {
+  if (items.length) window.ursa?.contentChanged?.(rootRef.current);
+}, [items]);
+```
+
+`contentChanged(root)` dispatches `ursa:content-changed` on `document` with the changed element in `event.detail.root` (the article, if omitted). Sticky headings and the table of contents re-read the article on it; calls within the same task are coalesced into one event. A site's own scripts can listen for the same event.
+
 ## Auto-Index Generation
 
 Ursa automatically generates index pages for folders that don't have one. You can also explicitly control auto-index generation in your index documents using frontmatter:

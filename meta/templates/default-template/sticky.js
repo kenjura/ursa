@@ -2,7 +2,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const article = document.querySelector('article#main-content');
     if (!article) return;
 
-    const headings = article.querySelectorAll('h1, h2, h3');
+    // Re-collected on ursa:content-changed, since an island may add headings
+    // after load (see content-hooks.js).
+    let headings = article.querySelectorAll('h1, h2, h3');
 
     function updateStuckState() {
         let currentStuckHeading = null;
@@ -70,4 +72,8 @@ document.addEventListener('DOMContentLoaded', () => {
     updateStuckState();
     window.addEventListener('scroll', updateStuckState, { passive: true });
     window.addEventListener('resize', updateStuckState);
+    document.addEventListener('ursa:content-changed', () => {
+        headings = article.querySelectorAll('h1, h2, h3');
+        updateStuckState();
+    });
 });

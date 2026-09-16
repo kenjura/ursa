@@ -225,8 +225,8 @@ digit MB).
       categorization block in `processChangeBatch`.
 - [ ] Delete `content-hashes.json` / `nav-cache.json` read/write paths
       (`src/helper/contentHash.js` cache portions, `src/helper/build/navCache.js`) once
-      their state lives in graph nodes. Keep `.ursa.json` content timestamps (they serve
-      Recent Activity, not invalidation).
+      their state lives in graph nodes. (`.ursa.json` content timestamps were dropped in
+      0.96.0; Recent Activity now dates documents from git.)
 - [ ] Delete `regenerateSingleFile` / `regenerateAffectedDocuments` once serve runs on
       the graph.
 - [ ] Update `USAGE.md` / `README.md`: `--clean` is corruption recovery, no longer a

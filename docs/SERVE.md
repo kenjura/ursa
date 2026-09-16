@@ -227,7 +227,7 @@ recorded. Where a node writes files, "Owns" lists them.
 | `imageInfo(img)` | `file:img` | **cheap**: content hash, dimensions, and whether a preview *will* exist (small images and SVG/ICO get none). Value includes the original URL and the preview URL if any. |
 | `imagePreview(img)` | `imageInfo(img)` | **expensive**: encodes the WebP preview. Owns `<dir>/<name>.preview.webp`. Scheduled after pages (§5.4). |
 | `imageCopy(img)` | `file:img` | owns `<dir>/<name>.<ext>` (the original) |
-| `contentTimestamps` | side table, not a pure node: when `file:<doc>` changes fingerprint, the document's entry is set to now. Persisted in `.ursa.json`. | |
+| `sourceTimestamps` | `git log`/`git status` over the docroot, else file mtimes | last-edited time per document, taken from the last commit that touched it (working-tree mtime for uncommitted files). Not build state: never persisted. (0.96.0; replaced the `.ursa.json` `contentTimestamps` side table, which stamped every regenerated document with the build time and so was reset by every `--clean`.) |
 | `ursaMetadata` | `ursa:version`; `file:<docroot>/package.json` | embedded in every JSON output |
 
 #### Per document
@@ -255,7 +255,7 @@ recorded. Where a node writes files, "Owns" lists them.
 |---|---|---|
 | `searchIndex` | `docMeta(d)` for all documents (title, path) | `public/search-index.json` |
 | `fullTextIndex` | `plainText(d)` for all documents, where `plainText(d)` is a projection of `file:d` | `public/fulltext-index.json`. Recomputed incrementally: the engine tells it which inputs changed. |
-| `recentActivity` | `contentTimestamps`, `docMeta` for titles | `public/recent-activity.json` |
+| `recentActivity` | `sourceTimestamps`, `docMeta` for titles | `public/recent-activity.json` |
 
 ### 4.3 The document set and its filters
 
@@ -366,7 +366,7 @@ mismatch the graph is discarded and the start is cold. `--clean` deletes
 `.ursa/` and empties `output/` first; it is corruption recovery, never a
 routine workaround. `content-hashes.json`, `nav-cache.json`,
 `dependency-graph.json` and `image-cache.json` are subsumed by the graph and
-go away. `.ursa.json` remains (build id, content timestamps: state, not cache).
+go away. `.ursa.json` remains (build id: state, not cache).
 
 ## 6. Clients and hot reload
 
@@ -570,9 +570,10 @@ Deleting or renaming away a document `d`:
   owns that URL (the auto-index, or a 404). That is the truth; no special
   case.
 
-Creating (the other half of a rename) is the ordinary new-document case. The
-content timestamp for Recent Activity is keyed by path, so a renamed document
-appears as newly changed; carrying timestamps across renames is not attempted
+Creating (the other half of a rename) is the ordinary new-document case. Recent
+Activity dates a document by the last commit that touched its path, so a
+renamed document appears as newly changed once the rename is committed (and by
+mtime until then); carrying timestamps across renames is not attempted
 (Part II §C.9).
 
 Directory rename: the subtree rescan (§3.2) turns it into the individual

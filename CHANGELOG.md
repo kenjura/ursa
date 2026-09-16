@@ -1,3 +1,25 @@
+# 0.96.0
+2026-09-16
+
+MDX pages hydrate their components, not the page; Recent Activity is dated from git.
+
+`hydrate: true` on an `.mdx` page broke the page's layout, and the break got worse the more headings the page had: sticky H1s piled on top of one another, breadcrumbs vanished, and the table of contents listed the title twice. The hydration script handed React the whole of `#main-content` and the whole MDX component and expected them to match. They never did. The template puts breadcrumbs and (sometimes) a title heading inside that container, and the default template's `sectionify.js` rewrites it on `DOMContentLoaded`, wrapping each H1 section in `<section class="sectionOuter">` — and the hydration script, being the last script in the body, always ran after it. React reported the mismatch (error #418), discarded the server-rendered DOM and rendered the component from scratch, with none of the template's structure.
+
+- **Each component imported into the `.mdx` is now an island.** An esbuild plugin wraps the default export of every `.jsx`/`.tsx` the entry imports (and `.js`/`.ts` under `_components/`), so the build renders it inside `<ursa-island data-island="N">` and the browser hydrates that element as its own React root, against exactly the markup the build produced for it. The Markdown around the islands is never handed to React; `sectionify`, breadcrumbs and the TOC can do what they like to it.
+- **Function props keep working.** The client still runs the whole bundled MDX module — into a detached root, purely to execute the tree — so each island receives its real props, `filter={fn}` included, rather than a serialized replay. Island numbering is a per-render counter taken in `useState`'s lazy initializer, so it increments once per mount in tree order on both sides.
+- **Components imported by components are not islands.** They render inside their parent's root, as before; nesting would put one root inside another. Named exports and non-function imports pass through untouched.
+- **React 19's hoisted `<link rel="preload">` is stripped** from the MDX render. It carried the un-rewritten relative image path, so it fetched nothing useful, and its position ahead of the first `<h1>` is what defeated the "body starts with a heading" check and produced the duplicate title.
+- **`react-runtime.js` now exposes `createRoot`** and carries a version marker; `buildReactRuntime` rebuilds an older runtime found in `output/public/` instead of reusing it.
+- **`window.ursa.contentChanged(root)` tells the template the article changed.** The template's scripts read the article once, on `DOMContentLoaded`: `sticky.js` collects the headings it marks `.stuck`, `toc-generator.js` builds the table of contents from them. A component that fetches data and renders a list with its own headings after that point was invisible to both — its H2s never rolled up into the stuck H1 and piled on top of each other, and the TOC did not list them. The helper dispatches `ursa:content-changed` on `document` (coalesced per task, so a multi-step render can call it freely) and both scripts re-read the headings on it: sticky state is recomputed, and the TOC is rebuilt in place with existing heading ids preserved. `content-hooks.js` is a new template script, loaded first.
+
+**Recent Activity is dated from git, not from the build.** The feed took each document's time from a `contentTimestamps` map in `.ursa.json` that was set to the build time whenever the document was regenerated. Under `--clean` every document regenerates, so every entry got the same time and the feed showed ten arbitrary pages. The map also grew to one line per document and changed on every build, which in a repo that commits `.ursa.json` meant a diff on every commit.
+
+- **One `git log --name-only` pass over the source directory** at the start of a build gives every document's last-commit time in a single process (0.4s on 1,400 documents). A document with uncommitted changes, an untracked one, or any document when the source is not a git work tree, is dated by file mtime instead.
+- **A shallow clone is detected and warned about**, since with one fetched commit every document looks edited in it. The fix is `fetch-depth: 0` on the checkout.
+- **`contentTimestamps` is gone from `.ursa.json`**; the next build removes the stale key. `serve`'s single-file regeneration dates the changed document the same way instead of stamping "now".
+
+`hydrate: true` means what it did: emit the client bundle. Without it, islands are rendered at build time and inert. React context does not cross island boundaries, which no MDX page relied on — there is no provider above the components to begin with. Design notes are in `docs/changes/island-hydration.md`, and the README gains an "MDX and Interactive Components" section.
+
 # 0.95.0
 2026-09-06
 

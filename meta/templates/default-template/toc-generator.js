@@ -6,47 +6,67 @@ document.addEventListener('DOMContentLoaded', () => {
     
     if (!tocTarget || !article) return;
     
-    // Find all headings in the article
-    const headings = article.querySelectorAll('h1, h2, h3');
-    
-    if (headings.length === 0) {
-        // Hide the TOC widget button if no headings
-        const tocButton = document.querySelector('.widget-button[data-widget="toc"]');
-        if (tocButton) tocButton.style.display = 'none';
-        tocTarget.style.display = 'none';
-        return;
-    }
-    
-    // Generate TOC HTML
-    const tocList = document.createElement('ul');
-    
-    headings.forEach((heading, index) => {
-        // Create unique ID for the heading if it doesn't have one
-        if (!heading.id) {
-            const text = heading.textContent.trim()
-                .toLowerCase()
-                .replace(/[^\w\s-]/g, '') // Remove special characters
-                .replace(/\s+/g, '-'); // Replace spaces with hyphens
-            heading.id = `heading-${index}-${text}`;
-        }
-        
-        // Create TOC item
-        const listItem = document.createElement('li');
-        listItem.className = `toc-${heading.tagName.toLowerCase()}`;
-        
-        const link = document.createElement('a');
-        link.href = `#${heading.id}`;
-        link.textContent = heading.textContent;
-        link.addEventListener('click', handleTocClick);
-        
-        listItem.appendChild(link);
-        tocList.appendChild(listItem);
-    });
-    
+    // The headings the TOC currently reflects. Rebuilt on ursa:content-changed,
+    // since an island may add headings after load (see content-hooks.js).
+    let headings = [];
+    const tocButton = document.querySelector('.widget-button[data-widget="toc"]');
+
     // Add an id=toc wrapper for the toc.js sentinel-based highlighter
+    const tocList = document.createElement('ul');
     tocList.id = 'toc';
     tocTarget.appendChild(tocList);
-    
+
+    function headingId(heading, index) {
+        const text = heading.textContent.trim()
+            .toLowerCase()
+            .replace(/[^\w\s-]/g, '') // Remove special characters
+            .replace(/\s+/g, '-'); // Replace spaces with hyphens
+        let id = `heading-${index}-${text}`;
+        // A heading added later can land on an index an earlier one already used
+        let n = 2;
+        while (document.getElementById(id)) id = `heading-${index}-${text}-${n++}`;
+        return id;
+    }
+
+    // (Re)build the list from the article's current headings. Headings keep the
+    // ids they already have, so existing anchors and links stay valid.
+    function buildToc() {
+        headings = article.querySelectorAll('h1, h2, h3');
+
+        if (headings.length === 0) {
+            // Hide the TOC widget button if no headings
+            if (tocButton) tocButton.style.display = 'none';
+            tocTarget.style.display = 'none';
+            return;
+        }
+        if (tocButton) tocButton.style.display = '';
+        tocTarget.style.display = '';
+
+        tocList.replaceChildren();
+        headings.forEach((heading, index) => {
+            // Create unique ID for the heading if it doesn't have one
+            if (!heading.id) heading.id = headingId(heading, index);
+
+            // Create TOC item
+            const listItem = document.createElement('li');
+            listItem.className = `toc-${heading.tagName.toLowerCase()}`;
+
+            const link = document.createElement('a');
+            link.href = `#${heading.id}`;
+            link.textContent = heading.textContent;
+            link.addEventListener('click', handleTocClick);
+
+            listItem.appendChild(link);
+            tocList.appendChild(listItem);
+        });
+    }
+
+    buildToc();
+    document.addEventListener('ursa:content-changed', () => {
+        buildToc();
+        updateActiveTocItem();
+    });
+
     // Handle TOC link clicks for smooth scrolling
     function handleTocClick(e) {
         e.preventDefault();
