@@ -1,3 +1,21 @@
+# 0.98.0
+2026-09-20
+
+Named menus: `menu-<name>.md` files rendered inline where a document anchors them.
+
+A folder's `menu.md` replaces the site navigation for its subtree. That is one menu per folder, always in the chrome. Sites also want small menus that belong to the content — a strip of sibling pages at the top of each class page, say — and those have been written by hand into every page, and kept in sync by hand.
+
+- **Any `menu*.md` is a menu file.** `menu.md` (and `_menu.md`, `.txt` variants) is the folder menu as before; `menu-classes.md`, `menu-2.md` and so on are additional menus in the same folder, and the same file format.
+- **An `id` makes a menu named.** A menu file whose frontmatter has `id: classes` renders nowhere on its own. A document in that folder or below it places it with `{menu:classes}` on a line of its own, and the menu appears there as a static `<nav class="ursa-menu">` inside the article — not a fixed element. `menu.md` with an `id` is a named menu too, and stops being the folder's nav. The `id` is required for `menu-<name>.md`; a file without one is warned about and renders nowhere.
+- **`appearance: horizontal | vertical`**, default horizontal: a strip of items with hover dropdowns for nested items, or a stacked, indented list. Both mark the current page's item (`ursa-menu-current`) and its ancestors (`ursa-menu-active`). Styles live in the default template's stylesheet, scoped like the breadcrumbs so a site's `a { … }` cannot break them and a site's more specific selector can restyle them.
+- **Resolution is by nearest id.** The walk goes up from the document's folder to the docroot; the first menu file with a matching `id` wins, so a deeper folder can shadow one defined above it. `auto-generate-menu` and `menu-depth` work as in `menu.md`.
+- **Anchors fail quietly.** `{menu:x}` is inert Markdown — braces mean nothing to the renderer — and it is substituted after rendering, so an anchor never changes how the Markdown around it parses. If no menu answers, or the menu file cannot be parsed, the anchor becomes `<!-- ursa: menu "x" not found -->` and the build warns, naming the document; the page renders normally. Anchors inside code spans and code blocks stay as written. In `.mdx`, where `{…}` is an expression, an anchor alone on a line is rewritten before compilation and never reaches the compiler.
+- **A menu above the first heading stays above the title.** The default `<h1>` is injected after any leading menus rather than before them, and the default template's `sectionify.js` keeps leading menus with the breadcrumbs, outside the sections.
+- **Menus are build-graph nodes.** Editing `menu-classes.md` rewrites exactly the pages that anchor it (their `.html`, `.json` and `.xml`), nothing else; creating a missing menu file fills the anchors in the next pass without the pages being edited; deleting it puts the comments back. A page that anchors a menu depends on a projection of each candidate menu file's identity, not its body, so adding an unrelated file to the folder does not re-render it.
+- **Menu files are not documents.** They are not rendered to pages, listed in the automenu, an auto-index or a `<dir>.html` listing, indexed for search, or dated in recent activity. This applies to `menu.md` too, which used to be rendered to `menu.html`. The upgrade discards the build cache, so that stale page is not known to the new graph and is not deleted; one `--clean` removes it.
+
+The README gains a "Menus" section documenting both kinds.
+
 # 0.97.0
 2026-09-20
 

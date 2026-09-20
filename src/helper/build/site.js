@@ -54,7 +54,18 @@ import {
   extractMenuFrontmatter,
   parseCustomMenu,
   combineAutoAndManualMenu,
+  isMenuFile,
 } from "../customMenu.js";
+import {
+  findNamedMenu,
+  namedMenuOptions,
+  collectMenuAnchorIds,
+  prepareMdxMenuAnchors,
+  resolveMenuAnchors,
+  renderInlineMenuHtml,
+  menuNotFoundComment,
+  leadingMenusEnd,
+} from "../inlineMenu.js";
 import { findAllStyleCss } from "../findStyleCss.js";
 import { findAllScriptJs } from "../findScriptJs.js";
 import {
@@ -98,6 +109,7 @@ export const DIR_KINDS = ["dirIndexJson", "dirListingHtml", "autoIndexPage", "di
 export const INTERNAL_KINDS = [
   "linkResolution", "outputOwner", "customMenuFor", "cssBundle", "jsBundle",
   "metaAsset", "metaBundle", "imageInfo", "docMeta",
+  "menuFileMeta", "namedMenuFor", "namedMenu",
 ];
 /** Site-wide singletons. */
 export const SITE_KINDS = [
@@ -428,6 +440,35 @@ export function createSite(env) {
     return finishAssets(ctx, html, docUrlPath);
   }
 
+  /**
+   * Replace a document's `{menu:<id>}` anchors with the named menus they name.
+   * A menu that is missing or fails to parse becomes an HTML comment and a
+   * warning; the page still renders.
+   */
+  async function resolveNamedMenus(ctx, body, rel) {
+    const ids = collectMenuAnchorIds(body);
+    if (ids.length === 0) return body;
+    const dirRel = dirRelOf(rel);
+    const currentUrl = "/" + outputPathFor(rel);
+    const rendered = new Map();
+    for (const id of ids) {
+      try {
+        const menuRel = await ctx.get(nodeId("namedMenuFor", `${dirRel}|${id}`));
+        const menu = menuRel ? await ctx.get(nodeId("namedMenu", menuRel)) : null;
+        if (!menu) {
+          warn(`menu-anchor:${rel}:${id}`, `⚠️  ${rel}: no menu with id "${id}" in this folder or above it`);
+          rendered.set(id, menuNotFoundComment(id));
+          continue;
+        }
+        rendered.set(id, renderInlineMenuHtml(menu.menuData, { id, appearance: menu.appearance, currentUrl }));
+      } catch (e) {
+        warn(`menu-anchor:${rel}:${id}`, `⚠️  ${rel}: menu "${id}" could not be rendered: ${e.message}`);
+        rendered.set(id, menuNotFoundComment(id, "could not be rendered"));
+      }
+    }
+    return resolveMenuAnchors(body, (id) => rendered.get(id) ?? menuNotFoundComment(id));
+  }
+
   // -------------------------------------------------------------------------
   // Node families
   // -------------------------------------------------------------------------
@@ -474,7 +515,8 @@ export function createSite(env) {
       files.sort();
       dirs.sort();
 
-      const articles = files.filter((f) => isArticle(f));
+      // Menu files (menu.md, menu-<name>.md) configure navigation; they are not pages
+      const articles = files.filter((f) => isArticle(f) && !isMenuFile(basename(f)));
       const html = files.filter((f) => isHandwrittenHtml(f));
       const images = files.filter((f) => IMAGE_EXTENSIONS.test(f));
       const media = files.filter((f) => isMedia(f));
@@ -752,6 +794,80 @@ export function createSite(env) {
       };
     },
 
+    // ----- Named menus (inlineMenu.js) --------------------------------------
+
+    /**
+     * A menu file's identity: `{id, appearance}` from its frontmatter, or null
+     * when the file is gone. A projection, so pages that only need to know
+     * *which* file answers an anchor do not re-render for a body edit.
+     */
+    menuFileMeta: (rel) => async (ctx) => {
+      let content;
+      try {
+        content = await ctx.read(abs(rel));
+      } catch {
+        return null;
+      }
+      const { frontmatter } = extractMenuFrontmatter(content);
+      const { id, appearance, appearanceInvalid } = namedMenuOptions(frontmatter);
+      if (!id && /^_?menu-/i.test(basename(rel))) {
+        warn(`menu-id:${rel}`, `⚠️  ${rel}: a named menu needs an \`id\` in its frontmatter; this file renders nowhere`);
+      }
+      if (appearanceInvalid) {
+        warn(`menu-appearance:${rel}`, `⚠️  ${rel}: appearance "${appearanceInvalid}" is not one of horizontal, vertical; using horizontal`);
+      }
+      return { id, appearance };
+    },
+
+    /**
+     * Which menu file answers `{menu:<id>}` for pages in a folder: the nearest
+     * one up the tree with that id, or null. Key: `<dirRel>|<id>`. Reads only
+     * directory listings and `menuFileMeta` projections.
+     */
+    namedMenuFor: (key) => async (ctx) => {
+      const sep = key.lastIndexOf("|");
+      const dirRel = key.slice(0, sep);
+      const id = key.slice(sep + 1);
+      let cur = dirRel;
+      for (;;) {
+        const entries = await ctx.listDir(abs(cur));
+        const candidates = entries
+          .filter((e) => e.kind === "file" && isMenuFile(e.name))
+          .map((e) => (cur ? `${cur}/${e.name}` : e.name))
+          .sort();
+        const matches = [];
+        for (const rel of candidates) {
+          const info = await ctx.get(nodeId("menuFileMeta", rel));
+          if (info?.id === id) matches.push(rel);
+        }
+        if (matches.length > 1) {
+          warn(`menu-dup:${cur}:${id}`, `⚠️  ${matches.join(", ")} all declare menu id "${id}"; using ${matches[0]}`);
+        }
+        if (matches.length > 0) return matches[0];
+        if (!cur) return null;
+        const parent = dirname(cur);
+        cur = parent === "." ? "" : parent;
+      }
+    },
+
+    /** One named menu's parsed items, or null when the file is gone. */
+    namedMenu: (rel) => async (ctx) => {
+      const info = await ctx.get(nodeId("menuFileMeta", rel));
+      if (!info?.id) return null;
+      const menuDirRel = dirRelOf(rel);
+      const found = findNamedMenu(abs(menuDirRel), source, info.id);
+      if (!found || relOf(found.path) !== rel) return null;
+      const below = await ctx.get(nodeId("dirSet", menuDirRel));
+      await preloadFrontmatter(ctx, below.articles, { nonDocuments: below.files.filter((f) => !isArticle(f)) });
+      const { frontmatter, body } = found;
+      const autoGenerate = frontmatter["auto-generate-menu"] === true || frontmatter["auto-generate-menu"] === "true";
+      const depth = parseInt(frontmatter["menu-depth"], 10) || 10;
+      const menuData = autoGenerate
+        ? combineAutoAndManualMenu(body, found.menuDir, source, depth)
+        : parseCustomMenu(body, found.menuDir, source);
+      return { id: info.id, appearance: info.appearance, menuData };
+    },
+
     /**
      * The folder's inherited stylesheets bundled into public/<folder>.bundle.css.
      * Value: {url} with `?v=<hash>`, or null when the chain is empty. The chain
@@ -870,7 +986,7 @@ export function createSite(env) {
       const shouldHydrate = type === ".mdx" && meta?.hydrate === true;
 
       const renderResult = await renderFileAsync({
-        fileContents: raw,
+        fileContents: type === ".mdx" ? prepareMdxMenuAnchors(raw) : raw,
         type,
         dirname: dir,
         basename: base,
@@ -902,10 +1018,15 @@ export function createSite(env) {
         body = renderResult;
       }
 
-      // Inject default H1 if body doesn't start with one
-      if (!body || !body.trimStart().startsWith("<h1")) {
+      // `{menu:<id>}` anchors become the named menu, rendered in place
+      body = await resolveNamedMenus(ctx, body || "", rel);
+
+      // Inject default H1 if body doesn't start with one. A menu anchored at
+      // the very top stays above the title.
+      const afterMenus = leadingMenusEnd(body);
+      if (!body.slice(afterMenus).trimStart().startsWith("<h1")) {
         const h1Title = meta?.title || title;
-        body = `<h1>${h1Title}</h1>\n` + (body || "");
+        body = body.slice(0, afterMenus) + `<h1>${h1Title}</h1>\n` + body.slice(afterMenus);
       }
 
       // Breadcrumbs before the H1 (folder labels come from docMeta projections)
@@ -1094,6 +1215,7 @@ export function createSite(env) {
       if (owner) return { ownedBy: owner };
       const below = await ctx.get(nodeId("dirSet", dirRel));
       const items = below.files
+        .filter((f) => !isMenuFile(basename(f)))
         .map((f) => {
           const ext = extname(f);
           const href = "/" + (ext ? f.slice(0, -ext.length) : f) + ".html";

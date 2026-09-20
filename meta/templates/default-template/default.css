@@ -1465,6 +1465,150 @@
   }
 }
 
+/* Named menus (`{menu:<id>}` anchors) render inside the article too, as a
+   static block where the author put them.  Same treatment as the breadcrumbs:
+   Ursa's chrome, scoped, unlayered.  Horizontal is a strip of items with
+   hover dropdowns for children; vertical is a stacked list, TOC-like. */
+@scope (nav.ursa-menu) {
+  :scope {
+    font-size: 0.9rem;
+    margin: 0.5rem 0 1rem;
+    color: var(--text-color);
+  }
+
+  ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  li {
+    margin: 0;
+    padding: 0;
+  }
+
+  a, span {
+    display: block;
+    text-decoration: none;
+    white-space: nowrap;
+  }
+
+  /* Same colour as the top menu, visited or not: this is navigation, not
+     prose, and it may sit outside any section the site colours. */
+  a, a:visited {
+    color: var(--text-color);
+  }
+
+  a:hover {
+    text-decoration: none;
+  }
+
+  /* --- horizontal: a strip, children in hover dropdowns --- */
+  :scope.ursa-menu-horizontal > ul {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.25rem;
+  }
+
+  :scope.ursa-menu-horizontal > ul > li {
+    position: relative;
+  }
+
+  :scope.ursa-menu-horizontal > ul > li > a,
+  :scope.ursa-menu-horizontal > ul > li > span {
+    padding: 0.3rem 0.75rem;
+    border-radius: 4px;
+    transition: background-color 0.15s ease;
+  }
+
+  :scope.ursa-menu-horizontal > ul > li > a:hover {
+    background-color: color-mix(in srgb, var(--text-color) 10%, transparent);
+  }
+
+  :scope.ursa-menu-horizontal > ul > li.ursa-menu-current > a,
+  :scope.ursa-menu-horizontal > ul > li.ursa-menu-active > a {
+    font-weight: 600;
+    background-color: var(--widget-bg);
+    box-shadow: inset 0 0 0 1px var(--widget-border);
+  }
+
+  :scope.ursa-menu-horizontal > ul > li.ursa-menu-has-children > a::after,
+  :scope.ursa-menu-horizontal > ul > li.ursa-menu-has-children > span::after {
+    content: '▼';
+    font-size: 0.4em;
+    margin-left: 6px;
+    opacity: 0.6;
+    vertical-align: middle;
+  }
+
+  :scope.ursa-menu-horizontal li > ul {
+    display: none;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    min-width: 12rem;
+    background-color: var(--widget-bg);
+    border: 1px solid var(--widget-border);
+    border-radius: 4px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    z-index: 1005;
+  }
+
+  :scope.ursa-menu-horizontal li:hover > ul {
+    display: block;
+  }
+
+  :scope.ursa-menu-horizontal li li {
+    position: relative;
+  }
+
+  :scope.ursa-menu-horizontal li li > a,
+  :scope.ursa-menu-horizontal li li > span {
+    padding: 0.5rem 1rem;
+  }
+
+  :scope.ursa-menu-horizontal li li > a:hover {
+    background-color: color-mix(in srgb, var(--text-color) 10%, transparent);
+  }
+
+  :scope.ursa-menu-horizontal li li.ursa-menu-current > a {
+    font-weight: 600;
+  }
+
+  /* third level and deeper fly out to the side */
+  :scope.ursa-menu-horizontal li li > ul {
+    top: 0;
+    left: 100%;
+  }
+
+  /* --- vertical: stacked, nested levels indented --- */
+  :scope.ursa-menu-vertical a,
+  :scope.ursa-menu-vertical span {
+    padding: 0.25rem 0.7rem;
+    border-left: 2px solid transparent;
+    white-space: normal;
+  }
+
+  :scope.ursa-menu-vertical a:hover {
+    background-color: color-mix(in srgb, var(--text-color) 8%, transparent);
+  }
+
+  :scope.ursa-menu-vertical li.ursa-menu-current > a {
+    font-weight: 600;
+    border-left-color: var(--text-color);
+  }
+
+  :scope.ursa-menu-vertical li.ursa-menu-active > a {
+    font-weight: 600;
+  }
+
+  :scope.ursa-menu-vertical li > ul {
+    margin-left: 0.7rem;
+    border-left: 1px solid var(--widget-border);
+  }
+}
+
 
 /* --------------------------------------------------------------------------
    Document content.  Layered *and* scoped: layered so site CSS always wins,

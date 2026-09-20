@@ -509,6 +509,117 @@ describe("json-only", () => {
   });
 });
 
+describe("named menus: menu-<name>.md rendered where a page anchors it", () => {
+  const MENU = "---\nid: powers\n---\n- [Absorb](./absorb.md)\n- [Blast](./blast.md)\n";
+
+  it("renders the menu inline, marks the current page, and is not itself a page", async () => {
+    await write("character/powers/menu-powers.md", MENU);
+    await write("character/powers/absorb.md", "---\nclass: Witch\n---\n\n{menu:powers}\n\n# Absorb\n\nTouch.\n");
+    await write("character/powers/blast.md", "# Blast\n\n{menu:powers}\n\nBoom.\n");
+    const built = await coldBuild();
+    await built.close();
+
+    const absorb = await read("character/powers/absorb.html");
+    expect(absorb).toContain('<nav class="ursa-menu ursa-menu-horizontal" data-menu-id="powers"');
+    expect(absorb).toContain('<li class="ursa-menu-item ursa-menu-current"><a href="/character/powers/absorb.html" aria-current="page">Absorb</a>');
+    expect(absorb).toContain('<li class="ursa-menu-item"><a href="/character/powers/blast.html">Blast</a>');
+    expect(absorb).not.toContain("{menu:powers}");
+    // Anchored above the heading: the menu stays above the title
+    expect(absorb.indexOf('data-menu-id="powers"')).toBeLessThan(absorb.indexOf("<h1>Absorb</h1>"));
+
+    const blast = await read("character/powers/blast.html");
+    expect(blast).toContain('ursa-menu-current"><a href="/character/powers/blast.html"');
+    expect(blast.indexOf("<h1>Blast</h1>")).toBeLessThan(blast.indexOf('data-menu-id="powers"'));
+
+    // The menu file is navigation, not a document
+    expect(existsSync(join(output, "character/powers/menu-powers.html"))).toBe(false);
+    expect(await read("public/menu-data.json")).not.toContain("menu-powers");
+    expect(await read("character/powers.html")).not.toContain("menu-powers");
+    expect(existsSync(join(output, "public/custom-menu-character-powers.json"))).toBe(false);
+  });
+
+  it("editing the menu rewrites exactly the pages that anchor it", async () => {
+    await write("character/powers/menu-powers.md", MENU);
+    await write("character/powers/absorb.md", "---\nclass: Witch\n---\n\n{menu:powers}\n\n# Absorb\n\nTouch.\n");
+    const built = await coldBuild();
+
+    await write("character/powers/menu-powers.md", MENU + "- [Rules](../../rules/)\n");
+    let r = await built.pass();
+    expect(r.wrote).toEqual([
+      "character/powers/absorb.html",
+      "character/powers/absorb.json",
+      "character/powers/absorb.xml",
+    ]);
+    expect(await read("character/powers/absorb.html")).toContain(">Rules</a>");
+
+    // A vertical appearance is a menu change too
+    await write("character/powers/menu-powers.md", "---\nid: powers\nappearance: vertical\n---\n- [Absorb](./absorb.md)\n");
+    r = await built.pass();
+    expect(r.wrote).toContain("character/powers/absorb.html");
+    expect(r.wrote).not.toContain("character/powers/blast.html");
+    expect(await read("character/powers/absorb.html")).toContain("ursa-menu-vertical");
+
+    await built.close();
+    await expectConverged();
+  });
+
+  it("a missing menu degrades to a comment and a warning; creating it fills the anchor", async () => {
+    await write("character/powers/blast.md", "# Blast\n\n{menu:powers}\n\nBoom.\n");
+    const warnings = [];
+    const realWarn = console.warn;
+    console.warn = (m) => warnings.push(String(m));
+    const built = await build({ clean: true });
+    try {
+      await built.pass();
+    } finally {
+      console.warn = realWarn;
+    }
+    let blast = await read("character/powers/blast.html");
+    expect(blast).toContain('<!-- ursa: menu "powers" not found -->');
+    expect(blast).not.toContain("{menu:powers}");
+    expect(blast).toContain("<p>Boom.</p>");
+    expect(warnings.some((w) => w.includes('no menu with id "powers"'))).toBe(true);
+
+    // The menu file appears one level up: the page picks it up without being edited
+    await write("character/menu-powers.md", "---\nid: powers\n---\n- [Blast](./powers/blast.md)\n");
+    const r = await built.pass();
+    expect(r.wrote).toContain("character/powers/blast.html");
+    blast = await read("character/powers/blast.html");
+    expect(blast).toContain('data-menu-id="powers"');
+    expect(blast).toContain('ursa-menu-current"><a href="/character/powers/blast.html"');
+
+    // Deleting it puts the comment back
+    await unlink(join(source, "character/menu-powers.md"));
+    await built.pass();
+    expect(await read("character/powers/blast.html")).toContain('<!-- ursa: menu "powers" not found -->');
+    await built.close();
+    await expectConverged();
+  });
+
+  it("a menu.md with an id is a named menu, not the folder's nav", async () => {
+    await write("character/menu.md", "---\nid: sidebar\nappearance: vertical\n---\n- [Absorb](./powers/absorb.md)\n");
+    await write("character/powers/blast.md", "# Blast\n\nBoom.\n\n{menu:sidebar}\n");
+    const built = await coldBuild();
+    await built.close();
+    const blast = await read("character/powers/blast.html");
+    expect(blast).not.toContain("data-custom-menu=");
+    expect(blast).toContain('data-menu-id="sidebar"');
+    expect(existsSync(join(output, "public/custom-menu-character.json"))).toBe(false);
+  });
+
+  it("the anchor works in MDX", async () => {
+    await write("character/powers/menu-powers.md", MENU);
+    await write("character/powers/absorb.mdx", "---\nclass: Witch\n---\n\n{menu:powers}\n\n# Absorb\n\nTouch.\n");
+    await unlink(join(source, "character/powers/absorb.md"));
+    const built = await coldBuild();
+    await built.close();
+    const absorb = await read("character/powers/absorb.html");
+    expect(absorb).toContain('data-menu-id="powers"');
+    expect(absorb).toContain('ursa-menu-current"><a href="/character/powers/absorb.html"');
+    expect(absorb).not.toContain("data-ursa-menu");
+  });
+});
+
 describe("determinism", () => {
   it("two clean builds of the same tree are byte-identical modulo build metadata", async () => {
     const built = await coldBuild();

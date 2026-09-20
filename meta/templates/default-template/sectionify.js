@@ -7,10 +7,23 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentSection = document.createElement('section');
     currentSection.classList.add('sectionOuter');
 
+    // The page header stays outside any section: the breadcrumbs, and any
+    // named menu (`{menu:…}`) anchored above the first heading. A menu placed
+    // further down is part of its section like any other content.
+    const preamble = [];
+    let inPreamble = true;
+
     for (let i = 0; i < children.length; i++) {
         const el = children[i];
-        // Skip breadcrumb nav — it stays outside sections
-        if (el.classList && el.classList.contains('breadcrumbs')) continue;
+        if (el.classList && el.classList.contains('breadcrumbs')) {
+            preamble.push(el);
+            continue;
+        }
+        if (inPreamble && el.classList && el.classList.contains('ursa-menu')) {
+            preamble.push(el);
+            continue;
+        }
+        inPreamble = false;
         if (el.tagName === 'H1' && currentSection.childNodes.length > 0) {
             sections.push(currentSection);
             currentSection = document.createElement('section');
@@ -22,18 +35,13 @@ document.addEventListener('DOMContentLoaded', () => {
         sections.push(currentSection);
     }
 
-    // Preserve breadcrumb nav before clearing
-    const breadcrumbs = article.querySelector('.breadcrumbs');
-
     // Remove all existing children
     while (article.firstChild) {
         article.removeChild(article.firstChild);
     }
 
-    // Re-insert breadcrumbs at the top, outside any section
-    if (breadcrumbs) {
-        article.appendChild(breadcrumbs);
-    }
+    // Re-insert the header at the top, outside any section
+    preamble.forEach(el => article.appendChild(el));
 
     // Append new sections
     sections.forEach(section => article.appendChild(section));

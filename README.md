@@ -404,6 +404,78 @@ useEffect(() => {
 
 `contentChanged(root)` dispatches `ursa:content-changed` on `document` with the changed element in `event.detail.root` (the article, if omitted). Sticky headings and the table of contents re-read the article on it; calls within the same task are coalesced into one event. A site's own scripts can listen for the same event.
 
+## Menus
+
+The site's navigation is generated from the folder tree. A folder can replace
+it with its own menu by holding a `menu.md` (or `menu.txt`, `_menu.md`,
+`_menu.txt`); that menu applies to the folder and everything below it, until a
+deeper folder holds a menu of its own.
+
+```markdown
+---
+auto-generate-menu: true   # start from the folder tree…
+menu-position: top         # top (default) or side
+menu-depth: 3
+---
+
+- [Custom link](./somewhere.md)
+{menu}                     # …and put the generated items here
+- [Another](https://example.com)
+```
+
+Items are Markdown list links (`- [Label](./path.md)`, nested by indentation)
+or wikitext (`* [[path|Label]]`). Relative paths resolve from the menu file's
+folder.
+
+### Named menus
+
+A menu file whose frontmatter has an `id` is a **named menu**. It does not
+replace the folder's navigation; instead any document in that folder or below
+it places the menu in its body with an anchor on a line of its own:
+
+```markdown
+---
+id: classes
+appearance: horizontal     # horizontal (default) or vertical
+---
+
+- [Arcanist](./arcanist.md)
+- [Fighter](./fighter.md)
+- [Witch](./witch.mdx)
+```
+
+```markdown
+# Fighter
+
+{menu:classes}
+
+Fighters are…
+```
+
+- Name the file `menu.md` or `menu-<anything>.md` (`menu-classes.md`,
+  `menu-2.txt`); a folder can hold several. The `id` is required for
+  `menu-<anything>.md`; `menu.md` without one is the folder menu above.
+- The anchor renders as a static `<nav class="ursa-menu ursa-menu-<appearance>">`
+  exactly where it stands in the document, not as a fixed element. The item
+  whose link is the current page gets `ursa-menu-current` (its ancestors
+  `ursa-menu-active`), so a menu of sibling pages works as a category switcher.
+  `horizontal` is a strip of items with hover dropdowns for nested items;
+  `vertical` is a stacked, indented list.
+- The nearest file with that `id` wins, so a deeper folder can shadow a menu
+  defined above it. `auto-generate-menu` and `menu-depth` work as in `menu.md`.
+- A menu anchored above the first heading stays above the page title.
+- The anchor must be on its own line. It works in `.md`, `.txt` and `.mdx`.
+  An anchor inside a code span or code block is left as written.
+- Menu files are navigation, not documents: they are not rendered to pages,
+  listed in menus or indices, or searched.
+
+**Failure is quiet.** An anchor whose menu does not exist, or whose menu file
+cannot be parsed, is replaced by `<!-- ursa: menu "id" not found -->` and
+reported as a build warning naming the document. The page renders normally
+with nothing where the menu would have been, and the surrounding Markdown is
+untouched. Under `ursa serve`, creating the missing menu file fills the anchor
+without editing the page.
+
 ## Auto-Index Generation
 
 Ursa automatically generates index pages for folders that don't have one. You can also explicitly control auto-index generation in your index documents using frontmatter:

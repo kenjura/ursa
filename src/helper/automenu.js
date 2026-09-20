@@ -2,6 +2,7 @@ import { isHiddenOrSystemPath } from "./hiddenPaths.js";
 import { extname, basename, join, dirname } from "path";
 import { existsSync, readFileSync, readdirSync, isIgnoredDirEntry } from "./build/tracedFs.js";
 import { getFolderConfig, isFolderHidden, getRootConfig } from "./folderConfig.js";
+import { isMenuFile } from "./customMenu.js";
 import {
   INDEX_EXTENSIONS,
   toDisplayName,
@@ -200,8 +201,8 @@ function buildMenuData(tree, source, validPaths, parentPath = '', includeDebug =
     const relativePath = item.path.replace(source, '');
     const folderPath = parentPath ? `${parentPath}/${baseName}` : baseName;
     
-    // Skip hidden files (config.json, style.css, etc.)
-    if (!hasChildren && hiddenFiles.includes(fileName)) {
+    // Skip hidden files (config.json, style.css, etc.) and menu files
+    if (!hasChildren && (hiddenFiles.includes(fileName) || isMenuFile(fileName))) {
       continue;
     }
     

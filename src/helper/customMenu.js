@@ -1,10 +1,29 @@
-// Custom menu support - allows defining custom menus in menu.md, menu.txt, _menu.md, or _menu.txt
+// Custom menu support - allows defining custom menus in menu.md, menu.txt, _menu.md, or _menu.txt.
+// Named menus (menu-<name>.md with an `id`) are handled by inlineMenu.js.
 import { existsSync, readFileSync, readdirSync, statSync } from "./build/tracedFs.js";
 import { join, dirname, relative, resolve, basename, extname } from "path";
 import { extractMetadata } from "./metadataExtractor.js";
 
 // Menu file names to look for (in order of priority)
 const MENU_FILE_NAMES = ['menu.md', 'menu.txt', '_menu.md', '_menu.txt'];
+
+/**
+ * Every menu file: the folder menu (`menu.md`, `_menu.md`, `.txt` variants)
+ * and the named menus (`menu-classes.md`, `menu-2.txt`, …) that inlineMenu.js
+ * renders where a document anchors them. None of these is a document.
+ */
+export const MENU_FILE_RE = /^_?menu(-[a-z0-9][a-z0-9_.-]*)?\.(md|txt)$/i;
+
+/** True when a basename names a menu file (folder menu or named menu). */
+export function isMenuFile(name) {
+  return MENU_FILE_RE.test(name);
+}
+
+/** True when a menu file's frontmatter makes it a named menu (rendered only by anchors). */
+export function isNamedMenuFrontmatter(frontmatter) {
+  const id = frontmatter?.id;
+  return id !== undefined && id !== null && String(id).trim() !== '';
+}
 
 // Token to mark where auto-generated menu should be inserted
 const MENU_TOKEN = '{menu}';
@@ -115,6 +134,7 @@ function folderHasDocuments(dirPath) {
         if (entry.name === 'img') continue;
         if (folderHasDocuments(fullPath)) return true;
       } else {
+        if (isMenuFile(entry.name)) continue;
         const ext = extname(entry.name);
         if (SOURCE_EXTENSIONS.includes(ext)) return true;
       }
@@ -236,8 +256,8 @@ export function autoGenerateMenuFromFolder(folderPath, sourceRoot, depth = 10, i
     for (const entry of entries) {
       // Skip hidden files/folders
       if (entry.name.startsWith('.') || entry.name.startsWith('_')) continue;
-      // Skip menu files themselves
-      if (MENU_FILE_NAMES.includes(entry.name)) continue;
+      // Skip menu files themselves (the folder menu and any named menus)
+      if (isMenuFile(entry.name)) continue;
       // Skip config files
       if (entry.name === 'config.json') continue;
       // Skip img folders
@@ -406,6 +426,9 @@ export function findCustomMenu(dirPath, sourceRoot) {
       if (existsSync(menuPath)) {
         try {
           const content = readFileSync(menuPath, 'utf8');
+          // A menu.md with an `id` is a named menu: it renders only where a
+          // document anchors it, and does not replace the folder's nav
+          if (isNamedMenuFrontmatter(extractMenuFrontmatter(content).frontmatter)) continue;
           return {
             path: menuPath,
             content,
