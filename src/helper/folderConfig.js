@@ -1,10 +1,7 @@
-import { existsSync, readFileSync } from 'fs';
+import { existsSync, readFileSync } from './build/tracedFs.js';
 import { join, dirname } from 'path';
 
 const CONFIG_FILENAME = 'config.json';
-
-// Cache for folder configs to avoid repeated file reads
-const configCache = new Map();
 
 /**
  * Folder configuration schema:
@@ -24,11 +21,12 @@ const configCache = new Map();
  */
 
 /**
- * Clear the config cache (useful between generation runs)
+ * Kept for callers that used to reset the per-run cache. There is no cache
+ * any more: every read goes to the (traced) filesystem so that the build
+ * graph records config.json as an input of whatever consulted it. A cached
+ * hit would record nothing, and a `hidden: true` flip would go unnoticed.
  */
-export function clearConfigCache() {
-  configCache.clear();
-}
+export function clearConfigCache() {}
 
 /**
  * Read and parse a folder's config.json if it exists (synchronous)
@@ -36,24 +34,15 @@ export function clearConfigCache() {
  * @returns {object|null} Parsed config object or null if not found
  */
 export function getFolderConfig(folderPath) {
-  // Check cache first
-  if (configCache.has(folderPath)) {
-    return configCache.get(folderPath);
-  }
-  
   const configPath = join(folderPath, CONFIG_FILENAME);
   try {
     if (existsSync(configPath)) {
       const content = readFileSync(configPath, 'utf8');
-      const config = JSON.parse(content);
-      configCache.set(folderPath, config);
-      return config;
+      return JSON.parse(content);
     }
   } catch (e) {
     console.warn(`Could not read folder config at ${configPath}:`, e.message);
   }
-  
-  configCache.set(folderPath, null);
   return null;
 }
 

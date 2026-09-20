@@ -1,6 +1,5 @@
 // Exclude/filter helpers for build
-import { existsSync } from "fs";
-import { readFile, stat } from "fs/promises";
+import { existsSync, readFile, stat } from "./tracedFs.js";
 
 /**
  * Parse exclude option - can be comma-separated paths or a file path

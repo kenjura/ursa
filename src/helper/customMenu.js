@@ -1,5 +1,5 @@
 // Custom menu support - allows defining custom menus in menu.md, menu.txt, _menu.md, or _menu.txt
-import { existsSync, readFileSync, readdirSync, statSync } from "fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "./build/tracedFs.js";
 import { join, dirname, relative, resolve, basename, extname } from "path";
 import { extractMetadata } from "./metadataExtractor.js";
 

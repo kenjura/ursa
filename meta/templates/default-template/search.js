@@ -33,6 +33,17 @@ class GlobalSearch {
     // Start loading the indices immediately (but don't block)
     this.loadSearchIndex();
     this.loadFullTextIndex();
+
+    // `ursa serve` says the indices changed: refetch them in place
+    document.addEventListener('ursa:data-updated', (e) => {
+      if (!(e.detail?.what || []).includes('search')) return;
+      window.SEARCH_INDEX = null;
+      window.FULLTEXT_INDEX = null;
+      this.indexLoaded = false;
+      this.fullTextLoaded = false;
+      this.loadSearchIndex();
+      this.loadFullTextIndex();
+    });
   }
   
   wrapSearchInput() {

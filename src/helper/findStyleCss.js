@@ -1,5 +1,5 @@
 import { join, dirname, resolve } from "path";
-import { existsSync } from "fs";
+import { existsSync } from "./build/tracedFs.js";
 
 /**
  * Recursively search for style.css or _style.css up the directory tree.

@@ -1,7 +1,59 @@
 # `ursa serve`: change detection and regeneration
 
-**Status:** specification (Part I) and gap analysis against v0.92.0 (Part II).
-**Written:** 2026-09-03.
+**Status:** implemented in 0.97.0 (Part I); Part II is the gap analysis
+against v0.92.0 that motivated it, kept as history. The decisions Part II §C
+leaves open were taken as the spec proposes, except where noted below.
+**Written:** 2026-09-03. **Implemented:** 2026-09-20.
+
+Implementation notes (0.97.0):
+
+- The engine is `src/helper/build/graph.js`; the node catalogue is
+  `src/helper/build/site.js`; the pass is `src/helper/build/pass.js`, run by
+  both `generate` and `serve`. The precedence list of §8.2 is
+  `src/helper/build/precedence.js`.
+- Recorded inputs are exact without threading a context through every
+  helper: helpers that touch the disk import their `fs` calls from
+  `src/helper/build/tracedFs.js`, which reports each read, probe and listing to
+  the node currently computing (via `AsyncLocalStorage`). Label lookups the
+  menu, breadcrumbs and auto-indices make are answered from `docMeta`
+  projections pre-loaded into the recorder, so a body edit does not reach them.
+- §4.1: leaf ids are stored relative to the docroot (`$S/…`) and meta (`$M/…`),
+  so the persisted graph survives the tree moving. Directory fingerprints hash
+  the sorted `(name, kind)` list minus dot-files and editor scratch names.
+- §4.2: `linkResolution(href)` and `outputOwner(path)` read `validPaths` /
+  `documentSet` rather than per-candidate lookups; early cutoff gives the same
+  observable behaviour with far fewer leaves. `dirIndexJson`, `dirListingHtml`
+  and `customMenu` read a per-folder projection `dirSet(dir)` for the same
+  reason. `docJson`/`docXml` are one node, `docData`. `fullTextIndex` merges
+  per-document `docWords` nodes. `cssChain`/`jsChain` are folded into
+  `cssBundle`/`jsBundle`.
+- §4.4: the meta bundle's `fetch('/public/x.json')` calls are not versioned by
+  the JSON's content hash — that would rewrite the bundle, and so every page,
+  whenever the menu changed. They carry the page's `data-build` (the session's
+  build id) at runtime instead; `serve` sends `Cache-Control: no-store`.
+- §5.6: orphans found while a pass is running are deleted at the end of the
+  pass, skipping any path that is owned again, case-insensitively (the
+  `Foo.md` → `foo.md` case); orphans of removed nodes are deleted before the
+  pass writes.
+- §7: the footer's build metadata is excluded from the `footer` node's
+  fingerprint, so a `generate` run rewrites nothing just to stamp a new build
+  id into unchanged pages. `expectConverged` in
+  `src/helper/build/__test__/pass.test.js` is the §10 comparison.
+- §6.1: "affects you" is decided from the dirty set (an upper bound, as
+  specified); "reload" is decided by comparing the bytes of the viewed output
+  before and after, so a page whose owner moved (auto-index taking over a
+  deleted `index.md`) or that was deleted reloads to the truth. A 404 page
+  carries the reload script too, so a tab parked on a URL loads the page when
+  it appears.
+- Part II §C.7 (`dev` mode) is still open: `dev.js` now reads the shared
+  precedence list but is otherwise unchanged.
+- §C.10/§C.11: yes — `generate` deletes outputs whose source is gone or hidden.
+  Only files a node recorded as owned are ever deleted; files ursa never wrote
+  are left alone.
+- The listing pages (`<dir>.html`) now emit root-absolute links and fill
+  `${customScript}`; the auto-index no longer lists a folder's listing page
+  beside the folder itself.
+
 **Supersedes** the design sections of `docs/changes/serve-logic.md` and all of
 `docs/1.0/REGENERATION.md`. The root-cause history in `serve-logic.md` is still
 accurate and worth reading; its architecture section is folded into this document.

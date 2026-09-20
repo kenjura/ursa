@@ -7,9 +7,9 @@
  * resolution rules here is what makes `menu-label: 'BNW - Brave New World'`
  * show up in both places instead of only in the sidebar.
  */
-import { existsSync, readFileSync } from "fs";
+import { existsSync, readFileSync, currentRecorder } from "./build/tracedFs.js";
 import { basename, extname, join } from "path";
-import { extractMetadata } from "./metadataExtractor.js";
+import { extractMetadata, isMetadataOnly } from "./metadataExtractor.js";
 import { stripHtml } from "./stripHtml.js";
 
 // Index file extensions to check for folder metadata
@@ -30,6 +30,32 @@ export function toDisplayName(filename) {
 }
 
 /**
+ * A document's frontmatter and whether it is metadata-only, or null when the
+ * file does not exist.
+ *
+ * When a build-graph node is computing, it may have pre-loaded this from the
+ * document's `docMeta` node into the active recorder's `frontmatter` map. A
+ * hit there records nothing further — the edge to `docMeta` already exists,
+ * and it is a projection that a body edit leaves unchanged. That is what
+ * keeps a paragraph edit from reaching the menu, the auto-indices and every
+ * breadcrumb beneath the folder. A miss reads the file (and records it).
+ *
+ * @param {string} filePath - Path to the source file
+ * @returns {{meta: object|null, isMetadataOnly: boolean}|null}
+ */
+export function readFrontmatterInfo(filePath) {
+  const cached = currentRecorder()?.frontmatter?.get(filePath);
+  if (cached !== undefined) return cached;
+  try {
+    if (!existsSync(filePath)) return null;
+    const content = readFileSync(filePath, 'utf8');
+    return { meta: extractMetadata(content), isMetadataOnly: isMetadataOnly(content) };
+  } catch (e) {
+    return null;
+  }
+}
+
+/**
  * Read a single frontmatter key from a file, with HTML stripped.
  * @param {string} filePath - Path to the source file
  * @param {string} key - Frontmatter key to read
@@ -37,9 +63,8 @@ export function toDisplayName(filename) {
  */
 function getFrontmatterString(filePath, key) {
   try {
-    if (!existsSync(filePath)) return null;
-    const content = readFileSync(filePath, 'utf8');
-    const metadata = extractMetadata(content);
+    const info = readFrontmatterInfo(filePath);
+    const metadata = info?.meta;
     if (metadata && metadata[key]) {
       return stripHtml(String(metadata[key]));
     }

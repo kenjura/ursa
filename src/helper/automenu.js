@@ -1,9 +1,7 @@
-import dirTree from "directory-tree";
 import { isHiddenOrSystemPath } from "./hiddenPaths.js";
 import { extname, basename, join, dirname } from "path";
-import { existsSync, readFileSync } from "fs";
+import { existsSync, readFileSync, readdirSync, isIgnoredDirEntry } from "./build/tracedFs.js";
 import { getFolderConfig, isFolderHidden, getRootConfig } from "./folderConfig.js";
-import { isMetadataOnly } from "./metadataExtractor.js";
 import {
   INDEX_EXTENSIONS,
   toDisplayName,
@@ -11,6 +9,7 @@ import {
   getMenuSortAsFromFile,
   getFolderLabel,
   getFolderSortKey,
+  readFrontmatterInfo,
 } from "./menuLabels.js";
 
 // Icon extensions to check for custom icons
@@ -208,13 +207,8 @@ function buildMenuData(tree, source, validPaths, parentPath = '', includeDebug =
     
     // Skip metadata-only index files (they only provide folder metadata, not actual pages)
     if (!hasChildren && isIndexFile(baseName)) {
-      try {
-        const content = readFileSync(item.path, 'utf8');
-        if (isMetadataOnly(content)) {
-          continue; // Skip - this file doesn't produce a page
-        }
-      } catch (e) {
-        // If we can't read it, include it in the menu
+      if (readFrontmatterInfo(item.path)?.isMetadataOnly) {
+        continue; // Skip - this file doesn't produce a page
       }
     }
     
@@ -390,6 +384,37 @@ export function pruneHiddenNodes(node, source) {
   };
 }
 
+/**
+ * Build a directory tree in the shape `directory-tree` produced
+ * ({name, path, children?}), reading through the traced filesystem so the
+ * build graph records every listing the menu depends on. Entries are sorted
+ * by name; readdir order never reaches the menu.
+ * @param {string} dir - Absolute directory path
+ * @returns {object|null} Tree node, or null if `dir` cannot be listed
+ */
+function walkTree(dir) {
+  let entries;
+  try {
+    entries = readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return null;
+  }
+  const children = [];
+  for (const entry of [...entries].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))) {
+    // Never inputs (see tracedFs.isIgnoredDirEntry); skipping them here also
+    // keeps the walk out of a .git or node_modules sitting inside the docroot.
+    if (isIgnoredDirEntry(entry.name)) continue;
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      const child = walkTree(path);
+      if (child) children.push(child);
+    } else if (entry.isFile()) {
+      children.push({ name: entry.name, path });
+    }
+  }
+  return { name: basename(dir), path: dir, children };
+}
+
 export async function getAutomenu(source, validPaths) {
   /*
    * Walk first, prune second.
@@ -406,7 +431,7 @@ export async function getAutomenu(source, validPaths) {
    * discarded; docroots do not normally contain one, and correctness on every
    * ordinary path is worth more than speed on a pathological one.
    */
-  const fullTree = dirTree(source);
+  const fullTree = walkTree(source.replace(/\/$/, ''));
   if (!fullTree) {
     throw new Error(
       `Cannot read docroot for menu generation: ${source} (does it exist and is it a directory?)`

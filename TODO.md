@@ -9,10 +9,11 @@ Issues:
   - [x] Should invalidate any document affected by an add/edit/delete event on a static file (examples: images, directly referenced static files other than nearest style.css)
   - [x] Should invalidate the entire cache if ursa's version or hash changes, either in real time, or if the cache has a different version and/or hash from the current one that is running (0.92.0)
 
-The first four rules live in `DependencyTracker.getInvalidationPlan` /
-`getMetaInvalidationPlan`; the version rule is `enforceCacheVersion` in
-`src/helper/contentHash.js`, which stamps `.ursa/` and drops it wholesale on a
-mismatch.
+All five rules are consequences of the build graph (0.97.0, `docs/SERVE.md`):
+every output is a node that records the files, path probes and directory
+listings it consumed, and recomputes when one of them changes. The version rule
+is `enforceCacheVersion` in `src/helper/contentHash.js` plus the
+`const:ursa-version` leaf every persisted graph depends on.
 
 # 0.75.0 - navigation overhaul
 
@@ -71,7 +72,7 @@ For menu position 'top', the following is true:
   - When this top menu is present, the side menu (nav#nav-global) should be hidden. However, it can be restored by clicking the 'hamburger' menu button in the top left corner, which will toggle the visibility of the side menu. This is useful for backing out of the current custom-menu domain.
 
 ## QOL Improvements
-- [ ] In serve mode, whenever a document changes, all of its images will be checked and re-processed if necessary. This ensures that changes to images are reflected immediately without needing to restart the serve command.
+- [x] In serve mode, whenever a document changes, all of its images will be checked and re-processed if necessary. This ensures that changes to images are reflected immediately without needing to restart the serve command. (0.97.0: a page records every image it references, present or missing; the image's content hash is in the page's `?v=` tokens)
 
 ### Dev Mode ✅
 New command: `ursa dev`

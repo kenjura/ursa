@@ -1,18 +1,23 @@
 // Footer generation helpers for build
-import { existsSync } from "fs";
-import { readFile } from "fs/promises";
+import { existsSync, readFile } from "./tracedFs.js";
 import { dirname, join, resolve } from "path";
 import { URL } from "url";
 import { renderFile } from "../fileRenderer.js";
+import { execSync } from "child_process";
 
 /**
  * Generate footer HTML from footer.md and package.json
  * @param {string} source - resolved source path with trailing slash
  * @param {string} _source - original source path
  * @param {number} buildId - the current build ID
+ * @param {{now?: Date, gitHash?: string|null}} [session] - Build metadata fixed once per
+ *   serve session (or generate run): the timestamp shown in the footer and the
+ *   doc repo's short commit hash. Supplying them keeps the footer a pure
+ *   function of its inputs for the length of the session; when omitted they are
+ *   taken now.
  * @returns {Promise<string>} Footer HTML
  */
-export async function getFooter(source, _source, buildId) {
+export async function getFooter(source, _source, buildId, session = {}) {
   const footerParts = [];
   
   // Try to read footer.md from source root
@@ -40,7 +45,6 @@ export async function getFooter(source, _source, buildId) {
       if (existsSync(packagePath)) {
         const packageJson = await readFile(packagePath, 'utf8');
         docPackage = JSON.parse(packageJson);
-        console.log(`Found doc package.json at ${packagePath}`);
         break;
       }
     } catch (e) {
@@ -61,7 +65,6 @@ export async function getFooter(source, _source, buildId) {
       const ursaPackageJson = await readFile(ursaPackagePath, 'utf8');
       const ursaPackage = JSON.parse(ursaPackageJson);
       ursaVersion = ursaPackage.version;
-      console.log(`Found ursa package.json at ${ursaPackagePath}, version: ${ursaVersion}`);
     }
   } catch (e) {
     console.error(`Error reading ursa package.json: ${e.message}`);
@@ -75,7 +78,7 @@ export async function getFooter(source, _source, buildId) {
   metaParts.push(`build ${buildId}`);
   
   // Full date/time in a readable format
-  const now = new Date();
+  const now = session.now ?? new Date();
   const timestamp = now.toISOString().replace('T', ' ').replace(/\.\d{3}Z$/, ' UTC');
   metaParts.push(timestamp);
   
@@ -94,20 +97,30 @@ export async function getFooter(source, _source, buildId) {
     }
   }
   
-  // Try to get git short hash of doc repo (as HTML comment)
+  // Git short hash of the doc repo (as HTML comment)
+  const gitHash = session.gitHash !== undefined ? session.gitHash : readGitHash(_source);
+  if (gitHash) {
+    footerParts.push(`<!-- git: ${gitHash} -->`);
+  }
+  
+  return footerParts.join('\n');
+}
+
+/**
+ * The doc repo's short commit hash, or null outside a git work tree.
+ * @param {string} _source - Source directory
+ * @returns {string|null}
+ */
+export function readGitHash(_source) {
   try {
-    const { execSync } = await import('child_process');
     const gitHash = execSync('git rev-parse --short HEAD', {
       cwd: resolve(_source),
       encoding: 'utf8',
       stdio: ['pipe', 'pipe', 'pipe']
     }).trim();
-    if (gitHash) {
-      footerParts.push(`<!-- git: ${gitHash} -->`);
-    }
+    return gitHash || null;
   } catch (e) {
-    // Not a git repo or git not available - silently skip
+    // Not a git repo or git not available
+    return null;
   }
-  
-  return footerParts.join('\n');
 }

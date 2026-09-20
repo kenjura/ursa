@@ -13,8 +13,8 @@
 
 import * as esbuild from "esbuild";
 import { join, dirname, basename, relative, resolve } from "path";
-import { readFile, writeFile, mkdir } from "fs/promises";
-import { existsSync } from "fs";
+import { writeFile, mkdir } from "fs/promises";
+import { readFile, existsSync } from "./build/tracedFs.js";
 import { outputFile } from "fs-extra";
 
 // Cache for meta bundles so we don't rebuild them per-document
@@ -68,10 +68,13 @@ export function parseTemplateAssets(templateHtml) {
  * @param {string} templateHtml - Original template HTML
  * @param {string} templateName - Template name (used for bundle filename)
  * @param {{ cssFiles: string[], jsFiles: string[], cdnCss: string[], cdnJs: string[] }} assets - Parsed assets
+ * @param {{cssUrl?: string, jsUrl?: string}} [urls] - Bundle URLs to emit (default: /public/<name>.bundle.*)
  * @returns {string} Rewritten template HTML
  */
-export function rewriteTemplateWithBundles(templateHtml, templateName, assets) {
+export function rewriteTemplateWithBundles(templateHtml, templateName, assets, urls = {}) {
   let html = templateHtml;
+  const cssUrl = urls.cssUrl ?? `/public/${templateName}.bundle.css`;
+  const jsUrl = urls.jsUrl ?? `/public/${templateName}.bundle.js`;
 
   // Replace individual CSS <link> tags with a single bundle reference
   if (assets.cssFiles.length > 0) {
@@ -86,7 +89,7 @@ export function rewriteTemplateWithBundles(templateHtml, templateName, assets) {
       html = html.replace(pattern, "\n");
     }
     // Insert single bundle link where the first CSS link was (in <head>)
-    const bundleCssTag = `    <link rel="stylesheet" href="/public/${templateName}.bundle.css" />`;
+    const bundleCssTag = `    <link rel="stylesheet" href="${cssUrl}" />`;
     // Insert after the last CDN CSS or at the position of the first removed tag
     // Best heuristic: insert right before ${styleLink} or before </head>
     if (html.includes("${styleLink}")) {
@@ -107,7 +110,7 @@ export function rewriteTemplateWithBundles(templateHtml, templateName, assets) {
       html = html.replace(pattern, "\n");
     }
     // Insert single bundle script before ${customScript} or before </body>
-    const bundleJsTag = `    <script src="/public/${templateName}.bundle.js"></script>`;
+    const bundleJsTag = `    <script src="${jsUrl}"></script>`;
     if (html.includes("${customScript}")) {
       html = html.replace("${customScript}", bundleJsTag + "\n    ${customScript}");
     } else {
@@ -192,6 +195,19 @@ function rebaseCssUrls(css, cssFileDir, sourceDir) {
  */
 export async function bundleCss(filePaths, outputPath, { minify = true, rebaseUrls = false, sourceDir = "" } = {}) {
   if (filePaths.length === 0) return;
+  const code = await bundleCssContent(filePaths, { minify, rebaseUrls, sourceDir });
+  await mkdir(dirname(outputPath), { recursive: true });
+  await writeFile(outputPath, code);
+}
+
+/**
+ * Bundle CSS files and return the result instead of writing it.
+ * @param {string[]} filePaths - Absolute paths to CSS files to bundle
+ * @param {{ minify?: boolean, rebaseUrls?: boolean, sourceDir?: string }} options
+ * @returns {Promise<string>} Bundled (and, when possible, minified) CSS
+ */
+export async function bundleCssContent(filePaths, { minify = true, rebaseUrls = false, sourceDir = "" } = {}) {
+  if (filePaths.length === 0) return "";
 
   const allImports = [];
   const allRules = [];
@@ -224,17 +240,14 @@ export async function bundleCss(filePaths, outputPath, { minify = true, rebaseUr
         loader: "css",
         minify: true,
       });
-      await mkdir(dirname(outputPath), { recursive: true });
-      await writeFile(outputPath, result.code);
-      return;
+      return result.code;
     } catch (e) {
       console.warn(`⚠️  CSS minification failed, using unminified bundle: ${e.message}`);
     }
   }
 
-  // Fallback: write raw concatenated CSS
-  await mkdir(dirname(outputPath), { recursive: true });
-  await writeFile(outputPath, combined);
+  // Fallback: raw concatenated CSS
+  return combined;
 }
 
 /**
@@ -251,6 +264,22 @@ export async function bundleCss(filePaths, outputPath, { minify = true, rebaseUr
  */
 export async function bundleJs(filePaths, outputPath, { minify = true, minifySyntax = true } = {}) {
   if (filePaths.length === 0) return { success: false };
+  const { success, code } = await bundleJsContent(filePaths, { minify, minifySyntax });
+  if (!success) return { success: false };
+  await mkdir(dirname(outputPath), { recursive: true });
+  await writeFile(outputPath, code);
+  return { success: true };
+}
+
+/**
+ * Bundle JS files and return the result instead of writing it.
+ * @param {string[]} filePaths - Absolute paths to JS files to bundle
+ * @param {{ minify?: boolean, minifySyntax?: boolean }} options
+ * @returns {Promise<{ success: boolean, code: string }>} success is false when the
+ *   concatenation has a syntax error (callers keep individual tags)
+ */
+export async function bundleJsContent(filePaths, { minify = true, minifySyntax = true } = {}) {
+  if (filePaths.length === 0) return { success: false, code: "" };
 
   // Concatenate all JS files with separators
   const contents = [];
@@ -268,9 +297,7 @@ export async function bundleJs(filePaths, outputPath, { minify = true, minifySyn
         minify: true,
         minifySyntax,
       });
-      await mkdir(dirname(outputPath), { recursive: true });
-      await writeFile(outputPath, result.code);
-      return { success: true };
+      return { success: true, code: result.code };
     } catch (e) {
       // If minification fails (e.g., non-standard syntax), fall back to raw concatenation
       console.warn(`⚠️  JS minification failed, trying unminified bundle: ${e.message}`);
@@ -284,13 +311,60 @@ export async function bundleJs(filePaths, outputPath, { minify = true, minifySyn
     await esbuild.transform(combined, { loader: "js" });
   } catch (e) {
     console.warn(`⚠️  JS bundle has syntax errors, keeping individual script tags: ${e.message}`);
-    return { success: false };
+    return { success: false, code: "" };
   }
 
-  // Write raw concatenated code (syntax-valid but unminified)
-  await mkdir(dirname(outputPath), { recursive: true });
-  await writeFile(outputPath, combined);
-  return { success: true };
+  // Raw concatenated code (syntax-valid but unminified)
+  return { success: true, code: combined };
+}
+
+/**
+ * Where a template's `/public/<rel>` reference lives in the meta directory:
+ * the template's own folder first, then `meta/shared`, then (legacy) the meta
+ * root. Every probe is a recorded lookup, so moving an asset between the two
+ * folders is observed. Returns null when nothing exists.
+ */
+export function resolveMetaAssetPath(publicPath, templateDir, metaDir) {
+  const relativePath = publicPath.replace(/^\/public\//, "");
+  for (const candidate of [
+    resolve(templateDir, relativePath),
+    resolve(metaDir, "shared", relativePath),
+    resolve(metaDir, relativePath),
+  ]) {
+    if (existsSync(candidate)) return candidate;
+  }
+  return null;
+}
+
+/**
+ * Append `?v=<hash>` to every `url()` in a stylesheet whose target `lookup`
+ * knows. URLs with a query string, data: URIs, fragments and anything the
+ * lookup does not recognise are left alone. Cache-busting by content hash
+ * keeps an unchanged asset's URL stable, so pages are not rewritten for it.
+ * @param {string} css
+ * @param {(url: string) => string|null} lookup - site-absolute URL → content hash
+ */
+export function versionCssUrls(css, lookup) {
+  return css.replace(/url\(\s*(['"]?)(?!data:)([^'"\)]+?)\1\s*\)/gi, (match, quote, url) => {
+    if (url.includes("?") || url.startsWith("#")) return match;
+    const hash = lookup(url);
+    if (!hash) return match;
+    return `url(${quote}${url}?v=${hash}${quote})`;
+  });
+}
+
+/**
+ * Rewrite literal `fetch('/public/x.json')` calls in template JavaScript so
+ * the request carries the page's build id: `data-build` on <body>, set once
+ * per serve session and once per generate run. The bundle itself stays a pure
+ * function of the meta files — baking a JSON file's content hash into it
+ * would rewrite the bundle, and so every page, whenever the menu changed.
+ */
+export function rewriteJsonFetches(js) {
+  return js.replace(
+    /fetch\((['"])([^'"\)]+\.json)\1(?!\s*\+)/g,
+    (m, q, url) => `fetch(${q}${url}?v=${q}+(document.body&&document.body.dataset.build||'')`
+  );
 }
 
 /**

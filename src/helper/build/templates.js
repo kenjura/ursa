@@ -1,7 +1,6 @@
 // Template helpers for build
-import { readFile, readdir } from "fs/promises";
+import { readFile, readdir, existsSync } from "./tracedFs.js";
 import { join, basename } from "path";
-import { existsSync } from "fs";
 
 /**
  * Get all templates from meta directory

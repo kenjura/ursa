@@ -53,10 +53,21 @@ Generate a static site once and exit.
 
 #### `ursa serve <source>`
 Start a development server that:
-- Generates the site initially
-- Starts an HTTP server to serve the output directory
-- Watches source and meta directories for changes
-- Automatically regenerates the site when files change
+- Starts an HTTP server over the output directory, then builds the site
+- Watches the source and meta directories for changes — every file, no
+  extension allow-list — and keeps the output continuously equal to what a
+  build from the current source would produce: adds, deletes, renames, folder
+  renames, inherited `style.css`/`script.js`/`menu.md`/`config.json` files
+  appearing or disappearing, images and linked documents that come alive,
+  template and shared-asset edits
+- Rebuilds only the outputs whose inputs actually changed (see
+  [Incremental builds](#incremental-builds)), the page a connected browser is
+  looking at first, and tells that browser to reload the moment it is written
+- Tells other open tabs to refetch the menu, search indices and recent
+  activity in place when those change, instead of reloading them
+
+The same incremental pass runs under `generate`, so the two never disagree
+about the output; `docs/SERVE.md` is the specification.
 
 ### CLI Options
 
@@ -68,6 +79,40 @@ Start a development server that:
 - `--exclude, -e` - Folders to exclude: comma-separated paths relative to source, or path to file with one folder per line
 - `--clean` - Delete the `.ursa` cache folder and clear output directory, forcing full regeneration
 - `--json-only, -j` - Emit only the `.json` data files (generate command only)
+- `--explain` - Log, for every output that was rebuilt, the input that changed
+
+### Incremental builds
+
+Every build — `generate` and each `serve` pass alike — runs over a persisted
+build graph (`.ursa/graph.json`). Every output file is owned by exactly one
+node of the graph, and every file, path probe and directory listing a node
+consumed while producing it is recorded as an input. A pass re-checks the
+inputs that changed, recomputes only the nodes that consumed them, stops
+propagating where a recomputed value came out identical, writes only files
+whose bytes differ, and deletes the outputs of anything whose source is gone.
+
+Consequences:
+
+- `generate` after an edit rewrites the edited document's page and data, the
+  full-text index and recent activity — nothing else. A `menu-label` edit
+  rewrites the menu data and the listings that show the label. A root
+  `style.css` edit rewrites every page (the bundle's URL, which carries its
+  content hash, appears in every one of them). Run with `--explain` to see the
+  reason for each rewrite.
+- Deleting or renaming a source removes its outputs; hiding a folder with
+  `config.json` deletes the folder's outputs. `output/` no longer accumulates
+  ghosts, and `--clean` is corruption recovery, not a routine step.
+- Asset URLs carry `?v=<content hash>` rather than a build timestamp, so
+  identical inputs give identical output. The one exception is the footer's
+  build id and timestamp, which are fixed once per `serve` session or
+  `generate` run and are not an input of anything.
+- Starting `serve` (or running `generate`) against a tree that changed while
+  ursa was not running converges on the startup pass, without `--clean`.
+- Upgrading ursa discards the graph and rebuilds everything.
+
+Files that used to live in `.ursa/` (`content-hashes.json`, `nav-cache.json`,
+`dependency-graph.json`, `image-cache.json`, `fulltext-index.json`) are
+replaced by the graph.
 
 ### JSON-Only Builds
 
@@ -91,11 +136,10 @@ Everything skipped operates on the assembled *page*; the JSON's `bodyHtml` is
 the pre-template render, which none of those steps touch. That is why the output
 is identical rather than merely similar.
 
-Mixing modes against one source tree is safe. The two share the `.ursa` hash
-cache, but each asks only for the outputs its own mode emits, so a full build
-following a JSON-only build still writes the HTML it is missing. A JSON-only
-build does not write the dependency graph or seed the watch cache, so it cannot
-degrade a later `serve`.
+Mixing modes against one source tree is safe. The build mode is an input of
+the data nodes, so a full build following a JSON-only build writes the HTML and
+XML it is missing, and a JSON-only build after a full one leaves the rest of
+the output in place.
 
 ### Whitelist File Format
 
@@ -439,11 +483,23 @@ SOURCE folder should have at least an index.md in it.
 ## Link logic
 Links are allowed to be extensionless. Link resolution works as follows:
 - If link has an extension, look for exact match, and 404 if not found
+  (`.md`/`.mdx` links are rewritten to `.html` optimistically)
 - If link has no extension:
-  - Look for exact match with .md, .txt, .yml extensions (in that order)
-  - If not found, assume the path is a folder, and look for:
-    - index.md, index.txt, _index.md, _index.txt
-    - home.md, home.txt, _home.md, _home.txt
-    - (folder name).md, (folder name).txt
-  - If any of these are found, link to that file's html version
-  - If still not found, 404
+  - `/foo` names the document `foo.*` if there is one — the file wins over a
+    folder of the same name — and otherwise the folder's index, `foo/index.html`
+  - `/foo/` always names the folder's index
+- Every folder that holds documents has an index page. Which source produces
+  it is decided by one precedence list, highest first:
+  1. a hand-written `index.html`
+  2. `index.mdx`, `index.md`, `index.txt`, `index.yml`
+  3. `_index.*` in the same extension order
+  4. `home.*`, then `_home.*`
+  5. `<foldername>.*` (the file also renders to its own path)
+  6. the generated auto-index listing
+- The same list decides which of several sources for one output path is
+  rendered (`index.mdx` beside `index.md`: the `.mdx`; `foo.md` beside a
+  hand-written `foo.html`: the `.html`). The shadowed source is not rendered,
+  indexed or listed, and a warning names both files. Removing the winner
+  promotes the next candidate on the next build.
+- A frontmatter-only `index.md` supplies the folder's label; the auto-index is
+  still the page.

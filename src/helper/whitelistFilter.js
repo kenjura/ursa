@@ -1,6 +1,5 @@
-import { readFile } from 'fs/promises';
+import { readFile, existsSync } from './build/tracedFs.js';
 import { resolve, relative } from 'path';
-import { existsSync } from 'fs';
 
 /**
  * Creates a filter function based on a whitelist file

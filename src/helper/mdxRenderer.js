@@ -4,7 +4,7 @@ import React from "react";
 import { renderToString } from "react-dom/server";
 import * as esbuild from "esbuild";
 import { dirname, extname, join, resolve, sep } from "path";
-import { existsSync } from "fs";
+import { existsSync } from "./build/tracedFs.js";
 import { readFile, writeFile, mkdir } from "fs/promises";
 import remarkDirective from "remark-directive";
 import { remarkDefinitionList, defListHastHandlers } from "remark-definition-list";
@@ -245,11 +245,29 @@ function findComponentDirs(startDir, sourceRoot) {
  * @param {string} options.filePath - Absolute path to the MDX file (used for import resolution)
  * @param {string} [options.sourceRoot] - Root directory of the source files (for absolute imports)
  * @param {boolean} [options.hydrate=false] - If true, includes client bundle for hydration
- * @returns {Promise<{ html: string, frontmatter: Record<string, any>, clientCode?: string }>}
+ * @returns {Promise<{ html: string, frontmatter: Record<string, any>, clientCode?: string, inputs: string[] }>}
+ *   `inputs` is every file esbuild loaded while bundling (components, their
+ *   imports, anything under `_components`), excluding node_modules — the
+ *   document's real dependency set, so the build can re-render exactly the
+ *   pages that import an edited component.
  */
 export async function renderMDX({ source, filePath, sourceRoot, hydrate = false }) {
   const cwd = dirname(filePath);
   const componentDirs = findComponentDirs(cwd, sourceRoot);
+  const inputs = new Set();
+
+  /** Records every file esbuild loads; returns nothing so the real loaders still run. */
+  const inputRecorderPlugin = {
+    name: "ursa-input-recorder",
+    setup(build) {
+      build.onLoad({ filter: /.*/ }, (args) => {
+        if (args.namespace === "file" && !args.path.includes(`${sep}node_modules${sep}`)) {
+          inputs.add(args.path);
+        }
+        return undefined;
+      });
+    },
+  };
 
   /**
    * Create esbuild options for the given platform
@@ -277,7 +295,7 @@ export async function renderMDX({ source, filePath, sourceRoot, hydrate = false 
     }
 
     // Island plugin goes first so it sees component imports before mdx-bundler's resolvers
-    options.plugins = [islandPlugin(platform), ...(options.plugins || [])];
+    options.plugins = [inputRecorderPlugin, islandPlugin(platform), ...(options.plugins || [])];
 
     return options;
   };
@@ -331,7 +349,7 @@ export async function renderMDX({ source, filePath, sourceRoot, hydrate = false 
 
     // If hydration is not requested, return without client code
     if (!hydrate) {
-      return { html, frontmatter: frontmatter || {} };
+      return { html, frontmatter: frontmatter || {}, inputs: [...inputs].sort() };
     }
 
     // Client-side bundle (for hydration)
@@ -348,9 +366,13 @@ export async function renderMDX({ source, filePath, sourceRoot, hydrate = false 
       html, 
       frontmatter: frontmatter || {},
       clientCode: clientResult.code,
+      inputs: [...inputs].sort(),
     };
   } catch (error) {
-    throw formatMDXError(error, filePath);
+    const formatted = formatMDXError(error, filePath);
+    formatted.inputs = [...inputs].sort();
+    formatted.componentDirs = componentDirs;
+    throw formatted;
   }
 }
 

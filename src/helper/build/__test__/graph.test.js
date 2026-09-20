@@ -3,13 +3,17 @@ import { mkdtemp, writeFile, rm, unlink, readFile } from "fs/promises";
 import { tmpdir } from "os";
 import {
   BuildGraph,
+  GRAPH_SCHEMA_VERSION,
   GraphComputeError,
+  dirNodeId,
   fileNodeId,
   lookupNodeId,
   loadGraph,
   saveGraph,
   getGraphPath,
 } from "../graph.js";
+import * as tfs from "../tracedFs.js";
+import { mkdir } from "fs/promises";
 
 let tempDir;
 beforeEach(async () => {
@@ -353,7 +357,7 @@ describe("persistence", () => {
     await g1.build(["c"]);
     expect(await saveGraph(tempDir, g1)).toBe(true);
     const onDisk = JSON.parse(await readFile(getGraphPath(tempDir), "utf8"));
-    expect(onDisk.version).toBe(1);
+    expect(onDisk.version).toBe(GRAPH_SCHEMA_VERSION);
 
     const g2 = new BuildGraph();
     const counters2 = { b: 0, c: 0 };
@@ -458,7 +462,7 @@ describe("engine behavior", () => {
     });
     await graph.build(["parent"]);
 
-    graph.removeNode("dep");
+    await graph.removeNode("dep");
     const r = await graph.build(["parent"]);
     expect(r.results.get("parent")).toBe("alone");
   });
@@ -471,7 +475,7 @@ describe("engine behavior", () => {
     graph.node("pageB", (ctx) => ctx.read(p("b.txt")));
     await graph.build(["pageA", "pageB"]);
 
-    graph.gc(new Set(["pageA"]));
+    await graph.gc(new Set(["pageA"]));
     expect(graph.edges.has("pageB")).toBe(false);
     expect(graph.fingerprints.has("pageB")).toBe(false);
     expect(graph.fingerprints.has(fileNodeId(p("b.txt")))).toBe(false);
@@ -525,5 +529,257 @@ describe("engine behavior", () => {
     expect(stats.leaves).toBe(1);
     expect(stats.edges).toBe(1);
     expect(stats.failed).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Directory leaves
+// ---------------------------------------------------------------------------
+describe("directory leaves", () => {
+  it("adding, removing or renaming an entry changes the listing; editing content does not", async () => {
+    await mkdir(p("d"));
+    await writeFile(p("d/a.md"), "one");
+    const graph = new BuildGraph();
+    let count = 0;
+    graph.node("names", async (ctx) => {
+      count++;
+      return (await ctx.listDir(p("d"))).map((e) => e.name);
+    });
+    const r1 = await graph.build(["names"]);
+    expect(r1.results.get("names")).toEqual(["a.md"]);
+
+    // Content edit: the listing is unchanged
+    await writeFile(p("d/a.md"), "two");
+    graph.invalidatePath(p("d/a.md"));
+    await graph.build(["names"]);
+    expect(count).toBe(1);
+
+    // New entry
+    await writeFile(p("d/b.md"), "x");
+    graph.invalidatePath(p("d/b.md"));
+    const r2 = await graph.build(["names"]);
+    expect(r2.results.get("names")).toEqual(["a.md", "b.md"]);
+    expect(count).toBe(2);
+
+    // Scratch files are invisible
+    await writeFile(p("d/.b.md.swp"), "x");
+    await writeFile(p("d/4913"), "x");
+    graph.invalidatePath(p("d/4913"));
+    await graph.build(["names"]);
+    expect(count).toBe(2);
+  });
+
+  it("a missing directory lists as [] and its creation is observed", async () => {
+    const graph = new BuildGraph();
+    graph.node("names", async (ctx) => (await ctx.listDir(p("later"))).map((e) => e.name));
+    const r1 = await graph.build(["names"]);
+    expect(r1.results.get("names")).toEqual([]);
+    await mkdir(p("later"));
+    await writeFile(p("later/x.md"), "x");
+    graph.invalidateSubtree(p("later"));
+    const r2 = await graph.build(["names"]);
+    expect(r2.results.get("names")).toEqual(["x.md"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Traced fs: helpers that read the disk directly still record edges
+// ---------------------------------------------------------------------------
+describe("traced filesystem", () => {
+  it("records sync reads made by nested helpers as edges of the computing node", async () => {
+    await writeFile(p("cfg.json"), '{"label":"A"}');
+    const helper = () => (tfs.existsSync(p("cfg.json")) ? JSON.parse(tfs.readFileSync(p("cfg.json"), "utf8")).label : "none");
+    const graph = new BuildGraph();
+    let count = 0;
+    graph.node("label", async () => {
+      count++;
+      return helper();
+    });
+    const r1 = await graph.build(["label"]);
+    expect(r1.results.get("label")).toBe("A");
+    expect(graph.edges.get("label").has(fileNodeId(p("cfg.json")))).toBe(true);
+    expect(graph.edges.get("label").has(lookupNodeId(p("cfg.json")))).toBe(true);
+
+    await writeFile(p("cfg.json"), '{"label":"B"}');
+    graph.invalidatePath(p("cfg.json"));
+    const r2 = await graph.build(["label"]);
+    expect(r2.results.get("label")).toBe("B");
+    expect(count).toBe(2);
+
+    await unlink(p("cfg.json"));
+    graph.invalidatePath(p("cfg.json"));
+    const r3 = await graph.build(["label"]);
+    expect(r3.results.get("label")).toBe("none");
+  });
+
+  it("attributes concurrent computes to the right node", async () => {
+    await writeFile(p("x.txt"), "x");
+    await writeFile(p("y.txt"), "y");
+    const graph = new BuildGraph();
+    graph.node("x", async () => {
+      await new Promise((r) => setTimeout(r, 5));
+      return tfs.readFileSync(p("x.txt"), "utf8");
+    });
+    graph.node("y", async () => {
+      await new Promise((r) => setTimeout(r, 1));
+      return tfs.readFileSync(p("y.txt"), "utf8");
+    });
+    await graph.build(["x", "y"], { concurrency: 2 });
+    expect([...graph.edges.get("x").keys()]).toEqual([fileNodeId(p("x.txt"))]);
+    expect([...graph.edges.get("y").keys()]).toEqual([fileNodeId(p("y.txt"))]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Concurrency
+// ---------------------------------------------------------------------------
+describe("concurrent roots", () => {
+  it("computes a shared dependency once when two roots demand it at the same time", async () => {
+    await writeFile(p("a.txt"), "a");
+    const graph = new BuildGraph();
+    let shared = 0;
+    graph.node("shared", async (ctx) => {
+      shared++;
+      await new Promise((r) => setTimeout(r, 5));
+      return ctx.read(p("a.txt"));
+    });
+    graph.node("r1", async (ctx) => "1:" + (await ctx.get("shared")));
+    graph.node("r2", async (ctx) => "2:" + (await ctx.get("shared")));
+    const r = await graph.build(["r1", "r2"], { concurrency: 2 });
+    expect(r.ok).toBe(true);
+    expect(shared).toBe(1);
+  });
+
+  it("still detects a real cycle under concurrency", async () => {
+    const graph = new BuildGraph();
+    graph.node("a", (ctx) => ctx.get("b"));
+    graph.node("b", (ctx) => ctx.get("a"));
+    const r = await graph.build(["a"], { concurrency: 2 });
+    expect(r.ok).toBe(false);
+    expect(String(r.errors.get("a"))).toMatch(/cycle/i);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Ownership and orphan deletion
+// ---------------------------------------------------------------------------
+describe("output ownership", () => {
+  it("hands files a node stops owning to onOrphans, and all of them on removal", async () => {
+    await writeFile(p("a.txt"), "a");
+    const orphaned = [];
+    const graph = new BuildGraph({ onOrphans: (paths) => { orphaned.push(...paths); } });
+    let extra = true;
+    graph.node("out", async (ctx) => {
+      const v = await ctx.read(p("a.txt"));
+      ctx.own("/out/a.html");
+      if (extra) ctx.own("/out/a.xml");
+      return v;
+    });
+    await graph.build(["out"]);
+    expect(graph.ownerOfPath("/out/a.xml")).toBe("out");
+
+    extra = false;
+    await writeFile(p("a.txt"), "b");
+    graph.invalidatePath(p("a.txt"));
+    await graph.build(["out"]);
+    expect(orphaned).toEqual(["/out/a.xml"]);
+    expect(graph.ownerOfPath("/out/a.xml")).toBe(null);
+
+    await graph.removeNode("out");
+    expect(orphaned).toEqual(["/out/a.xml", "/out/a.html"]);
+  });
+
+  it("a path whose ownership moves to another node is not an orphan", async () => {
+    const orphaned = [];
+    const graph = new BuildGraph({ onOrphans: (paths) => { orphaned.push(...paths); } });
+    graph.node("first", async (ctx) => { ctx.own("/index.html"); return 1; });
+    graph.node("second", async (ctx) => { ctx.own("/index.html"); return 2; });
+    await graph.build(["first"]);
+    await graph.build(["second"]);
+    await graph.removeNode("first");
+    expect(orphaned).toEqual([]);
+    expect(graph.ownerOfPath("/index.html")).toBe("second");
+  });
+
+  it("persists ownership", async () => {
+    const g1 = new BuildGraph();
+    g1.node("n", async (ctx) => { ctx.own("/n.html"); return 1; });
+    await g1.build(["n"]);
+    const g2 = new BuildGraph();
+    expect(g2.load(g1.serialize())).toBe(true);
+    expect(g2.ownedBy("n")).toEqual(["/n.html"]);
+    expect(g2.ownerOfPath("/n.html")).toBe("n");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Node families, relocatable ids, dirty sets, explain
+// ---------------------------------------------------------------------------
+describe("families and roots", () => {
+  it("resolves node families on demand", async () => {
+    await writeFile(p("a.txt"), "A");
+    const graph = new BuildGraph();
+    graph.resolver((id) => {
+      if (id.startsWith("upper:")) {
+        const file = id.slice("upper:".length);
+        return { fn: async (ctx) => (await ctx.read(p(file))).toUpperCase() };
+      }
+      return null;
+    });
+    graph.node("page", async (ctx) => "<" + (await ctx.get("upper:a.txt")) + ">");
+    const r = await graph.build(["page"]);
+    expect(r.results.get("page")).toBe("<A>");
+    expect(graph.hasNode("upper:a.txt")).toBe(true);
+    expect(graph.hasNode("nope:x")).toBe(false);
+  });
+
+  it("stores leaf ids relative to a root and resolves them back", async () => {
+    await mkdir(p("src"));
+    await writeFile(p("src/a.txt"), "A");
+    const g1 = new BuildGraph();
+    g1.setRoots({ S: p("src") });
+    g1.node("n", (ctx) => ctx.read(p("src/a.txt")));
+    await g1.build(["n"]);
+    expect([...g1.edges.get("n").keys()]).toEqual([fileNodeId("$S/a.txt")]);
+
+    // Relocate: the same tree under another root still verifies clean
+    await mkdir(p("moved"));
+    await writeFile(p("moved/a.txt"), "A");
+    const g2 = new BuildGraph();
+    g2.setRoots({ S: p("moved") });
+    g2.node("n", (ctx) => ctx.read(p("moved/a.txt")));
+    expect(g2.load(g1.serialize())).toBe(true);
+    await g2.scanLeaves();
+    const r = await g2.build(["n"]);
+    expect(r.computed.size).toBe(0);
+  });
+
+  it("dependents() gives the transitive dirty set of changed leaves", async () => {
+    await writeFile(p("a.txt"), "a");
+    await writeFile(p("b.txt"), "b");
+    const graph = new BuildGraph();
+    graph.node("A", (ctx) => ctx.read(p("a.txt")));
+    graph.node("B", (ctx) => ctx.read(p("b.txt")));
+    graph.node("AB", async (ctx) => (await ctx.get("A")) + (await ctx.get("B")));
+    graph.node("A2", async (ctx) => (await ctx.get("A")) + "!");
+    await graph.build(["AB", "A2"]);
+    await writeFile(p("b.txt"), "bb");
+    graph.invalidatePath(p("b.txt"));
+    const changed = await graph.refreshStale();
+    expect(changed).toEqual([fileNodeId(p("b.txt"))]);
+    expect([...graph.dependents(changed)].sort()).toEqual(["AB", "B"]);
+  });
+
+  it("records why each node recomputed", async () => {
+    await writeFile(p("a.txt"), "a");
+    const graph = new BuildGraph();
+    graph.node("A", (ctx) => ctx.read(p("a.txt")));
+    graph.node("AA", async (ctx) => (await ctx.get("A")) + "!");
+    await graph.build(["AA"]);
+    await writeFile(p("a.txt"), "b");
+    graph.invalidatePath(p("a.txt"));
+    await graph.build(["AA"]);
+    expect(graph.reasons.get("A")).toBe(fileNodeId(p("a.txt")));
+    expect(graph.reasons.get("AA")).toBe("A");
   });
 });

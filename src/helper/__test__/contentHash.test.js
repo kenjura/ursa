@@ -2,12 +2,22 @@ import { join } from "path";
 import { mkdtemp, rm, mkdir, writeFile, readFile } from "fs/promises";
 import { existsSync } from "fs";
 import { tmpdir } from "os";
-import {
-  enforceCacheVersion,
-  getUrsaDir,
-  loadHashCache,
-  saveHashCache,
-} from "../contentHash.js";
+import { enforceCacheVersion, getUrsaDir } from "../contentHash.js";
+
+// The cache `.ursa/` holds is the build graph. These tests only need a file
+// that must survive a matching stamp and vanish on a mismatch.
+const CACHE_FILE = "graph.json";
+async function saveHashCache(dir, map) {
+  await mkdir(getUrsaDir(dir), { recursive: true });
+  await writeFile(join(getUrsaDir(dir), CACHE_FILE), JSON.stringify([...map]));
+}
+async function loadHashCache(dir) {
+  try {
+    return new Map(JSON.parse(await readFile(join(getUrsaDir(dir), CACHE_FILE), "utf8")));
+  } catch {
+    return new Map();
+  }
+}
 
 let sourceDir;
 beforeEach(async () => {

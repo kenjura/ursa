@@ -1,97 +1,70 @@
 import { extname, dirname, join, normalize, posix, basename } from "path";
 
 /**
- * Build a set of valid internal paths from the list of source files and directories.
- * Returns a Map where keys are normalized paths (with/without extension) and values
- * are the canonical resolved paths (always with .html extension).
- * @param {string[]} sourceFiles - Array of source file paths
- * @param {string} source - Source directory path
- * @param {string[]} [directories] - Optional array of directory paths (for auto-index support)
+ * Build the canonical-URL map used for link resolution: normalized (lowercased,
+ * extensionless or .html) paths → the `.html` output they name.
+ *
+ * Rules (docs/PATH_LOGIC.md, README "Link logic", docs/SERVE.md §8.3):
+ *  - `/foo` names `foo.html` when a document `foo.*` exists — the file wins over
+ *    a folder of the same name. With no such document it names the folder's
+ *    index, `foo/index.html`.
+ *  - `/foo/` and `/foo/index.html` name the folder's index page, which exists
+ *    (as a document, a promoted alternate or the auto-index) for every folder
+ *    that has documents somewhere beneath it.
+ *
+ * Which source owns an output is decided elsewhere (`outputOwner`); the map
+ * only says which output a URL means.
+ *
+ * @param {string[]} sourceFiles - Article source paths (absolute, or relative when `source` is "")
+ * @param {string} source - Source directory path (prefix stripped from every path)
+ * @param {string[]} [directories] - Directory paths in the same form
+ * @param {{dirsWithDocuments?: Set<string>}} [opts] - Relative dir paths (no leading slash)
+ *   that hold documents; when omitted every directory is assumed to.
  * @returns {Map<string, string>} Map of normalized paths to canonical resolved paths
  */
-export function buildValidPaths(sourceFiles, source, directories = []) {
+export function buildValidPaths(sourceFiles, source, directories = [], { dirsWithDocuments = null } = {}) {
   const validPaths = new Map();
-  
+
+  const toRelative = (path) => {
+    let rel = source ? path.replace(source, "") : path;
+    if (!rel.startsWith("/")) rel = "/" + rel;
+    try {
+      rel = decodeURIComponent(rel);
+    } catch (e) {
+      // Ignore decode errors
+    }
+    return rel;
+  };
+
+  // Documents: the direct mapping is authoritative
   for (const file of sourceFiles) {
-    // Get the path relative to source, without extension
     const ext = extname(file);
-    let relativePath = file.replace(source, "").replace(ext, "");
-    
-    // Normalize: ensure leading slash, lowercase for comparison
-    if (!relativePath.startsWith("/")) {
-      relativePath = "/" + relativePath;
-    }
-    
-    // Decode URI components for paths with special characters (spaces, etc.)
-    try {
-      relativePath = decodeURIComponent(relativePath);
-    } catch (e) {
-      // Ignore decode errors
-    }
-    
-    // The canonical resolved path (always .html)
+    const relativePath = toRelative(file.slice(0, file.length - ext.length));
     const resolvedPath = relativePath + ".html";
-    
-    // Add mappings: extensionless and with .html both resolve to the .html version
     validPaths.set(relativePath.toLowerCase(), resolvedPath);
     validPaths.set(resolvedPath.toLowerCase(), resolvedPath);
-    
-    // Also add /index.html variant for directory indexes
-    if (relativePath.endsWith("/index")) {
-      const dirPath = relativePath.replace(/\/index$/, "");
-      const dirResolvedPath = dirPath + "/index.html";
-      validPaths.set(dirPath.toLowerCase(), dirResolvedPath);
-      validPaths.set((dirPath + "/").toLowerCase(), dirResolvedPath);
-      validPaths.set(dirResolvedPath.toLowerCase(), dirResolvedPath);
-    }
-    
-    // Handle (foldername).md files - they get promoted to index.html by auto-index
-    // e.g., /foo/bar/bar.md becomes /foo/bar/index.html (bar.html promoted to index.html)
-    const fileName = basename(relativePath); // e.g., "bar" from "/foo/bar/bar"
-    const parentDir = dirname(relativePath); // e.g., "/foo/bar" from "/foo/bar/bar"
-    const parentDirName = basename(parentDir); // e.g., "bar" from "/foo/bar"
-    
-    if (fileName === parentDirName) {
-      // This file has same name as its parent folder - it will be promoted to index.html
-      const promotedPath = parentDir + "/index.html";
-      validPaths.set(parentDir.toLowerCase(), promotedPath);
-      validPaths.set((parentDir + "/").toLowerCase(), promotedPath);
-      validPaths.set(promotedPath.toLowerCase(), promotedPath);
-    }
   }
-  
-  // Add all directories as valid paths (they get auto-generated index.html)
+
+  // Folders
   for (const dir of directories) {
-    let relativePath = dir.replace(source, "");
-    
-    // Normalize: ensure leading slash
-    if (!relativePath.startsWith("/")) {
-      relativePath = "/" + relativePath;
+    let relativePath = toRelative(dir);
+    if (relativePath.endsWith("/")) relativePath = relativePath.slice(0, -1);
+    if (relativePath === "") continue; // the root is handled below
+    const key = relativePath.toLowerCase();
+    const hasDocs = !dirsWithDocuments || dirsWithDocuments.has(relativePath.replace(/^\//, ""));
+    if (hasDocs) {
+      const indexPath = relativePath + "/index.html";
+      // `/foo` → the folder index, unless a document foo.* already claimed it
+      if (!validPaths.has(key)) validPaths.set(key, indexPath);
+      validPaths.set(key + "/", indexPath);
+      validPaths.set(indexPath.toLowerCase(), indexPath);
     }
-    
-    // Remove trailing slash for consistency
-    if (relativePath.endsWith("/")) {
-      relativePath = relativePath.slice(0, -1);
-    }
-    
-    // Decode URI components
-    try {
-      relativePath = decodeURIComponent(relativePath);
-    } catch (e) {
-      // Ignore decode errors
-    }
-    
-    // All folders resolve to /folder/index.html
-    const resolvedPath = relativePath + "/index.html";
-    validPaths.set(relativePath.toLowerCase(), resolvedPath);
-    validPaths.set((relativePath + "/").toLowerCase(), resolvedPath);
-    validPaths.set(resolvedPath.toLowerCase(), resolvedPath);
   }
-  
+
   // Add root
   validPaths.set("/", "/index.html");
   validPaths.set("/index.html", "/index.html");
-  
+
   return validPaths;
 }
 
@@ -148,7 +121,7 @@ function resolveRelativePath(href, currentDocPath) {
  * @param {string} currentDocPath - The current document's URL path (for relative link resolution)
  * @returns {string} Normalized path
  */
-function normalizeHref(href, currentDocPath = null) {
+export function normalizeHref(href, currentDocPath = null) {
   // Remove hash fragments
   let normalized = href.split("#")[0];
   
@@ -189,6 +162,7 @@ function normalizeHref(href, currentDocPath = null) {
  */
 function resolveHref(href, validPaths, currentDocPath = null) {
   const debugTries = [];
+  const lookup = toLookup(validPaths);
   
   // Get hash fragment if present (to preserve it)
   const hashIndex = href.indexOf('#');
@@ -204,68 +178,84 @@ function resolveHref(href, validPaths, currentDocPath = null) {
     ? resolveRelativePath(hrefWithoutHash, currentDocPath)
     : hrefWithoutHash;
   
-  // Check if path exists in validPaths map - the value is the canonical resolved path
-  if (validPaths.has(normalized)) {
-    const canonicalPath = validPaths.get(normalized);
+  const canonicalPath = lookup(normalized);
+  if (canonicalPath) {
     debugTries.push(`${normalized} → ${canonicalPath} ✓`);
     return { resolvedHref: canonicalPath + hash, inactive: false, debug: debugTries.join(' | ') };
   }
-  
-  // Check if the href already has an extension
+
+  // A .md/.mdx link to a document that does not exist (yet) is still
+  // converted to .html optimistically: the target may be created later.
   const ext = extname(hrefWithoutHash);
+  if (ext && (ext.toLowerCase() === '.md' || ext.toLowerCase() === '.mdx')) {
+    const resolvedHtmlPath = absoluteHref.replace(/\.(md|mdx)$/i, '.html');
+    debugTries.push(`${normalized} (${ext} → .html optimistic) → ${resolvedHtmlPath}`);
+    return { resolvedHref: resolvedHtmlPath + hash, inactive: false, debug: debugTries.join(' | ') };
+  }
+
+  // Nothing owns it - mark as inactive, keep absolute href
+  debugTries.push(`${normalized} → ✗`);
+  return { resolvedHref: absoluteHref + hash, inactive: true, debug: debugTries.join(' | ') };
+}
+
+/**
+ * Resolve one normalized href (lowercased, absolute, no hash or query — see
+ * `normalizeHref`) to the canonical `.html` output it names, or null.
+ *
+ * This is the whole of link resolution's dependence on the site's path set,
+ * isolated so the build graph can hold one `linkResolution` node per distinct
+ * href: adding a document then rewrites only the pages whose links resolve
+ * differently, not every page.
+ *
+ * @param {string} normalized
+ * @param {Map<string, string>} validPaths
+ * @returns {string|null}
+ */
+export function resolveNormalizedHref(normalized, validPaths) {
+  if (validPaths.has(normalized)) return validPaths.get(normalized);
+
+  const ext = extname(normalized);
   if (ext) {
-    // Special handling for .md/.mdx links - always convert to .html
-    // This ensures links work even if the target file is created after serve starts
-    if (ext.toLowerCase() === '.md' || ext.toLowerCase() === '.mdx') {
-      // Remove source extension and convert to .html
+    if (ext === '.md' || ext === '.mdx') {
       const pathWithoutExt = normalized.slice(0, -ext.length);
       const htmlPath = pathWithoutExt + '.html';
-      
-      // Check if .html version exists in validPaths for canonical path
-      if (validPaths.has(htmlPath.toLowerCase())) {
-        const canonicalPath = validPaths.get(htmlPath.toLowerCase());
-        debugTries.push(`${normalized} (${ext} → .html) → ${canonicalPath} ✓`);
-        return { resolvedHref: canonicalPath + hash, inactive: false, debug: debugTries.join(' | ') };
-      }
-      // Also check without extension
-      if (validPaths.has(pathWithoutExt.toLowerCase())) {
-        const canonicalPath = validPaths.get(pathWithoutExt.toLowerCase());
-        debugTries.push(`${normalized} (${ext} → resolved) → ${canonicalPath} ✓`);
-        return { resolvedHref: canonicalPath + hash, inactive: false, debug: debugTries.join(' | ') };
-      }
-      // File doesn't exist yet, but still convert to .html optimistically
-      // (the target file may be created later during serve)
-      const resolvedHtmlPath = absoluteHref.replace(/\.(md|mdx)$/i, '.html');
-      debugTries.push(`${normalized} (${ext} → .html optimistic) → ${resolvedHtmlPath}`);
-      return { resolvedHref: resolvedHtmlPath + hash, inactive: false, debug: debugTries.join(' | ') };
+      if (validPaths.has(htmlPath)) return validPaths.get(htmlPath);
+      if (validPaths.has(pathWithoutExt)) return validPaths.get(pathWithoutExt);
     }
-    // Has extension but doesn't exist (or is not .md)
-    debugTries.push(`${normalized} → ✗`);
-    return { resolvedHref: absoluteHref + hash, inactive: true, debug: debugTries.join(' | ') };
+    return null;
   }
-  
-  // No extension - try .html first
+
+  // No extension - try .html first, then /index.html
   const htmlPath = normalized + '.html';
-  if (validPaths.has(htmlPath.toLowerCase())) {
-    const canonicalPath = validPaths.get(htmlPath.toLowerCase());
-    debugTries.push(`${htmlPath} → ${canonicalPath} ✓`);
-    return { resolvedHref: canonicalPath + hash, inactive: false, debug: debugTries.join(' | ') };
+  if (validPaths.has(htmlPath)) return validPaths.get(htmlPath);
+  const indexPath = normalized.endsWith('/') ? normalized + 'index.html' : normalized + '/index.html';
+  if (validPaths.has(indexPath)) return validPaths.get(indexPath);
+  return null;
+}
+
+/** Accept either a validPaths Map or a `(normalized) => canonical|null` function. */
+function toLookup(validPathsOrResolver) {
+  if (typeof validPathsOrResolver === 'function') return validPathsOrResolver;
+  return (normalized) => resolveNormalizedHref(normalized, validPathsOrResolver);
+}
+
+/**
+ * Every internal link target in the HTML, normalized the way resolution sees
+ * it. Lets a page ask the build graph for each target before rewriting.
+ * @param {string} html
+ * @param {string} currentDocPath - The current document's URL path
+ * @returns {string[]} Distinct normalized hrefs
+ */
+export function collectInternalHrefs(html, currentDocPath = '/') {
+  const out = new Set();
+  const re = /<a\s+[^>]*?href=["']([^"']+)["'][^>]*>/gi;
+  let m;
+  while ((m = re.exec(html)) !== null) {
+    const href = m[1];
+    if (!isInternalLink(href)) continue;
+    out.add(normalizeHref(href.split('#')[0], currentDocPath));
   }
-  debugTries.push(`${htmlPath} → ✗`);
-  
-  // Try /index.html
-  const indexPath = normalized.endsWith('/') 
-    ? normalized + 'index.html' 
-    : normalized + '/index.html';
-  if (validPaths.has(indexPath.toLowerCase())) {
-    const canonicalPath = validPaths.get(indexPath.toLowerCase());
-    debugTries.push(`${indexPath} → ${canonicalPath} ✓`);
-    return { resolvedHref: canonicalPath + hash, inactive: false, debug: debugTries.join(' | ') };
-  }
-  debugTries.push(`${indexPath} → ✗`);
-  
-  // Neither exists - mark as inactive, keep absolute href
-  return { resolvedHref: absoluteHref + hash, inactive: true, debug: debugTries.join(' | ') };
+  return [...out];
 }
 
 /**
@@ -276,7 +266,8 @@ function resolveHref(href, validPaths, currentDocPath = null) {
  * 3. Marks broken links with the "inactive" class
  * 
  * @param {string} html - The HTML content
- * @param {Map<string, string>} validPaths - Map of normalized paths to canonical resolved paths
+ * @param {Map<string, string>|((normalized: string) => string|null)} validPaths - Map of
+ *   normalized paths to canonical resolved paths, or a resolver over normalized hrefs
  * @param {string} currentDocPath - The current document's URL path (e.g., "/character/index.html")
  * @param {boolean} includeDebug - Whether to include debug info in link text
  * @returns {string} Processed HTML with resolved links and inactive class on broken links

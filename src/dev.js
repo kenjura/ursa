@@ -39,6 +39,7 @@ import { getTemplates, getMenu, findAllCustomMenus, getCustomMenuForFile, getTra
 import { findCustomMenu, extractMenuFrontmatter, parseCustomMenu, combineAutoAndManualMenu } from "./helper/customMenu.js";
 import { getAndIncrementBuildId } from "./helper/ursaConfig.js";
 import { resolvePort } from "./helper/portUtils.js";
+import { candidatesForOutput } from "./helper/build/precedence.js";
 import { findAllStyleCss } from "./helper/findStyleCss.js";
 import { bundleMetaTemplateAssets, generateSeparateCssTags, generateSeparateJsTags, clearMetaBundleCache } from "./helper/assetBundler.js";
 
@@ -213,30 +214,19 @@ async function resolveSourceFile(urlPath) {
   
   // Remove leading slash for joining
   const relativePath = cleanPath.startsWith('/') ? cleanPath.slice(1) : cleanPath;
-  
-  // Try different file extensions and patterns
+
+  // The one precedence list (helper/build/precedence.js): a document named
+  // like the URL, then the folder's index candidates — index, _index, home,
+  // _home, the folder's own name — .mdx before .md before .txt before .yml.
   const candidates = [
-    { path: join(source, relativePath + '.md'), type: '.md' },
-    { path: join(source, relativePath + '.mdx'), type: '.mdx' },
-    { path: join(source, relativePath + '.txt'), type: '.txt' },
-    { path: join(source, relativePath, 'index.md'), type: '.md' },
-    { path: join(source, relativePath, 'index.mdx'), type: '.mdx' },
-    { path: join(source, relativePath, 'index.txt'), type: '.txt' },
-  ];
-  
-  // Also try folder-named file (e.g., /foo/bar -> /foo/bar/bar.md)
-  const folderName = basename(relativePath);
-  if (folderName) {
-    candidates.push(
-      { path: join(source, relativePath, folderName + '.md'), type: '.md' },
-      { path: join(source, relativePath, folderName + '.mdx'), type: '.mdx' },
-      { path: join(source, relativePath, folderName + '.txt'), type: '.txt' }
-    );
-  }
-  
-  for (const candidate of candidates) {
-    if (existsSync(candidate.path)) {
-      return { sourcePath: candidate.path, type: candidate.type };
+    ...candidatesForOutput(relativePath + '.html'),
+    ...candidatesForOutput(join(relativePath, 'index.html')),
+  ].filter((c) => typeof c === 'string' && !c.endsWith('.html'));
+
+  for (const rel of candidates) {
+    const path = join(source, rel);
+    if (existsSync(path)) {
+      return { sourcePath: path, type: extname(rel) };
     }
   }
   

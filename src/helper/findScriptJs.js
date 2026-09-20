@@ -1,5 +1,5 @@
 import { join, dirname, resolve } from "path";
-import { existsSync } from "fs";
+import { existsSync } from "./build/tracedFs.js";
 
 /**
  * Recursively search for script.js or _script.js up the directory tree.

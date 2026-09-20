@@ -84,6 +84,15 @@ document.addEventListener('DOMContentLoaded', () => {
     // Start loading menu data immediately
     loadMenuData();
 
+    // `ursa serve` says the menu data changed (a document was added or
+    // renamed somewhere): refetch and re-render in place rather than reload.
+    document.addEventListener('ursa:data-updated', (e) => {
+        if (!(e.detail?.what || []).includes('menu')) return;
+        menuDataLoaded = false;
+        menuDataLoading = false;
+        loadMenuData();
+    });
+
     /**
      * Find item by path string
      */
@@ -557,7 +566,7 @@ function initTopMenu() {
     const menuUrl = customMenuPath || '/public/menu-data.json';
     
     // Load menu data and render both top menu and mobile menu
-    fetch(menuUrl)
+    const loadTopMenu = () => fetch(menuUrl)
         .then(response => response.json())
         .then(data => {
             const menuData = data.menuData || data;
@@ -567,6 +576,12 @@ function initTopMenu() {
         .catch(error => {
             console.error('Failed to load top menu data:', error);
         });
+    loadTopMenu();
+
+    // `ursa serve` says the menu data changed: refetch and re-render in place
+    document.addEventListener('ursa:data-updated', (e) => {
+        if ((e.detail?.what || []).includes('menu')) loadTopMenu();
+    });
     
     // Set up home button (desktop) / hamburger (mobile)
     setupMenuButton(menuButton, navMain);
@@ -715,6 +730,8 @@ function isCurrentTopMenuPage(href) {
  * Render the top navigation menu
  */
 function renderTopMenu(container, menuData) {
+    // Re-rendered in place when the menu data changes under `ursa serve`
+    container.innerHTML = '';
     const ul = document.createElement('ul');
     ul.className = 'top-menu-level';
     

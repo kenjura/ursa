@@ -113,49 +113,61 @@ function extractWords(text) {
  * @returns {Object} - Inverted index: { word: [{ path, score }] }
  */
 export function buildFullTextIndex(documents) {
+  return mergeWordCounts(
+    documents
+      .filter((doc) => doc.content || doc.title)
+      .map((doc) => ({ path: doc.path, counts: documentWordCounts(doc) }))
+  );
+}
+
+/**
+ * Word → weighted count for one document: title words weigh 10, content
+ * words 1. This is the per-document half of the index, so the build graph can
+ * cache it per document and re-tokenize only what was edited.
+ * @param {{title: string, content: string}} doc
+ * @returns {Record<string, number>}
+ */
+export function documentWordCounts(doc) {
+  const wordCounts = {};
+  for (const word of extractWords(doc.title)) {
+    wordCounts[word] = (wordCounts[word] || 0) + 10;
+  }
+  for (const word of extractWords(doc.content)) {
+    wordCounts[word] = (wordCounts[word] || 0) + 1;
+  }
+  return wordCounts;
+}
+
+/**
+ * Merge per-document word counts into the inverted index.
+ * Deterministic: ties in score are broken by path, so the index is a pure
+ * function of its inputs regardless of the order documents arrive in.
+ * @param {Array<{path: string, counts: Record<string, number>}>} docs
+ * @returns {Object} - Inverted index: { word: [{ p: path, s: score }] }
+ */
+export function mergeWordCounts(docs) {
   const index = {};
-  
-  for (const doc of documents) {
-    if (!doc.content && !doc.title) continue;
-    
-    // Extract words from title (higher weight) and content
-    const titleWords = extractWords(doc.title);
-    const contentWords = extractWords(doc.content);
-    
-    // Count word frequencies in this document
-    const wordCounts = {};
-    
-    // Title words get weight of 10
-    for (const word of titleWords) {
-      wordCounts[word] = (wordCounts[word] || 0) + 10;
-    }
-    
-    // Content words get weight of 1
-    for (const word of contentWords) {
-      wordCounts[word] = (wordCounts[word] || 0) + 1;
-    }
-    
-    // Add to inverted index
-    for (const [word, count] of Object.entries(wordCounts)) {
+  for (const { path, counts } of docs) {
+    for (const [word, count] of Object.entries(counts)) {
       if (!index[word]) {
         index[word] = [];
       }
       index[word].push({
-        p: doc.path, // path (shortened key for smaller JSON)
-        s: count,    // score (shortened key)
+        p: path,  // path (shortened key for smaller JSON)
+        s: count, // score (shortened key)
       });
     }
   }
-  
-  // Sort each word's document list by score (descending)
+
+  // Sort each word's document list by score (descending), then path
   for (const word of Object.keys(index)) {
-    index[word].sort((a, b) => b.s - a.s);
+    index[word].sort((a, b) => b.s - a.s || (a.p < b.p ? -1 : a.p > b.p ? 1 : 0));
     // Limit to top 100 documents per word to keep index size reasonable
     if (index[word].length > 100) {
       index[word] = index[word].slice(0, 100);
     }
   }
-  
+
   return index;
 }
 

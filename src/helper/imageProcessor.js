@@ -123,6 +123,51 @@ async function isImageSmallEnough(sourcePath) {
 }
 
 /**
+ * Whether ursa handles this extension as an image at all.
+ */
+export function isImageExtension(ext) {
+  const e = ext.toLowerCase();
+  return PROCESSABLE_EXTENSIONS.includes(e) || COPY_ONLY_EXTENSIONS.includes(e);
+}
+
+/**
+ * Decide whether an image gets a WebP preview, without rendering one.
+ * SVG/ICO and unknown formats never do; neither does an image already within
+ * the preview bounds, nor anything when sharp is unavailable. Cheap: reads the
+ * header only. This is what a page needs to know to write its markup; the
+ * expensive encode (`renderPreview`) can then run after the page is served.
+ * @param {string} sourcePath - Absolute path to the image
+ * @returns {Promise<boolean>}
+ */
+export async function willHavePreview(sourcePath) {
+  const ext = extname(sourcePath).toLowerCase();
+  if (!PROCESSABLE_EXTENSIONS.includes(ext)) return false;
+  if (!(await ensureSharp())) return false;
+  return !(await isImageSmallEnough(sourcePath));
+}
+
+/**
+ * Encode the WebP preview of an image and return it.
+ * @param {string} sourcePath - Absolute path to the image
+ * @returns {Promise<Buffer|null>} The WebP bytes, or null when no preview can be made
+ */
+export async function renderPreview(sourcePath) {
+  if (!(await ensureSharp())) return null;
+  try {
+    return await sharp(sourcePath)
+      .resize(PREVIEW_MAX_WIDTH, PREVIEW_MAX_HEIGHT, {
+        fit: 'inside',
+        withoutEnlargement: true, // Don't upscale small images
+      })
+      .webp({ quality: PREVIEW_QUALITY })
+      .toBuffer();
+  } catch (e) {
+    console.warn(`⚠️  Failed to generate preview for ${basename(sourcePath)}: ${e.message}`);
+    return null;
+  }
+}
+
+/**
  * Generate preview filename from original filename
  * e.g., "photo.jpg" -> "photo.preview.webp"
  * @param {string} filename - Original filename (just the name, not path)

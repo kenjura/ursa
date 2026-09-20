@@ -2,7 +2,7 @@
   "name": "@kenjura/ursa",
   "author": "Andrew London <andrew@kenjura.com>",
   "type": "module",
-  "version": "0.96.0",
+  "version": "0.97.0",
   "description": "static site generator from MD/wikitext/YML",
   "main": "lib/index.js",
   "bin": {
@@ -25,7 +25,6 @@
   },
   "dependencies": {
     "compression": "^1.7.4",
-    "directory-tree": "^3.3.2",
     "esbuild": "^0.27.3",
     "express": "^4.18.2",
     "fs-extra": "^10.1.0",

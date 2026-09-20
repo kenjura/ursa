@@ -68,20 +68,21 @@ export async function renderFileAsync({ fileContents, type, dirname, basename, f
   }
 
   // MDX uses mdx-bundler + React SSR (always async, no worker support)
-  // Falls back to markdown rendering if MDX compilation fails
+  // Falls back to markdown rendering if MDX compilation fails.
+  // Always returns the object form: { html, hydrationScript, inputs, failed }.
+  // `inputs` lists the module files the bundle loaded; `failed` is set when the
+  // fallback rendered, so callers know the dependency list is incomplete.
   if (type === ".mdx") {
     try {
       const result = await renderMDX({ source: fileContents, filePath, sourceRoot, hydrate });
       
-      // If hydration was requested and we have client code, return object with hydration script
-      if (hydrate && result.clientCode) {
-        return {
-          html: result.html,
-          hydrationScript: generateHydrationScript(result.clientCode),
-        };
-      }
-      
-      return result.html;
+      // If hydration was requested and we have client code, include the hydration script
+      return {
+        html: result.html,
+        hydrationScript: hydrate && result.clientCode ? generateHydrationScript(result.clientCode) : '',
+        inputs: result.inputs ?? [],
+        failed: false,
+      };
     } catch (mdxError) {
       // Extract a concise error description for the warning banner
       const errorMsg = mdxError.message || String(mdxError);
@@ -101,7 +102,14 @@ export async function renderFileAsync({ fileContents, type, dirname, basename, f
         + `<strong>⚠️ MDX compilation error</strong> — this page was rendered as Markdown (custom components like &lt;CharacterCard&gt; will not appear).<br>`
         + `<code style="font-size:0.8rem;word-break:break-all;">${errorDetail.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</code>`
         + `</div>`;
-      return warningBanner + markdownHtml;
+      return {
+        html: warningBanner + markdownHtml,
+        hydrationScript: '',
+        inputs: mdxError.inputs ?? [],
+        componentDirs: mdxError.componentDirs ?? [],
+        failed: true,
+        error: errorDetail,
+      };
     }
   }
   

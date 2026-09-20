@@ -60,6 +60,11 @@ yargs(hideBin(process.argv))
           describe: 'Emit only the .json data files — no HTML, XML, images, static assets, search indices or menu data',
           type: 'boolean',
           default: false
+        })
+        .option('explain', {
+          describe: 'Log, for every output that was rebuilt, the input that changed',
+          type: 'boolean',
+          default: false
         });
     },
     async (argv) => {
@@ -71,6 +76,7 @@ yargs(hideBin(process.argv))
       const clean = argv.clean;
       const promoteChangelog = argv['promote-changelog'] || null;
       const jsonOnly = argv['json-only'];
+      const explain = argv.explain;
 
       console.log(`Generating site from ${source} to ${output} using meta from ${meta}`);
       if (whitelist) {
@@ -96,7 +102,8 @@ yargs(hideBin(process.argv))
           _whitelist: whitelist,
           _exclude: exclude,
           _clean: clean,
-          _jsonOnly: jsonOnly
+          _jsonOnly: jsonOnly,
+          _explain: explain
         });
         console.log('Site generation completed successfully!');
       } catch (error) {
@@ -158,6 +165,11 @@ yargs(hideBin(process.argv))
         .option('promote-changelog', {
           describe: 'Path to a markdown file to render at the output root (sibling of index.html)',
           type: 'string'
+        })
+        .option('explain', {
+          describe: 'Log, for every output that was rebuilt, the input that changed',
+          type: 'boolean',
+          default: false
         });
     },
     async (argv) => {
@@ -194,6 +206,7 @@ yargs(hideBin(process.argv))
           _whitelist: whitelist,
           _exclude: exclude,
           _clean: clean,
+          _explain: argv.explain,
           strictPort: argv['strict-port']
         });
       } catch (error) {

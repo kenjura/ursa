@@ -141,6 +141,10 @@ class WidgetManager {
     
     // Initialize recent activity widget
     this.initRecentActivityWidget();
+    // `ursa serve` says recent activity changed: refetch in place
+    document.addEventListener('ursa:data-updated', (e) => {
+      if ((e.detail?.what || []).includes('recent-activity')) this.initRecentActivityWidget();
+    });
     
     // Track current page view and initialize suggested content widget
     this.trackPageView();
