@@ -234,6 +234,7 @@ sits in:
 | `label` | string | Name to show for this folder in menus and indices |
 | `icon` | string | URL of an icon to show beside it in the menu |
 | `openMenuItems` | string[] | Root `config.json` only: folders to expand by default |
+| `inject-menu` | object or object[] | Put a named menu on every document in this folder and below; see [Injected menus](#injected-menus) |
 
 ### Large Workloads
 
@@ -466,6 +467,12 @@ Fighters are…
 - A menu anchored above the first heading stays above the page title.
 - The anchor must be on its own line. It works in `.md`, `.txt` and `.mdx`.
   An anchor inside a code span or code block is left as written.
+- Anything in the menu file that is not a list item — a label before the
+  list, a note after it — is rendered as Markdown inside the menu, in order.
+  Its relative links and images are resolved against the menu file's own
+  folder, since the menu is shown on pages elsewhere. (With
+  `auto-generate-menu` the body is a template around `{menu}` and only its
+  items count, as in `menu.md`.)
 - Menu files are navigation, not documents: they are not rendered to pages,
   listed in menus or indices, or searched.
 
@@ -475,6 +482,31 @@ reported as a build warning naming the document. The page renders normally
 with nothing where the menu would have been, and the surrounding Markdown is
 untouched. Under `ursa serve`, creating the missing menu file fills the anchor
 without editing the page.
+
+### Injected menus
+
+To put a named menu on every document in a folder and its subfolders without
+anchoring it in each one, name it in the folder's `config.json`:
+
+```json
+{ "inject-menu": { "id": "classes", "position": "top" } }
+```
+
+- `id` is the menu's frontmatter `id`, resolved from each document's folder
+  exactly as an anchor is (nearest file up the tree with that id). `position`
+  is `top` (default) or `bottom`. An array injects several:
+  `[{ "id": "classes" }, { "id": "footer-links", "position": "bottom" }]`.
+- A menu injected at the top goes above the page title, like an anchor on the
+  first line; one at the bottom goes after the last content. A document that
+  already anchors the same id is left alone — it is not given the menu twice.
+- A deeper folder's `config.json` with its own `inject-menu` **replaces** the
+  injection for its subtree. To add to it instead, include `{ "inherit": true }`
+  among the entries: `[{ "inherit": true }, { "id": "subsection" }]` keeps
+  the ancestors' menus and adds this one after them. A folder without the
+  key changes nothing.
+- A menu that cannot be resolved from a document's folder gets the same quiet
+  treatment as an anchor: an HTML comment and a warning naming the document.
+- Editing a `config.json` re-renders exactly the documents beneath it.
 
 ## Auto-Index Generation
 

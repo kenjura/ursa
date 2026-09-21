@@ -10,6 +10,10 @@ import {
   renderInlineMenuHtml,
   menuNotFoundComment,
   leadingMenusEnd,
+  parseInjectMenu,
+  mergeInjectMenus,
+  splitMenuBody,
+  rebaseMenuHtml,
 } from "../inlineMenu.js";
 import { isMenuFile, findCustomMenu } from "../customMenu.js";
 
@@ -138,5 +142,84 @@ describe("findNamedMenu / findCustomMenu", () => {
   it("a menu.md with an id is not the folder's nav menu", () => {
     const info = findCustomMenu(join(root, "a/b"), root);
     expect(info.menuDir).toBe(root);
+  });
+});
+
+describe("config.json inject-menu", () => {
+  it("accepts one object or an array, defaults position to top, reports bad entries", () => {
+    expect(parseInjectMenu({ id: "classes" })).toEqual({ entries: [{ id: "classes", position: "top" }], inherit: false, problems: [] });
+    expect(parseInjectMenu([{ id: "a", position: "bottom" }, { id: "b", position: "TOP" }]).entries).toEqual([
+      { id: "a", position: "bottom" },
+      { id: "b", position: "top" },
+    ]);
+    const bad = parseInjectMenu([{ id: "a", position: "left" }, { position: "top" }, "x"]);
+    expect(bad.entries).toEqual([{ id: "a", position: "top" }]);
+    expect(bad.problems).toHaveLength(3);
+    expect(parseInjectMenu(undefined).entries).toEqual([]);
+  });
+
+  it("recognises the inherit marker, alone or beside entries", () => {
+    expect(parseInjectMenu({ inherit: true })).toEqual({ entries: [], inherit: true, problems: [] });
+    const p = parseInjectMenu([{ inherit: true }, { id: "sub", position: "bottom" }]);
+    expect(p.inherit).toBe(true);
+    expect(p.entries).toEqual([{ id: "sub", position: "bottom" }]);
+  });
+
+  it("merges down the folder chain: replace by default, extend with inherit, pass through when unset", () => {
+    const root = parseInjectMenu({ id: "site", position: "top" });
+    const mid = parseInjectMenu([{ inherit: true }, { id: "section", position: "bottom" }]);
+    const leaf = parseInjectMenu({ id: "leaf" });
+    expect(mergeInjectMenus([root])).toEqual([{ id: "site", position: "top" }]);
+    expect(mergeInjectMenus([root, null])).toEqual([{ id: "site", position: "top" }]);
+    expect(mergeInjectMenus([root, mid])).toEqual([{ id: "site", position: "top" }, { id: "section", position: "bottom" }]);
+    expect(mergeInjectMenus([root, mid, leaf])).toEqual([{ id: "leaf", position: "top" }]);
+    expect(mergeInjectMenus([root, mid, null, parseInjectMenu({ inherit: true })])).toEqual([
+      { id: "site", position: "top" },
+      { id: "section", position: "bottom" },
+    ]);
+    // same id and position inherited and restated: once
+    expect(mergeInjectMenus([root, parseInjectMenu([{ inherit: true }, { id: "site" }])])).toEqual([{ id: "site", position: "top" }]);
+    expect(mergeInjectMenus([])).toEqual([]);
+  });
+});
+
+describe("menu bodies with prose", () => {
+  it("splits item lists from the text around them, in order", () => {
+    const body = "Feat Categories:\n* [Ancestry](./ancestry/index.md)\n* [Class](./class/index.md)\n\nBlargo\n\n[foo](#)\n\n*bar* _baz_\n- [Last](./last.md)\n";
+    expect(splitMenuBody(body)).toEqual([
+      { kind: "text", text: "Feat Categories:" },
+      { kind: "items", text: "* [Ancestry](./ancestry/index.md)\n* [Class](./class/index.md)" },
+      { kind: "text", text: "Blargo\n\n[foo](#)\n\n*bar* _baz_" },
+      { kind: "items", text: "- [Last](./last.md)" },
+    ]);
+    // nested items and blank lines inside a list stay with the list
+    expect(splitMenuBody("- [A](a.md)\n  - [B](b.md)\n\n- [C](c.md)\n")).toEqual([
+      { kind: "items", text: "- [A](a.md)\n  - [B](b.md)\n\n- [C](c.md)" },
+    ]);
+    expect(splitMenuBody("\n\n")).toEqual([]);
+  });
+
+  it("rebases a menu's relative links and images to the menu file's folder", () => {
+    const html = '<p><a href="./x.md">x</a> <a href="../y/index.md#top">y</a> <a href="/abs.html">a</a> <a href="https://e.com">e</a> <a href="#h">h</a> <img src="img/pic.png?v=1"></p>';
+    expect(rebaseMenuHtml(html, "/character/feats")).toBe(
+      '<p><a href="/character/feats/x.html">x</a> <a href="/character/y/index.html#top">y</a> <a href="/abs.html">a</a> <a href="https://e.com">e</a> <a href="#h">h</a> <img src="/character/feats/img/pic.png?v=1"></p>'
+    );
+  });
+
+  it("renders text segments inside the nav, in order with the lists", () => {
+    const html = renderInlineMenuHtml(
+      [
+        { kind: "text", html: "<p>Feat Categories:</p>" },
+        { kind: "items", items: [{ label: "Class", href: "/character/feats/class/index.html", children: [] }] },
+        { kind: "text", html: "<p>Blargo</p>" },
+      ],
+      { id: "feats", currentUrl: "/character/feats/class/" }
+    );
+    expect(html).toBe(
+      '<nav class="ursa-menu ursa-menu-horizontal" data-menu-id="feats" aria-label="feats">' +
+      '<div class="ursa-menu-text"><p>Feat Categories:</p></div>' +
+      '<ul class="ursa-menu-level" data-depth="0"><li class="ursa-menu-item ursa-menu-current"><a href="/character/feats/class/index.html" aria-current="page">Class</a></li></ul>' +
+      '<div class="ursa-menu-text"><p>Blargo</p></div></nav>'
+    );
   });
 });

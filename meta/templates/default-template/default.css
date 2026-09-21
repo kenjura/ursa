@@ -1503,12 +1503,33 @@
     text-decoration: none;
   }
 
-  /* --- horizontal: a strip, children in hover dropdowns --- */
+  /* Prose from the menu file (a label before the list, a note after it) */
+  .ursa-menu-text {
+    margin: 0;
+  }
+
+  .ursa-menu-text p {
+    margin: 0;
+  }
+
+  /* --- horizontal: a strip, children in hover dropdowns; any prose sits
+     in the same row, so "Categories:" reads as a label for the strip --- */
+  :scope.ursa-menu-horizontal {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.25rem 0.75rem;
+  }
+
   :scope.ursa-menu-horizontal > ul {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: 0.25rem;
+  }
+
+  :scope.ursa-menu-vertical .ursa-menu-text {
+    padding: 0.25rem 0.7rem;
   }
 
   :scope.ursa-menu-horizontal > ul > li {

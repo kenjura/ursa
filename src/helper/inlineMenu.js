@@ -1,6 +1,6 @@
 /**
  * Named menus: `menu-<name>.md` files rendered inline where a document asks
- * for them.
+ * for them, or where a folder's config.json injects them.
  *
  * `menu.md` defines a folder's navigation menu and replaces the site's nav for
  * the folder and everything below it. A menu file whose frontmatter carries an
@@ -14,6 +14,11 @@
  * as a horizontal strip (the default) or a vertical list (`appearance:
  * vertical`). The item whose href is the current page is marked.
  *
+ * A folder can also ask for a menu on every document beneath it without an
+ * anchor in each one: `"inject-menu": {"id": "classes", "position": "top"}`
+ * in its config.json (see parseInjectMenu / mergeInjectMenus below). The
+ * menu resolves by id from the document's folder exactly as an anchor does.
+ *
  * Failure is quiet by design: an anchor whose menu is not found, or whose menu
  * file cannot be parsed, is replaced by an HTML comment and reported as a
  * build warning. The page still renders, with nothing visible where the menu
@@ -21,7 +26,7 @@
  */
 
 import { readdirSync, readFileSync } from "./build/tracedFs.js";
-import { join, dirname, resolve, basename } from "path";
+import { join, dirname, resolve, basename, posix } from "path";
 import { extractMenuFrontmatter, isMenuFile } from "./customMenu.js";
 
 /** An anchor: `{menu:<id>}`. Ids are letters, digits, `_`, `-` and `.`. */
@@ -181,6 +186,130 @@ export function resolveMenuAnchors(html, render) {
   });
 }
 
+// ---------------------------------------------------------------------------
+// Injected menus: config.json `inject-menu`
+// ---------------------------------------------------------------------------
+
+export const INJECT_POSITIONS = ["top", "bottom"];
+
+/**
+ * Normalise a folder's `inject-menu` value: one object or an array of them,
+ * each `{id, position}` or the `{inherit: true}` marker.
+ *
+ * @param {unknown} value - The raw `inject-menu` value from config.json
+ * @returns {{entries: {id: string, position: string}[], inherit: boolean, problems: string[]}}
+ */
+export function parseInjectMenu(value) {
+  const out = { entries: [], inherit: false, problems: [] };
+  if (value === undefined || value === null) return out;
+  const list = Array.isArray(value) ? value : [value];
+  for (const item of list) {
+    if (!item || typeof item !== "object") {
+      out.problems.push(`entry ${JSON.stringify(item)} is not an object`);
+      continue;
+    }
+    if (item.inherit === true) {
+      out.inherit = true;
+      if (item.id === undefined) continue;
+    }
+    const id = item.id === undefined || item.id === null ? "" : String(item.id).trim();
+    if (!id) {
+      out.problems.push(`entry ${JSON.stringify(item)} has no id`);
+      continue;
+    }
+    let position = item.position === undefined ? "top" : String(item.position).trim().toLowerCase();
+    if (!INJECT_POSITIONS.includes(position)) {
+      out.problems.push(`"${id}": position "${item.position}" is not top or bottom; using top`);
+      position = "top";
+    }
+    out.entries.push({ id, position });
+  }
+  return out;
+}
+
+/**
+ * The menus a folder injects, from the chain of parsed `inject-menu` values
+ * on the way down from the docroot (`levels[0]` is the root, the last is the
+ * folder itself; a level with no `inject-menu` is null).
+ *
+ * A level that sets `inject-menu` replaces what was inherited unless one of
+ * its entries is `{inherit: true}`, in which case the ancestors' menus come
+ * first and the level's own are added after them. A level without the key
+ * changes nothing. The same id at the same position is injected once.
+ *
+ * @param {(ReturnType<typeof parseInjectMenu>|null)[]} levels
+ * @returns {{id: string, position: string}[]}
+ */
+export function mergeInjectMenus(levels) {
+  let effective = [];
+  for (const level of levels) {
+    if (!level) continue;
+    const base = level.inherit ? effective : [];
+    const merged = [...base];
+    for (const entry of level.entries) {
+      if (!merged.some((e) => e.id === entry.id && e.position === entry.position)) merged.push(entry);
+    }
+    effective = merged;
+  }
+  return effective;
+}
+
+// ---------------------------------------------------------------------------
+// Menu file bodies: item lists and the prose between them
+// ---------------------------------------------------------------------------
+
+/** A line the menu parser treats as an item: `- [..](..)`, `* [..](..)`, `* [[..]]`. */
+const ITEM_LINE_RE = /^\s*(?:-\s*\[[^\]]*\]\(|\*+\s*\[)/;
+
+/**
+ * Split a menu file's body into item lists and the text around them, in
+ * order. `menu.md` only ever needed the items — a fixed nav shows nothing
+ * else — but a menu rendered into the page can carry a label before its list
+ * or a note after it. Text segments are Markdown; item segments are what
+ * `parseCustomMenu` reads.
+ *
+ * @param {string} body
+ * @returns {{kind: 'items'|'text', text: string}[]}
+ */
+export function splitMenuBody(body) {
+  const segments = [];
+  let current = null;
+  for (const line of body.split("\n")) {
+    if (!line.trim()) {
+      if (current) current.lines.push(line);
+      continue;
+    }
+    const kind = ITEM_LINE_RE.test(line) ? "items" : "text";
+    if (!current || current.kind !== kind) {
+      current = { kind, lines: [] };
+      segments.push(current);
+    }
+    current.lines.push(line);
+  }
+  return segments
+    .map(({ kind, lines }) => ({ kind, text: lines.join("\n").trim() }))
+    .filter((seg) => seg.text);
+}
+
+/**
+ * A menu's prose is rendered once and inlined into pages in other folders,
+ * so its relative links and images must be made root-absolute against the
+ * menu file's own folder before that happens.
+ *
+ * @param {string} html - Rendered text segment
+ * @param {string} menuUrlDir - The menu file's folder as a URL path, e.g. "/character/feats"
+ */
+export function rebaseMenuHtml(html, menuUrlDir) {
+  const base = menuUrlDir.endsWith("/") ? menuUrlDir : menuUrlDir + "/";
+  return html.replace(/(<(?:a|img|source|video|audio)\b[^>]*?\s(?:href|src)=["'])([^"']+)(["'])/gi, (m, before, url, quote) => {
+    if (/^(?:[a-z][a-z0-9+.-]*:|\/\/|\/|#|\?)/i.test(url)) return m;
+    const [pathPart, rest = ""] = url.split(/(?=[?#])/, 2);
+    let resolved = posix.normalize(base + pathPart);
+    resolved = resolved.replace(/\.(md|mdx|txt)$/i, ".html");
+    return `${before}${resolved}${rest}${quote}`;
+  });
+}
+
 /** What an anchor becomes when its menu cannot be rendered. */
 export function menuNotFoundComment(id, reason = "not found") {
   return `<!-- ursa: menu "${escapeHtml(id)}" ${escapeHtml(reason)} -->`;
@@ -206,17 +335,26 @@ export function leadingMenusEnd(html) {
 /**
  * Static markup for a named menu.
  *
- * @param {Array} menuData - Items as `parseCustomMenu` produces them ({label, href, children})
+ * @param {Array} content - Either items as `parseCustomMenu` produces them
+ *   ({label, href, children}), or segments: `{kind: 'items', items}` and
+ *   `{kind: 'text', html}` in document order
  * @param {object} opts
  * @param {string} opts.id
  * @param {string} [opts.appearance="horizontal"]
  * @param {string|null} [opts.currentUrl] - The page's root-absolute `.html` URL, to mark the current item
  * @returns {string}
  */
-export function renderInlineMenuHtml(menuData, { id, appearance = DEFAULT_APPEARANCE, currentUrl = null }) {
+export function renderInlineMenuHtml(content, { id, appearance = DEFAULT_APPEARANCE, currentUrl = null }) {
   const current = currentUrl ? normalizeUrl(currentUrl) : null;
-  const list = renderLevel(menuData || [], current, 0);
-  return `<nav class="ursa-menu ursa-menu-${appearance}" data-menu-id="${escapeHtml(id)}" aria-label="${escapeHtml(id)}">${list}</nav>`;
+  const segments = Array.isArray(content) && content.length > 0 && content[0]?.kind
+    ? content
+    : [{ kind: "items", items: content || [] }];
+  const inner = segments.map((seg) =>
+    seg.kind === "text"
+      ? `<div class="ursa-menu-text">${seg.html}</div>`
+      : renderLevel(seg.items || [], current, 0)
+  ).join("");
+  return `<nav class="ursa-menu ursa-menu-${appearance}" data-menu-id="${escapeHtml(id)}" aria-label="${escapeHtml(id)}">${inner}</nav>`;
 }
 
 function renderLevel(items, current, depth) {

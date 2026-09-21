@@ -1,3 +1,17 @@
+# 0.99.0
+2026-09-21
+
+`inject-menu` in config.json puts a named menu on every document in a folder.
+
+0.98.0's named menus had to be anchored by hand in every page that wanted one — ten class pages, each carrying its own `{menu:classes}`. Now the folder can do it once.
+
+- **`"inject-menu": {"id": "classes", "position": "top"}`** in a folder's `config.json` renders that menu into every document in the folder and its subfolders, at the top (above the page title, like a first-line anchor) or the bottom. The value can be one object or an array of them. The `id` resolves from each document's folder exactly as an anchor does; a menu that cannot be resolved becomes the same comment-plus-warning.
+- **Deeper configs replace, or inherit.** A subfolder's own `inject-menu` replaces the injection for its subtree, unless one of its entries is `{"inherit": true}`, in which case the ancestors' menus come first and the subfolder's are added after them. A folder without the key is transparent. The same id at the same position is injected once.
+- **Anchors still win.** A document that anchors an id itself is not also given it by injection, so a page can place the folder's menu somewhere particular.
+- **Graph-native.** `injectMenusFor:<dir>` reads the chain of `config.json` files as recorded inputs, so adding, editing or removing one re-renders exactly the documents beneath it and nothing else. Injection happens only for documents; generated index and listing pages are not touched.
+
+**Named menus keep their prose.** The menu parser reads list-item links and nothing else, which is all a fixed nav can show — so a label such as "Feat Categories:" written above the list in `menu-feats.md` silently vanished. A named menu's body is now split into its item lists and the text between them; the text is rendered as Markdown inside the `<nav>` in document order (`.ursa-menu-text`), and in a horizontal menu it sits in the same row as the strip, so a label reads as a label. Relative links and images in that text are rebased to the menu file's folder, since the menu is inlined into pages elsewhere. `auto-generate-menu` menus are unchanged: their body is a template around `{menu}`.
+
 # 0.98.0
 2026-09-20
 

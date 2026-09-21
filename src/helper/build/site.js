@@ -65,6 +65,10 @@ import {
   renderInlineMenuHtml,
   menuNotFoundComment,
   leadingMenusEnd,
+  parseInjectMenu,
+  mergeInjectMenus,
+  splitMenuBody,
+  rebaseMenuHtml,
 } from "../inlineMenu.js";
 import { findAllStyleCss } from "../findStyleCss.js";
 import { findAllScriptJs } from "../findScriptJs.js";
@@ -109,7 +113,7 @@ export const DIR_KINDS = ["dirIndexJson", "dirListingHtml", "autoIndexPage", "di
 export const INTERNAL_KINDS = [
   "linkResolution", "outputOwner", "customMenuFor", "cssBundle", "jsBundle",
   "metaAsset", "metaBundle", "imageInfo", "docMeta",
-  "menuFileMeta", "namedMenuFor", "namedMenu",
+  "menuFileMeta", "namedMenuFor", "namedMenu", "injectMenusFor",
 ];
 /** Site-wide singletons. */
 export const SITE_KINDS = [
@@ -441,6 +445,27 @@ export function createSite(env) {
   }
 
   /**
+   * One named menu rendered for one document, or an HTML comment (and a
+   * warning) when it is missing or cannot be rendered. `how` names the
+   * requester in the warning key: an anchor or a config.json injection.
+   */
+  async function renderNamedMenu(ctx, rel, id, currentUrl, how) {
+    const dirRel = dirRelOf(rel);
+    try {
+      const menuRel = await ctx.get(nodeId("namedMenuFor", `${dirRel}|${id}`));
+      const menu = menuRel ? await ctx.get(nodeId("namedMenu", menuRel)) : null;
+      if (!menu) {
+        warn(`menu-${how}:${rel}:${id}`, `⚠️  ${rel}: no menu with id "${id}" in this folder or above it`);
+        return menuNotFoundComment(id);
+      }
+      return renderInlineMenuHtml(menu.segments, { id, appearance: menu.appearance, currentUrl });
+    } catch (e) {
+      warn(`menu-${how}:${rel}:${id}`, `⚠️  ${rel}: menu "${id}" could not be rendered: ${e.message}`);
+      return menuNotFoundComment(id, "could not be rendered");
+    }
+  }
+
+  /**
    * Replace a document's `{menu:<id>}` anchors with the named menus they name.
    * A menu that is missing or fails to parse becomes an HTML comment and a
    * warning; the page still renders.
@@ -448,25 +473,31 @@ export function createSite(env) {
   async function resolveNamedMenus(ctx, body, rel) {
     const ids = collectMenuAnchorIds(body);
     if (ids.length === 0) return body;
-    const dirRel = dirRelOf(rel);
     const currentUrl = "/" + outputPathFor(rel);
     const rendered = new Map();
-    for (const id of ids) {
-      try {
-        const menuRel = await ctx.get(nodeId("namedMenuFor", `${dirRel}|${id}`));
-        const menu = menuRel ? await ctx.get(nodeId("namedMenu", menuRel)) : null;
-        if (!menu) {
-          warn(`menu-anchor:${rel}:${id}`, `⚠️  ${rel}: no menu with id "${id}" in this folder or above it`);
-          rendered.set(id, menuNotFoundComment(id));
-          continue;
-        }
-        rendered.set(id, renderInlineMenuHtml(menu.menuData, { id, appearance: menu.appearance, currentUrl }));
-      } catch (e) {
-        warn(`menu-anchor:${rel}:${id}`, `⚠️  ${rel}: menu "${id}" could not be rendered: ${e.message}`);
-        rendered.set(id, menuNotFoundComment(id, "could not be rendered"));
-      }
-    }
+    for (const id of ids) rendered.set(id, await renderNamedMenu(ctx, rel, id, currentUrl, "anchor"));
     return resolveMenuAnchors(body, (id) => rendered.get(id) ?? menuNotFoundComment(id));
+  }
+
+  /**
+   * Add the menus the document's folder injects (config.json `inject-menu`)
+   * to the top and bottom of its body. A menu the document already anchors
+   * itself is not added again.
+   */
+  async function injectNamedMenus(ctx, body, rel, anchoredIds) {
+    const entries = await ctx.get(nodeId("injectMenusFor", dirRelOf(rel)));
+    if (entries.length === 0) return body;
+    const currentUrl = "/" + outputPathFor(rel);
+    const anchored = new Set(anchoredIds);
+    let top = "";
+    let bottom = "";
+    for (const { id, position } of entries) {
+      if (anchored.has(id)) continue;
+      const html = await renderNamedMenu(ctx, rel, id, currentUrl, "inject");
+      if (position === "bottom") bottom += "\n" + html;
+      else top += html + "\n";
+    }
+    return top + body + bottom;
   }
 
   // -------------------------------------------------------------------------
@@ -850,6 +881,32 @@ export function createSite(env) {
       }
     },
 
+    /**
+     * The menus a folder's documents get injected (config.json `inject-menu`),
+     * resolved down the chain of folder configs from the docroot. Each
+     * config.json on the way is a recorded input, present or not.
+     */
+    injectMenusFor: (dirRel) => async () => {
+      const chain = [];
+      let cur = dirRel;
+      for (;;) {
+        chain.unshift(cur);
+        if (!cur) break;
+        const parent = dirname(cur);
+        cur = parent === "." ? "" : parent;
+      }
+      const levels = chain.map((d) => {
+        const config = getFolderConfig(abs(d));
+        if (!config || !("inject-menu" in config)) return null;
+        const parsed = parseInjectMenu(config["inject-menu"]);
+        for (const problem of parsed.problems) {
+          warn(`inject-menu:${d}:${problem}`, `⚠️  ${d ? d + "/" : ""}config.json inject-menu: ${problem}`);
+        }
+        return parsed;
+      });
+      return mergeInjectMenus(levels);
+    },
+
     /** One named menu's parsed items, or null when the file is gone. */
     namedMenu: (rel) => async (ctx) => {
       const info = await ctx.get(nodeId("menuFileMeta", rel));
@@ -862,10 +919,20 @@ export function createSite(env) {
       const { frontmatter, body } = found;
       const autoGenerate = frontmatter["auto-generate-menu"] === true || frontmatter["auto-generate-menu"] === "true";
       const depth = parseInt(frontmatter["menu-depth"], 10) || 10;
-      const menuData = autoGenerate
-        ? combineAutoAndManualMenu(body, found.menuDir, source, depth)
-        : parseCustomMenu(body, found.menuDir, source);
-      return { id: info.id, appearance: info.appearance, menuData };
+      // With auto-generation the body is a template around the {menu} token
+      // and only its items count; otherwise prose between the lists is kept
+      let segments;
+      if (autoGenerate) {
+        segments = [{ kind: "items", items: combineAutoAndManualMenu(body, found.menuDir, source, depth) }];
+      } else {
+        const menuUrlDir = "/" + menuDirRel;
+        segments = splitMenuBody(body).map((seg) =>
+          seg.kind === "items"
+            ? { kind: "items", items: parseCustomMenu(seg.text, found.menuDir, source) }
+            : { kind: "text", html: rebaseMenuHtml(renderFile({ fileContents: seg.text, type: ".md" }) ?? "", menuUrlDir) }
+        );
+      }
+      return { id: info.id, appearance: info.appearance, segments };
     },
 
     /**
@@ -1018,8 +1085,11 @@ export function createSite(env) {
         body = renderResult;
       }
 
-      // `{menu:<id>}` anchors become the named menu, rendered in place
+      // `{menu:<id>}` anchors become the named menu, rendered in place, and
+      // the folder's config.json can inject menus at the top and bottom
+      const anchoredIds = collectMenuAnchorIds(body || "");
       body = await resolveNamedMenus(ctx, body || "", rel);
+      body = await injectNamedMenus(ctx, body, rel, anchoredIds);
 
       // Inject default H1 if body doesn't start with one. A menu anchored at
       // the very top stays above the title.

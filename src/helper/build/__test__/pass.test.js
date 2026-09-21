@@ -607,6 +607,20 @@ describe("named menus: menu-<name>.md rendered where a page anchors it", () => {
     expect(existsSync(join(output, "public/custom-menu-character.json"))).toBe(false);
   });
 
+  it("prose in the menu file is kept, with its links rebased to the menu's folder", async () => {
+    await write("character/menu-powers.md", "---\nid: powers\n---\nPowers:\n- [Absorb](./powers/absorb.md)\n\nSee also [the rules](../rules/index.md).\n");
+    await write("character/powers/blast.md", "# Blast\n\n{menu:powers}\n\nBoom.\n");
+    const built = await coldBuild();
+    await built.close();
+    const blast = await read("character/powers/blast.html");
+    const nav = blast.match(/<nav class="ursa-menu[\s\S]*?<\/nav>/)[0];
+    expect(nav).toContain('<div class="ursa-menu-text"><p>Powers:</p>');
+    expect(nav.indexOf("Powers:")).toBeLessThan(nav.indexOf("<ul"));
+    expect(nav).toContain('href="/character/powers/absorb.html"');
+    expect(nav).toContain('<a href="/rules/index.html">the rules</a>');
+    expect(nav.indexOf("See also")).toBeGreaterThan(nav.indexOf("</ul>"));
+  });
+
   it("the anchor works in MDX", async () => {
     await write("character/powers/menu-powers.md", MENU);
     await write("character/powers/absorb.mdx", "---\nclass: Witch\n---\n\n{menu:powers}\n\n# Absorb\n\nTouch.\n");
@@ -617,6 +631,86 @@ describe("named menus: menu-<name>.md rendered where a page anchors it", () => {
     expect(absorb).toContain('data-menu-id="powers"');
     expect(absorb).toContain('ursa-menu-current"><a href="/character/powers/absorb.html"');
     expect(absorb).not.toContain("data-ursa-menu");
+  });
+});
+
+describe("config.json inject-menu: a folder puts a named menu on every document beneath it", () => {
+  const MENU = "---\nid: powers\n---\n- [Absorb](./absorb.md)\n- [Blast](./blast.md)\n";
+
+  it("injects at the top or bottom of every document in the subtree, above the injected title", async () => {
+    await write("character/menu-powers.md", MENU.replace(/\.\/(\w+)\.md/g, "./powers/$1.md"));
+    await write("character/config.json", JSON.stringify({ "inject-menu": [{ id: "powers", position: "top" }, { id: "powers", position: "bottom" }] }));
+    await write("character/notes.md", "# Notes\n\nText.\n");
+    const built = await coldBuild();
+    await built.close();
+
+    const blast = await read("character/powers/blast.html");
+    const navs = blast.match(/<nav class="ursa-menu[^"]*" data-menu-id="powers"/g) ?? [];
+    expect(navs).toHaveLength(2);
+    expect(blast.indexOf('data-menu-id="powers"')).toBeLessThan(blast.indexOf("<h1>Blast</h1>"));
+    expect(blast.lastIndexOf('data-menu-id="powers"')).toBeGreaterThan(blast.indexOf("<p>Boom.</p>"));
+    expect(blast).toContain('ursa-menu-current"><a href="/character/powers/blast.html"');
+    // absorb has no H1 of its own: the injected title still comes after the menu
+    const absorb = await read("character/powers/absorb.html");
+    expect(absorb.indexOf('data-menu-id="powers"')).toBeLessThan(absorb.indexOf("<h1>Absorb</h1>"));
+    expect((absorb.match(/<h1[ >]/g) ?? []).length).toBe(1);
+    // a document directly in the folder gets it too; one outside does not
+    expect(await read("character/notes.html")).toContain('data-menu-id="powers"');
+    expect(await read("rules/combat.html")).not.toContain("data-menu-id");
+  });
+
+  it("a document that already anchors the menu is not given it twice", async () => {
+    await write("character/menu-powers.md", MENU.replace(/\.\/(\w+)\.md/g, "./powers/$1.md"));
+    await write("character/config.json", JSON.stringify({ "inject-menu": { id: "powers" } }));
+    await write("character/powers/blast.md", "# Blast\n\n{menu:powers}\n\nBoom.\n");
+    const built = await coldBuild();
+    await built.close();
+    const blast = await read("character/powers/blast.html");
+    expect(blast.match(/data-menu-id="powers"/g)).toHaveLength(1);
+    expect(blast.indexOf("<h1>Blast</h1>")).toBeLessThan(blast.indexOf('data-menu-id="powers"'));
+  });
+
+  it("a deeper config.json replaces the injection unless it inherits", async () => {
+    await write("menu-site.md", "---\nid: site\n---\n- [Home](./index.md)\n");
+    await write("character/menu-powers.md", MENU.replace(/\.\/(\w+)\.md/g, "./powers/$1.md"));
+    await write("config.json", JSON.stringify({ "inject-menu": { id: "site", position: "bottom" } }));
+    await write("character/config.json", JSON.stringify({ "inject-menu": [{ inherit: true }, { id: "powers" }] }));
+    await write("rules/config.json", JSON.stringify({ "inject-menu": { id: "powers" } }));
+    const built = await coldBuild();
+    await built.close();
+
+    const blast = await read("character/powers/blast.html");
+    expect(blast).toContain('data-menu-id="site"');
+    expect(blast).toContain('data-menu-id="powers"');
+    const combat = await read("rules/combat.html");
+    expect(combat).not.toContain('data-menu-id="site"');
+    // "powers" lives under character/, so rules/ cannot resolve it: comment plus warning, page intact
+    expect(combat).toContain('<!-- ursa: menu "powers" not found -->');
+    expect(combat).toContain("<h1>Combat</h1>");
+    expect(await read("index.html")).toContain('data-menu-id="site"');
+  });
+
+  it("editing the folder's config.json rewrites exactly the subtree's documents", async () => {
+    await write("character/menu-powers.md", MENU.replace(/\.\/(\w+)\.md/g, "./powers/$1.md"));
+    const built = await coldBuild();
+
+    await write("character/config.json", JSON.stringify({ "inject-menu": { id: "powers" } }));
+    let r = await built.pass();
+    // character.html is the folder's listing page, which lists the new config.json itself
+    expect(r.wrote.filter((w) => w.endsWith(".html") && w !== "character.html").sort()).toEqual([
+      "character/powers/absorb.html",
+      "character/powers/blast.html",
+    ]);
+    expect(r.wrote).not.toContain("rules/combat.html");
+    expect(r.wrote).not.toContain("index.html");
+    expect(await read("character/powers/absorb.html")).toContain('data-menu-id="powers"');
+
+    await unlink(join(source, "character/config.json"));
+    r = await built.pass();
+    expect(r.wrote).toContain("character/powers/absorb.html");
+    expect(await read("character/powers/absorb.html")).not.toContain("data-menu-id");
+    await built.close();
+    await expectConverged();
   });
 });
 
