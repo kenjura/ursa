@@ -147,38 +147,42 @@ describe("findNamedMenu / findCustomMenu", () => {
 
 describe("config.json inject-menu", () => {
   it("accepts one object or an array, defaults position to top, reports bad entries", () => {
-    expect(parseInjectMenu({ id: "classes" })).toEqual({ entries: [{ id: "classes", position: "top" }], inherit: false, problems: [] });
+    expect(parseInjectMenu({ id: "classes" })).toEqual({ entries: [{ id: "classes", position: "top", replace: false }], problems: [] });
     expect(parseInjectMenu([{ id: "a", position: "bottom" }, { id: "b", position: "TOP" }]).entries).toEqual([
-      { id: "a", position: "bottom" },
-      { id: "b", position: "top" },
+      { id: "a", position: "bottom", replace: false },
+      { id: "b", position: "top", replace: false },
     ]);
-    const bad = parseInjectMenu([{ id: "a", position: "left" }, { position: "top" }, "x"]);
-    expect(bad.entries).toEqual([{ id: "a", position: "top" }]);
-    expect(bad.problems).toHaveLength(3);
+    const bad = parseInjectMenu([{ id: "a", position: "left" }, { position: "top" }, "x", { id: "c", "replace-ancestor-menus": "yes" }]);
+    expect(bad.entries).toEqual([{ id: "a", position: "top", replace: false }, { id: "c", position: "top", replace: false }]);
+    expect(bad.problems).toHaveLength(4);
     expect(parseInjectMenu(undefined).entries).toEqual([]);
   });
 
-  it("recognises the inherit marker, alone or beside entries", () => {
-    expect(parseInjectMenu({ inherit: true })).toEqual({ entries: [], inherit: true, problems: [] });
-    const p = parseInjectMenu([{ inherit: true }, { id: "sub", position: "bottom" }]);
-    expect(p.inherit).toBe(true);
-    expect(p.entries).toEqual([{ id: "sub", position: "bottom" }]);
+  it("reads replace-ancestor-menus, and ignores the old inherit marker", () => {
+    expect(parseInjectMenu({ id: "sub", "replace-ancestor-menus": true }).entries).toEqual([{ id: "sub", position: "top", replace: true }]);
+    expect(parseInjectMenu({ inherit: true })).toEqual({ entries: [], problems: [] });
+    expect(parseInjectMenu([{ inherit: true }, { id: "sub", position: "bottom" }]).entries).toEqual([{ id: "sub", position: "bottom", replace: false }]);
   });
 
-  it("merges down the folder chain: replace by default, extend with inherit, pass through when unset", () => {
-    const root = parseInjectMenu({ id: "site", position: "top" });
-    const mid = parseInjectMenu([{ inherit: true }, { id: "section", position: "bottom" }]);
+  it("merges down the folder chain: ancestors first, replace-ancestor-menus clears its position, unset passes through", () => {
+    const root = parseInjectMenu([{ id: "site", position: "top" }, { id: "foot", position: "bottom" }]);
+    const mid = parseInjectMenu({ id: "section" });
     const leaf = parseInjectMenu({ id: "leaf" });
-    expect(mergeInjectMenus([root])).toEqual([{ id: "site", position: "top" }]);
-    expect(mergeInjectMenus([root, null])).toEqual([{ id: "site", position: "top" }]);
-    expect(mergeInjectMenus([root, mid])).toEqual([{ id: "site", position: "top" }, { id: "section", position: "bottom" }]);
-    expect(mergeInjectMenus([root, mid, leaf])).toEqual([{ id: "leaf", position: "top" }]);
-    expect(mergeInjectMenus([root, mid, null, parseInjectMenu({ inherit: true })])).toEqual([
-      { id: "site", position: "top" },
-      { id: "section", position: "bottom" },
-    ]);
-    // same id and position inherited and restated: once
-    expect(mergeInjectMenus([root, parseInjectMenu([{ inherit: true }, { id: "site" }])])).toEqual([{ id: "site", position: "top" }]);
+    const top = (id) => ({ id, position: "top" });
+    const foot = { id: "foot", position: "bottom" };
+    expect(mergeInjectMenus([root])).toEqual([top("site"), foot]);
+    expect(mergeInjectMenus([root, null])).toEqual([top("site"), foot]);
+    expect(mergeInjectMenus([root, mid])).toEqual([top("site"), foot, top("section")]);
+    expect(mergeInjectMenus([root, mid, null, leaf])).toEqual([top("site"), foot, top("section"), top("leaf")]);
+    // replacing at the top drops every ancestor's top menus but keeps the bottom one
+    const replacer = parseInjectMenu({ id: "leaf", "replace-ancestor-menus": true });
+    expect(mergeInjectMenus([root, mid, replacer])).toEqual([foot, top("leaf")]);
+    // ...and a deeper folder adds to the replacement again
+    expect(mergeInjectMenus([root, mid, replacer, parseInjectMenu({ id: "deep" })])).toEqual([foot, top("leaf"), top("deep")]);
+    // the replacing level's own sibling entries survive
+    expect(mergeInjectMenus([root, parseInjectMenu([{ id: "a" }, { id: "b", "replace-ancestor-menus": true }])])).toEqual([foot, top("a"), top("b")]);
+    // same id and position inherited and restated: once, in its first place
+    expect(mergeInjectMenus([root, mid, parseInjectMenu({ id: "site" })])).toEqual([top("site"), foot, top("section")]);
     expect(mergeInjectMenus([])).toEqual([]);
   });
 });

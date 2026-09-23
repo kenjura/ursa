@@ -670,24 +670,28 @@ describe("config.json inject-menu: a folder puts a named menu on every document 
     expect(blast.indexOf("<h1>Blast</h1>")).toBeLessThan(blast.indexOf('data-menu-id="powers"'));
   });
 
-  it("a deeper config.json replaces the injection unless it inherits", async () => {
+  it("a deeper config.json adds its menus after the ancestors' unless it replaces them", async () => {
     await write("menu-site.md", "---\nid: site\n---\n- [Home](./index.md)\n");
     await write("character/menu-powers.md", MENU.replace(/\.\/(\w+)\.md/g, "./powers/$1.md"));
-    await write("config.json", JSON.stringify({ "inject-menu": { id: "site", position: "bottom" } }));
-    await write("character/config.json", JSON.stringify({ "inject-menu": [{ inherit: true }, { id: "powers" }] }));
+    await write("config.json", JSON.stringify({ "inject-menu": [{ id: "site" }, { id: "site", position: "bottom" }] }));
+    await write("character/config.json", JSON.stringify({ "inject-menu": { id: "powers" } }));
+    await write("character/powers/config.json", JSON.stringify({ "inject-menu": { id: "powers", position: "bottom", "replace-ancestor-menus": true } }));
     await write("rules/config.json", JSON.stringify({ "inject-menu": { id: "powers" } }));
+    await write("character/notes.md", "# Notes\n\nText.\n");
     const built = await coldBuild();
     await built.close();
 
-    const blast = await read("character/powers/blast.html");
-    expect(blast).toContain('data-menu-id="site"');
-    expect(blast).toContain('data-menu-id="powers"');
+    const ids = (html) => [...html.matchAll(/data-menu-id="(\w+)"/g)].map((m) => m[1]);
+    // character/: the root's top menu first, then its own, then the root's bottom menu
+    expect(ids(await read("character/notes.html"))).toEqual(["site", "powers", "site"]);
+    // character/powers/: the ancestors' top menus stay; the bottom one is replaced
+    expect(ids(await read("character/powers/blast.html"))).toEqual(["site", "powers", "powers"]);
     const combat = await read("rules/combat.html");
-    expect(combat).not.toContain('data-menu-id="site"');
+    expect(combat.match(/data-menu-id="site"/g)).toHaveLength(2);
     // "powers" lives under character/, so rules/ cannot resolve it: comment plus warning, page intact
     expect(combat).toContain('<!-- ursa: menu "powers" not found -->');
     expect(combat).toContain("<h1>Combat</h1>");
-    expect(await read("index.html")).toContain('data-menu-id="site"');
+    expect(ids(await read("index.html"))).toEqual(["site", "site"]);
   });
 
   it("editing the folder's config.json rewrites exactly the subtree's documents", async () => {

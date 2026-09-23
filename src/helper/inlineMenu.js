@@ -194,13 +194,14 @@ export const INJECT_POSITIONS = ["top", "bottom"];
 
 /**
  * Normalise a folder's `inject-menu` value: one object or an array of them,
- * each `{id, position}` or the `{inherit: true}` marker.
+ * each `{id, position, "replace-ancestor-menus"?}`. `{inherit: true}` alone
+ * is accepted and ignored: inheriting is the default since 0.100.0.
  *
  * @param {unknown} value - The raw `inject-menu` value from config.json
- * @returns {{entries: {id: string, position: string}[], inherit: boolean, problems: string[]}}
+ * @returns {{entries: {id: string, position: string, replace: boolean}[], problems: string[]}}
  */
 export function parseInjectMenu(value) {
-  const out = { entries: [], inherit: false, problems: [] };
+  const out = { entries: [], problems: [] };
   if (value === undefined || value === null) return out;
   const list = Array.isArray(value) ? value : [value];
   for (const item of list) {
@@ -208,10 +209,7 @@ export function parseInjectMenu(value) {
       out.problems.push(`entry ${JSON.stringify(item)} is not an object`);
       continue;
     }
-    if (item.inherit === true) {
-      out.inherit = true;
-      if (item.id === undefined) continue;
-    }
+    if (item.inherit === true && item.id === undefined) continue;
     const id = item.id === undefined || item.id === null ? "" : String(item.id).trim();
     if (!id) {
       out.problems.push(`entry ${JSON.stringify(item)} has no id`);
@@ -222,7 +220,11 @@ export function parseInjectMenu(value) {
       out.problems.push(`"${id}": position "${item.position}" is not top or bottom; using top`);
       position = "top";
     }
-    out.entries.push({ id, position });
+    const replaceFlag = item["replace-ancestor-menus"];
+    if (replaceFlag !== undefined && typeof replaceFlag !== "boolean") {
+      out.problems.push(`"${id}": replace-ancestor-menus ${JSON.stringify(replaceFlag)} is not true or false; using false`);
+    }
+    out.entries.push({ id, position, replace: replaceFlag === true });
   }
   return out;
 }
@@ -232,10 +234,12 @@ export function parseInjectMenu(value) {
  * on the way down from the docroot (`levels[0]` is the root, the last is the
  * folder itself; a level with no `inject-menu` is null).
  *
- * A level that sets `inject-menu` replaces what was inherited unless one of
- * its entries is `{inherit: true}`, in which case the ancestors' menus come
- * first and the level's own are added after them. A level without the key
- * changes nothing. The same id at the same position is injected once.
+ * Menus accumulate: at each position the least specific folder's menus come
+ * first and each deeper folder's are added after them. An entry with
+ * `replace-ancestor-menus: true` first drops every menu its ancestors inject
+ * at its position; menus at the other position are kept. A level without the
+ * key changes nothing. The same id at the same position is injected once, in
+ * its first place.
  *
  * @param {(ReturnType<typeof parseInjectMenu>|null)[]} levels
  * @returns {{id: string, position: string}[]}
@@ -244,10 +248,10 @@ export function mergeInjectMenus(levels) {
   let effective = [];
   for (const level of levels) {
     if (!level) continue;
-    const base = level.inherit ? effective : [];
-    const merged = [...base];
-    for (const entry of level.entries) {
-      if (!merged.some((e) => e.id === entry.id && e.position === entry.position)) merged.push(entry);
+    const replaced = new Set(level.entries.filter((e) => e.replace).map((e) => e.position));
+    const merged = effective.filter((e) => !replaced.has(e.position));
+    for (const { id, position } of level.entries) {
+      if (!merged.some((e) => e.id === id && e.position === position)) merged.push({ id, position });
     }
     effective = merged;
   }

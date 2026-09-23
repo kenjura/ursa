@@ -1,3 +1,14 @@
+# 0.100.0
+2026-09-23
+
+Injected menus accumulate down the tree instead of the deepest one winning.
+
+In 0.99.0 a subfolder's `inject-menu` replaced its ancestors' unless it opted in with `{"inherit": true}`, so a site-wide top menu vanished from any section that injected its own. Stacking is the more common want, so it is now the default.
+
+- **Least specific first.** At each position (`top`, `bottom`) the menus from every folder on the way down are injected in order, the docroot's first and the document's own folder's last. The same id at the same position still appears once, in its first place.
+- **`"replace-ancestor-menus": true`** on an entry drops every menu the ancestor folders inject at that entry's position and puts this one in their place. The other position is untouched, and deeper folders add to the replacement as usual. A value other than `true`/`false` is warned about and treated as `false`.
+- **`{"inherit": true}` is now a no-op**, accepted silently so 0.99.0 configs keep their meaning. A 0.99.0 config that relied on replace-by-default needs `replace-ancestor-menus` on its entries.
+
 # 0.99.0
 2026-09-21
 
