@@ -460,6 +460,10 @@ Fighters are…
   exactly where it stands in the document, not as a fixed element. The item
   whose link is the current page gets `ursa-menu-current` (its ancestors
   `ursa-menu-active`), so a menu of sibling pages works as a category switcher.
+  An item whose folder holds the current page without being it — "Ancestry"
+  (`ancestry/index.md`) while reading `ancestry/dragon.md` — gets
+  `ursa-menu-path`, styled more lightly than current: you are inside that
+  section, and can still click through to its page.
   `horizontal` is a strip of items with hover dropdowns for nested items;
   `vertical` is a stacked, indented list.
 - The nearest file with that `id` wins, so a deeper folder can shadow a menu

@@ -345,7 +345,9 @@ export function leadingMenusEnd(html) {
  * @param {object} opts
  * @param {string} opts.id
  * @param {string} [opts.appearance="horizontal"]
- * @param {string|null} [opts.currentUrl] - The page's root-absolute `.html` URL, to mark the current item
+ * @param {string|null} [opts.currentUrl] - The page's root-absolute `.html` URL, to mark the current
+ *   item (`ursa-menu-current`), items above it in the menu (`ursa-menu-active`) and items whose
+ *   folder the page is in without being that page (`ursa-menu-path`)
  * @returns {string}
  */
 export function renderInlineMenuHtml(content, { id, appearance = DEFAULT_APPEARANCE, currentUrl = null }) {
@@ -367,10 +369,12 @@ function renderLevel(items, current, depth) {
     const children = item.children || [];
     const isCurrent = current !== null && item.href && normalizeUrl(item.href) === current;
     const hasCurrentBelow = !isCurrent && containsCurrent(children, current);
+    const isOnPath = !isCurrent && !hasCurrentBelow && item.href && coversPath(normalizeUrl(item.href), current);
     const classes = ["ursa-menu-item"];
     if (children.length > 0) classes.push("ursa-menu-has-children");
     if (isCurrent) classes.push("ursa-menu-current");
     if (hasCurrentBelow) classes.push("ursa-menu-active");
+    if (isOnPath) classes.push("ursa-menu-path");
     const label = escapeHtml(item.label ?? "");
     const link = item.href
       ? `<a href="${escapeHtml(item.href)}"${isCurrent ? ' aria-current="page"' : ""}>${label}</a>`
@@ -387,6 +391,16 @@ function containsCurrent(items, current) {
     if (containsCurrent(item.children, current)) return true;
   }
   return false;
+}
+
+/**
+ * Whether an item's page is a folder above the current page: `/character/ancestry`
+ * (the folder's index) covers `/character/ancestry/dragon`. The docroot covers
+ * everything, so it covers nothing here.
+ */
+function coversPath(itemKey, current) {
+  if (current === null || itemKey === "/" || itemKey === "") return false;
+  return current.startsWith(itemKey + "/");
 }
 
 /** `/a/b/index.html`, `/a/b/`, `/a/b` and `/a/b.html` compare by the same key. */

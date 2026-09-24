@@ -118,6 +118,30 @@ describe("renderInlineMenuHtml", () => {
       expect(renderInlineMenuHtml(items, { id: "x", currentUrl: url })).toContain("ursa-menu-current");
     }
   });
+
+  it("marks an item whose folder holds the current page, without calling it current", () => {
+    const items = [
+      { label: "Home", href: "/index.html", children: [] },
+      { label: "Ancestry", href: "/character/ancestry/index.html", children: [] },
+      { label: "Ancestry page", href: "/character/ancestry.html", children: [] },
+      { label: "Anc", href: "/character/anc/index.html", children: [] },
+      { label: "Classes", href: "/character/classes/index.html", children: [] },
+    ];
+    const html = renderInlineMenuHtml(items, { id: "character", currentUrl: "/character/ancestry/dragon.html" });
+    expect(html).toContain('<li class="ursa-menu-item ursa-menu-path"><a href="/character/ancestry/index.html">Ancestry</a>');
+    expect(html).toContain('<li class="ursa-menu-item ursa-menu-path"><a href="/character/ancestry.html">Ancestry page</a>');
+    // the docroot covers every page, a name prefix is not a folder, a sibling folder is not on the path
+    expect(html).toContain('<li class="ursa-menu-item"><a href="/index.html">Home</a>');
+    expect(html).toContain('<li class="ursa-menu-item"><a href="/character/anc/index.html">Anc</a>');
+    expect(html).toContain('<li class="ursa-menu-item"><a href="/character/classes/index.html">Classes</a>');
+    expect(html).not.toContain("ursa-menu-current");
+    // on the folder's own page it is current, not on the path; above a current item it is active
+    expect(renderInlineMenuHtml(items, { id: "character", currentUrl: "/character/ancestry/" })).not.toContain("ursa-menu-path");
+    const nested = [{ label: "Classes", href: "/character/classes/index.html", children: [{ label: "Witch", href: "/character/classes/witch.html", children: [] }] }];
+    const active = renderInlineMenuHtml(nested, { id: "c", currentUrl: "/character/classes/witch.html" });
+    expect(active).toContain("ursa-menu-active");
+    expect(active).not.toContain("ursa-menu-path");
+  });
 });
 
 describe("findNamedMenu / findCustomMenu", () => {

@@ -1554,6 +1554,13 @@
     box-shadow: inset 0 0 0 1px var(--widget-border);
   }
 
+  /* the page is somewhere inside this item's folder, but is not this item's page:
+     marked, but still plainly a link to go to */
+  :scope.ursa-menu-horizontal > ul > li.ursa-menu-path > a {
+    background-color: color-mix(in srgb, var(--text-color) 6%, transparent);
+    box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--text-color) 45%, transparent);
+  }
+
   :scope.ursa-menu-horizontal > ul > li.ursa-menu-has-children > a::after,
   :scope.ursa-menu-horizontal > ul > li.ursa-menu-has-children > span::after {
     content: '▼';
@@ -1622,6 +1629,10 @@
 
   :scope.ursa-menu-vertical li.ursa-menu-active > a {
     font-weight: 600;
+  }
+
+  :scope.ursa-menu-vertical li.ursa-menu-path > a {
+    border-left-color: color-mix(in srgb, var(--text-color) 45%, transparent);
   }
 
   :scope.ursa-menu-vertical li > ul {

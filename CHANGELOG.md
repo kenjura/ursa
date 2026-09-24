@@ -9,6 +9,8 @@ In 0.99.0 a subfolder's `inject-menu` replaced its ancestors' unless it opted in
 - **`"replace-ancestor-menus": true`** on an entry drops every menu the ancestor folders inject at that entry's position and puts this one in their place. The other position is untouched, and deeper folders add to the replacement as usual. A value other than `true`/`false` is warned about and treated as `false`.
 - **`{"inherit": true}` is now a no-op**, accepted silently so 0.99.0 configs keep their meaning. A 0.99.0 config that relied on replace-by-default needs `replace-ancestor-menus` on its entries.
 
+**Named menus mark the section you are in.** With a site-level menu stacked above a section's own, the page you are on is marked in the section menu but the site-level menu showed nothing. An item whose folder contains the current page — `Ancestry` → `/character/ancestry/index.html` while on `/character/ancestry/dragon.html` — now gets `ursa-menu-path`. The default stylesheet gives it a faint tint and a half-strength underline (a half-strength left rule in vertical menus), at normal weight, so it reads as "you are in here" rather than "you are here". The docroot's item is never marked, since every page is under it, and an item that is current or active is not also marked as on the path.
+
 # 0.99.0
 2026-09-21
 
