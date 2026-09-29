@@ -194,13 +194,14 @@ export const INJECT_POSITIONS = ["top", "bottom"];
 
 /**
  * Normalise a folder's `inject-menu` value: one object or an array of them,
- * each `{id, position}` or the `{inherit: true}` marker.
+ * each `{id, position, "replace-ancestor-menus"?}`. `{inherit: true}` alone
+ * is accepted and ignored: inheriting is the default since 0.100.0.
  *
  * @param {unknown} value - The raw `inject-menu` value from config.json
- * @returns {{entries: {id: string, position: string}[], inherit: boolean, problems: string[]}}
+ * @returns {{entries: {id: string, position: string, replace: boolean}[], problems: string[]}}
  */
 export function parseInjectMenu(value) {
-  const out = { entries: [], inherit: false, problems: [] };
+  const out = { entries: [], problems: [] };
   if (value === undefined || value === null) return out;
   const list = Array.isArray(value) ? value : [value];
   for (const item of list) {
@@ -208,10 +209,7 @@ export function parseInjectMenu(value) {
       out.problems.push(`entry ${JSON.stringify(item)} is not an object`);
       continue;
     }
-    if (item.inherit === true) {
-      out.inherit = true;
-      if (item.id === undefined) continue;
-    }
+    if (item.inherit === true && item.id === undefined) continue;
     const id = item.id === undefined || item.id === null ? "" : String(item.id).trim();
     if (!id) {
       out.problems.push(`entry ${JSON.stringify(item)} has no id`);
@@ -222,7 +220,11 @@ export function parseInjectMenu(value) {
       out.problems.push(`"${id}": position "${item.position}" is not top or bottom; using top`);
       position = "top";
     }
-    out.entries.push({ id, position });
+    const replaceFlag = item["replace-ancestor-menus"];
+    if (replaceFlag !== undefined && typeof replaceFlag !== "boolean") {
+      out.problems.push(`"${id}": replace-ancestor-menus ${JSON.stringify(replaceFlag)} is not true or false; using false`);
+    }
+    out.entries.push({ id, position, replace: replaceFlag === true });
   }
   return out;
 }
@@ -232,10 +234,12 @@ export function parseInjectMenu(value) {
  * on the way down from the docroot (`levels[0]` is the root, the last is the
  * folder itself; a level with no `inject-menu` is null).
  *
- * A level that sets `inject-menu` replaces what was inherited unless one of
- * its entries is `{inherit: true}`, in which case the ancestors' menus come
- * first and the level's own are added after them. A level without the key
- * changes nothing. The same id at the same position is injected once.
+ * Menus accumulate: at each position the least specific folder's menus come
+ * first and each deeper folder's are added after them. An entry with
+ * `replace-ancestor-menus: true` first drops every menu its ancestors inject
+ * at its position; menus at the other position are kept. A level without the
+ * key changes nothing. The same id at the same position is injected once, in
+ * its first place.
  *
  * @param {(ReturnType<typeof parseInjectMenu>|null)[]} levels
  * @returns {{id: string, position: string}[]}
@@ -244,10 +248,10 @@ export function mergeInjectMenus(levels) {
   let effective = [];
   for (const level of levels) {
     if (!level) continue;
-    const base = level.inherit ? effective : [];
-    const merged = [...base];
-    for (const entry of level.entries) {
-      if (!merged.some((e) => e.id === entry.id && e.position === entry.position)) merged.push(entry);
+    const replaced = new Set(level.entries.filter((e) => e.replace).map((e) => e.position));
+    const merged = effective.filter((e) => !replaced.has(e.position));
+    for (const { id, position } of level.entries) {
+      if (!merged.some((e) => e.id === id && e.position === position)) merged.push({ id, position });
     }
     effective = merged;
   }
@@ -341,7 +345,9 @@ export function leadingMenusEnd(html) {
  * @param {object} opts
  * @param {string} opts.id
  * @param {string} [opts.appearance="horizontal"]
- * @param {string|null} [opts.currentUrl] - The page's root-absolute `.html` URL, to mark the current item
+ * @param {string|null} [opts.currentUrl] - The page's root-absolute `.html` URL, to mark the current
+ *   item (`ursa-menu-current`), items above it in the menu (`ursa-menu-active`) and items whose
+ *   folder the page is in without being that page (`ursa-menu-path`)
  * @returns {string}
  */
 export function renderInlineMenuHtml(content, { id, appearance = DEFAULT_APPEARANCE, currentUrl = null }) {
@@ -363,10 +369,12 @@ function renderLevel(items, current, depth) {
     const children = item.children || [];
     const isCurrent = current !== null && item.href && normalizeUrl(item.href) === current;
     const hasCurrentBelow = !isCurrent && containsCurrent(children, current);
+    const isOnPath = !isCurrent && !hasCurrentBelow && item.href && coversPath(normalizeUrl(item.href), current);
     const classes = ["ursa-menu-item"];
     if (children.length > 0) classes.push("ursa-menu-has-children");
     if (isCurrent) classes.push("ursa-menu-current");
     if (hasCurrentBelow) classes.push("ursa-menu-active");
+    if (isOnPath) classes.push("ursa-menu-path");
     const label = escapeHtml(item.label ?? "");
     const link = item.href
       ? `<a href="${escapeHtml(item.href)}"${isCurrent ? ' aria-current="page"' : ""}>${label}</a>`
@@ -383,6 +391,16 @@ function containsCurrent(items, current) {
     if (containsCurrent(item.children, current)) return true;
   }
   return false;
+}
+
+/**
+ * Whether an item's page is a folder above the current page: `/character/ancestry`
+ * (the folder's index) covers `/character/ancestry/dragon`. The docroot covers
+ * everything, so it covers nothing here.
+ */
+function coversPath(itemKey, current) {
+  if (current === null || itemKey === "/" || itemKey === "") return false;
+  return current.startsWith(itemKey + "/");
 }
 
 /** `/a/b/index.html`, `/a/b/`, `/a/b` and `/a/b.html` compare by the same key. */

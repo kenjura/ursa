@@ -460,6 +460,10 @@ Fighters are…
   exactly where it stands in the document, not as a fixed element. The item
   whose link is the current page gets `ursa-menu-current` (its ancestors
   `ursa-menu-active`), so a menu of sibling pages works as a category switcher.
+  An item whose folder holds the current page without being it — "Ancestry"
+  (`ancestry/index.md`) while reading `ancestry/dragon.md` — gets
+  `ursa-menu-path`, styled more lightly than current: you are inside that
+  section, and can still click through to its page.
   `horizontal` is a strip of items with hover dropdowns for nested items;
   `vertical` is a stacked, indented list.
 - The nearest file with that `id` wins, so a deeper folder can shadow a menu
@@ -499,11 +503,16 @@ anchoring it in each one, name it in the folder's `config.json`:
 - A menu injected at the top goes above the page title, like an anchor on the
   first line; one at the bottom goes after the last content. A document that
   already anchors the same id is left alone — it is not given the menu twice.
-- A deeper folder's `config.json` with its own `inject-menu` **replaces** the
-  injection for its subtree. To add to it instead, include `{ "inherit": true }`
-  among the entries: `[{ "inherit": true }, { "id": "subsection" }]` keeps
-  the ancestors' menus and adds this one after them. A folder without the
-  key changes nothing.
+- Menus **accumulate** down the tree. A deeper folder's `config.json` with
+  its own `inject-menu` adds its menus after the ones its ancestors inject:
+  at each position the least specific folder's menu comes first and the most
+  specific last. A folder without the key changes nothing, and the same id
+  at the same position is injected once.
+- To start over instead, give an entry `"replace-ancestor-menus": true`:
+  `{ "id": "subsection", "replace-ancestor-menus": true }` drops every menu
+  the ancestor folders inject at that entry's position (the other position
+  is untouched) and puts this one in their place. Folders below it add to
+  the replacement as usual.
 - A menu that cannot be resolved from a document's folder gets the same quiet
   treatment as an anchor: an HTML comment and a warning naming the document.
 - Editing a `config.json` re-renders exactly the documents beneath it.
