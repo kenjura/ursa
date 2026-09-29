@@ -1,3 +1,10 @@
+# 0.100.1
+2026-09-29
+
+Release-only: no code changes from 0.100.0.
+
+0.100.0 reached npm on 2026-09-26 from a tag on the `version/0.100.0` branch tip (`8ae0765`), before the branch was merged. The squash merge to main (`bd05e52`) has an identical tree, so the published 0.100.0 is the same code, but npm would not take 0.100.0 again from main. 0.100.1 republishes it from main so the tag and the registry agree.
+
 # 0.100.0
 2026-09-23
 
