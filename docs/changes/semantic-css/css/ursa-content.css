@@ -1,0 +1,145 @@
+/* =============================================================================
+   ursa-content.css — portable document styles.
+
+   Everything here styles markup *inside* a document (`.ursa-doc`), and nothing
+   here assumes the page frame: no fixed topbar, no sticky offsets, no widths.
+   That is what makes it safe to load wherever a document's HTML ends up — an
+   Ursa page, or a host application rendering `bodyHtml` from Ursa's JSON.
+   Page-only document behaviour (the article box, sticky headings) is in
+   ursa-chrome.css.
+
+   The scope stops at:
+     .ursa-unstyled     the author's opt-out: none of Ursa's CSS applies inside
+     .ursa-breadcrumbs,
+     .ursa-nav          Ursa components that render inside a document; they are
+                        styled by ursa-chrome.css and must not inherit prose rules
+
+   Layered in ursa.content, so an unlayered site rule always wins.
+   ============================================================================= */
+
+@layer ursa.content {
+  @scope (.ursa-doc) to (.ursa-unstyled, .ursa-breadcrumbs, .ursa-nav) {
+
+    /* --- headings --- */
+    :is(h1, h2, h3, h4, h5, h6) {
+      font-family: var(--ursa-font-heading);
+    }
+
+    h1 {
+      max-width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    :is(h1, h2, h3) {
+      clear: both;
+    }
+
+    /* --- links --- */
+    a:any-link {
+      color: var(--ursa-link);
+    }
+    a:visited {
+      color: var(--ursa-link-visited);
+    }
+
+    /* Links to documents that do not exist. The build marks them. */
+    a[data-ursa-broken] {
+      filter: brightness(0.5);
+      cursor: not-allowed;
+      text-decoration: line-through;
+    }
+
+    /* --- media --- */
+    img {
+      max-width: 100%;
+    }
+
+    /* Figures alternate sides down the page. */
+    figure {
+      --_figure-max: var(--ursa-figure-max-width, 300px);
+      max-width: var(--_figure-max);
+      margin: var(--ursa-space-s) var(--ursa-space-l) var(--ursa-space-s) 0;
+      padding: 0;
+      float: inline-start;
+      clear: both;
+
+      &:nth-of-type(even) {
+        float: inline-end;
+        margin-inline: var(--ursa-space-l) 0;
+      }
+
+      /* A single-image figure from the wikitext image syntax can pin its side. */
+      &[data-align="start"]  { float: inline-start; margin-inline: 0 var(--ursa-space-l); }
+      &[data-align="end"]    { float: inline-end;   margin-inline: var(--ursa-space-l) 0; }
+      &[data-align="center"] { float: none; margin-inline: auto; }
+    }
+
+    code, kbd, samp, pre {
+      font-family: var(--ursa-font-mono);
+    }
+
+    /* --- tables --- */
+    .ursa-table-scroll {
+      max-width: 100%;
+      overflow-x: auto;
+    }
+
+    /* --- frontmatter (opt-in per document) --- */
+    .ursa-frontmatter {
+      display: grid;
+      grid-template-columns: max-content 1fr;
+      gap: var(--ursa-space-xs) var(--ursa-space-m);
+      margin-block: var(--ursa-space-m);
+
+      > div {
+        display: contents;
+      }
+      dt {
+        font-weight: bold;
+      }
+      dd {
+        margin: 0;
+      }
+    }
+
+    /* --- markdown `::: aside` --- */
+    .ursa-aside {
+      display: flow-root;   /* keep the rule clear of a floated figure */
+      border-inline-start: 3px solid var(--ursa-border);
+      padding-inline-start: var(--ursa-space-m);
+      margin-block: var(--ursa-space-m);
+    }
+
+    /* --- wikitext legacy constructs --- */
+
+    /* `=Title|right=` sections */
+    .ursa-sidebar {
+      float: inline-end;
+      clear: inline-end;
+      max-width: 40%;
+      margin-inline-start: var(--ursa-space-m);
+    }
+
+    /* `::` / `:::` indentation */
+    .ursa-indent {
+      margin-inline-start: 2em;
+      &[data-level="2"] { margin-inline-start: 4em; }
+    }
+
+    /* `+++big+++` / `++bigger++` */
+    .ursa-big                  { font-size: 150%; }
+    .ursa-big[data-level="2"]  { font-size: 200%; }
+
+    /* --- auto-generated folder index --- */
+    .ursa-autoindex ul {
+      padding-inline-start: 1.5em;
+    }
+
+    @media (max-width: 800px) {
+      h1 {
+        font-size: 1.5rem;
+      }
+    }
+  }
+}

@@ -1,0 +1,129 @@
+/* =============================================================================
+   Example: a fully themed site.                          (docroot/style.css)
+
+   A parchment-and-ink wiki in light mode, lamplit in dark mode. Shows the
+   layout a site stylesheet should follow:
+
+     1. @font-face        (global by nature — give families a site-specific name)
+     2. Tokens            on .ursa: colour, type, layout
+     3. Component tokens  --ursa-<component>-<prop>, still on .ursa
+     4. Content rules     inside @scope (.ursa-doc) — they cannot reach the
+                          navigation, panels or topbar, and cannot leak into
+                          a host page if this CSS is ever reused in an embed
+     5. Chrome rules      one class each, for what tokens cannot express
+
+   There is no layer, no ID, no !important and nothing longer than two
+   selectors: Ursa's CSS is all layered, so an unlayered rule always wins.
+   ============================================================================= */
+
+/* 1. Fonts ----------------------------------------------------------------- */
+@font-face {
+  font-family: "Grimoire Goudy";
+  src: url("/fonts/goudy_bookletter_1911-webfont.woff") format("woff");
+  font-display: swap;
+}
+
+
+/* 2. Tokens ---------------------------------------------------------------- */
+.ursa {
+  /* light-dark() keeps both schemes in one declaration; the OS picks. */
+  --ursa-bg:       light-dark(#f4ecd8, #1b1712);
+  --ursa-fg:       light-dark(#2b2118, #e8dcc2);
+  --ursa-surface:  light-dark(#e6d9b8, #2a241c);
+  --ursa-accent:   light-dark(#7a1f1f, #e0a458);
+  --ursa-link:     light-dark(#7a1f1f, #f0b870);
+  --ursa-link-visited: light-dark(#5a2a4a, #d49ac0);
+
+  --ursa-font-body:    "Grimoire Goudy", Georgia, serif;
+  --ursa-font-heading: "Grimoire Goudy", Georgia, serif;
+  --ursa-font-chrome:  system-ui, sans-serif;
+  --ursa-line-height:  1.6;
+
+  --ursa-doc-width: 46rem;
+  --ursa-radius: 2px;
+
+  /* A derived token overridden on purpose: stuck headings get a band of
+     accent colour rather than the panel surface. */
+  --ursa-sticky-bg: color-mix(in oklab, var(--ursa-accent) 12%, var(--ursa-bg));
+
+  /* 3. Component tokens: an ink-dark topbar in both schemes. */
+  --ursa-topbar-bg: #2b2118;
+  --ursa-topbar-fg: #f4ecd8;
+  --ursa-toc-max-width: 16rem;
+  --ursa-breadcrumb-separator: "›";
+  --ursa-figure-max-width: 260px;
+}
+
+/* The topbar is dark in both schemes, so tell the browser: light-dark() and
+   form controls inside it (the search box) resolve as dark. */
+.ursa-topbar {
+  color-scheme: dark;
+}
+
+
+/* 4. Content --------------------------------------------------------------- */
+@scope (.ursa-doc) to (.ursa-unstyled) {
+  h1, h2, h3 {
+    font-weight: normal;
+    letter-spacing: 0.02em;
+  }
+
+  h1 {
+    color: var(--ursa-accent);
+    border-block-end: 1px solid var(--ursa-border);
+  }
+
+  /* Drop cap on the first paragraph of each top-level section */
+  .ursa-section[data-level="1"] > p:first-of-type::first-letter {
+    float: inline-start;
+    font-size: 3.2em;
+    line-height: 0.8;
+    padding-inline-end: 0.08em;
+    color: var(--ursa-accent);
+  }
+
+  table {
+    border-collapse: collapse;
+  }
+  th, td {
+    padding: 0.25em 0.75em;
+    border-block-end: 1px solid var(--ursa-border);
+    text-align: start;
+  }
+
+  .ursa-frontmatter {
+    padding: var(--ursa-space-m);
+    background: var(--ursa-surface);
+    border-radius: var(--ursa-radius);
+  }
+
+  /* A recoloured subtree is plain CSS: Ursa's border/hover/muted tints are
+     mixed from currentColor, so the aside's rule and anything tinted inside
+     it follow this `color` with no further overrides. */
+  .ursa-aside {
+    background: light-dark(#e9f0e1, #1d2619);
+    color: light-dark(#23321b, #d6e6c8);
+    padding: var(--ursa-space-s) var(--ursa-space-m);
+    border-inline-start-width: 4px;
+  }
+
+  /* Legacy wiki sidebars: framed like a marginal note */
+  .ursa-sidebar {
+    padding: var(--ursa-space-s) var(--ursa-space-m);
+    background: var(--ursa-surface);
+    font-size: 0.9em;
+  }
+}
+
+
+/* 5. Chrome ---------------------------------------------------------------- */
+
+/* Small caps for the site menu's labels */
+.ursa-sitenav .ursa-nav-link {
+  font-variant: small-caps;
+  text-transform: none;
+}
+
+.ursa-sitefooter {
+  font-style: italic;
+}

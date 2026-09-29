@@ -1,0 +1,60 @@
+/* =============================================================================
+   Example: controlling light and dark.
+
+   Ursa's default is `color-scheme: light dark` on .ursa: the OS decides, and
+   every Ursa colour is a light-dark() pair. Pick one of the patterns below.
+   ============================================================================= */
+
+
+/* A. Follow the OS, with your own palette (most sites) ----------------------
+   Write each colour as a light-dark() pair. Nothing else is needed.        */
+.ursa {
+  --ursa-bg:      light-dark(#fbfbf8, #15171a);
+  --ursa-fg:      light-dark(#1d1f22, #e4e6e9);
+  --ursa-surface: light-dark(#eef0f2, #22262b);
+  --ursa-accent:  light-dark(#0b6bcb, #5eb1ff);
+}
+
+
+/* B. One scheme only -----------------------------------------------------
+   Pin the scheme; the other half of every light-dark() pair is never used,
+   including Ursa's own defaults and the browser's form controls/scrollbars.
+
+.ursa {
+  color-scheme: dark;
+}
+*/
+
+
+/* C. OS default plus a user toggle ---------------------------------------
+   Ursa already maps the root attribute to a scheme:
+     <body class="ursa" data-ursa-color-scheme="dark">
+   so a site script only has to set or remove it:
+
+     const root = document.querySelector('.ursa');
+     root.dataset.ursaColorScheme = 'dark';      // or 'light'
+     delete root.dataset.ursaColorScheme;        // back to the OS
+
+   No CSS is needed for the switch itself. If a colour must differ by scheme
+   in a way light-dark() can't express (an image, a shadow), key it off the
+   attribute *and* the media query:                                         */
+
+.ursa-doc .hero {
+  background-image: url("/img/hero-day.webp");
+}
+@media (prefers-color-scheme: dark) {
+  .ursa:not([data-ursa-color-scheme="light"]) .ursa-doc .hero {
+    background-image: url("/img/hero-night.webp");
+  }
+}
+.ursa[data-ursa-color-scheme="dark"] .ursa-doc .hero {
+  background-image: url("/img/hero-night.webp");
+}
+
+
+/* D. One region in the other scheme --------------------------------------
+   light-dark() is resolved where it is used, so color-scheme on any element
+   flips everything inside it — Ursa's tokens included.                     */
+.ursa-topbar {
+  color-scheme: dark;
+}
