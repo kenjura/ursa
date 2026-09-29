@@ -1,0 +1,19 @@
+/* =============================================================================
+   Example: the smallest useful site stylesheet.       (docroot/style.css)
+
+   Tokens only. Every colour, font and size in Ursa's stylesheet derives from
+   these, so this is a complete re-theme: borders, hover tints, the current
+   page highlight, the TOC marker and the stuck-heading background all follow.
+   ============================================================================= */
+
+.ursa {
+  --ursa-accent: light-dark(#b8520a, #ff9d4d);
+  --ursa-link:   light-dark(#8a3d07, #ffb680);
+  --ursa-link-visited: var(--ursa-link);
+
+  --ursa-font-body: "Iowan Old Style", "Palatino Linotype", Palatino, serif;
+  --ursa-font-chrome: system-ui, sans-serif;
+  --ursa-line-height: 1.55;
+
+  --ursa-doc-width: 44rem;
+}

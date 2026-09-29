@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<!--
+  Example render: a host application showing one Ursa document from the JSON
+  output (`fighter.json` → `bodyHtml`), inside its own page and its own CSS.
+
+  The host loads only ursa-base.css + ursa-content.css (the portable pair; in
+  a build: /public/ursa-content.css) and wraps bodyHtml in ONE element that is
+  both the token root (.ursa) and the document scope (.ursa-doc).
+
+  Neither side leaks:
+    - Ursa's CSS matches nothing outside .ursa. The host's own <h1>, links and
+      body keep the host's styles.
+    - The host's broad rules still cascade in (that is the host's choice), but
+      the host can fence its app styles off with @scope or its own class names,
+      exactly as it would for any third-party content.
+    - No frame styles: no fixed topbar offset, no sticky headings, no widths.
+-->
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Campaign dashboard</title>
+  <link rel="stylesheet" href="../css/ursa-base.css">
+  <link rel="stylesheet" href="../css/ursa-content.css">
+  <!-- Optional: the site's own theme, if the host wants the site's look. Its
+       .ursa token block and @scope (.ursa-doc) rules apply unchanged here. -->
+  <!-- <link rel="stylesheet" href="./site-grimoire.css"> -->
+  <style>
+    /* The host app's styles */
+    body   { margin: 0; font: 15px/1.4 system-ui, sans-serif; background: #eef1f4; color: #222; }
+    .app-header { padding: 12px 24px; background: #1f3a5f; color: white; }
+    .app-header h1 { margin: 0; font-size: 18px; }
+    .app-grid { display: grid; grid-template-columns: 220px 1fr; gap: 24px; padding: 24px; }
+    .app-card { background: white; border-radius: 8px; padding: 16px 24px; box-shadow: 0 1px 3px rgb(0 0 0 / .15); }
+    a { color: #1f6feb; }
+
+    /* Adapting the embedded document to the host: tokens, on the wrapper. */
+    .app-card.ursa {
+      --ursa-bg: transparent;           /* sit on the card */
+      --ursa-font-body: inherit;        /* use the app's font */
+      --ursa-figure-max-width: 200px;
+      color-scheme: light;              /* the app has no dark mode */
+    }
+  </style>
+</head>
+<body>
+  <header class="app-header"><h1>Campaign dashboard</h1></header>
+  <div class="app-grid">
+    <nav class="app-card"><a href="#">Party</a><br><a href="#">Sessions</a><br><a href="#">Rules</a></nav>
+
+    <!-- The one wrapper. `bodyHtml` goes inside it verbatim. -->
+    <article class="app-card ursa ursa-doc" data-ursa-path="/classes/fighter">
+      <!-- bodyHtml ↓ (no breadcrumbs or injected menus: those are page chrome) -->
+      <section class="ursa-section" data-level="1">
+        <h1 id="fighter">Fighter</h1>
+        <dl class="ursa-frontmatter">
+          <div><dt>Hit die</dt><dd>d10</dd></div>
+          <div><dt>Saves</dt><dd>Strength, Constitution</dd></div>
+        </dl>
+        <figure>
+          <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='200'%3E%3Crect width='300' height='200' fill='%23789'/%3E%3C/svg%3E" alt="A fighter" width="300" height="200">
+          <figcaption>A fighter.</figcaption>
+        </figure>
+        <p>Fighters share an unparalleled mastery with weapons and armor. See also
+          <a href="/classes/paladin.html">Paladin</a> and
+          <a href="/classes/warlord.html" data-ursa-broken>Warlord</a>.</p>
+        <section class="ursa-section" data-level="2">
+          <h2 id="hit-points">Hit Points</h2>
+          <p>1d10 per fighter level.</p>
+        </section>
+      </section>
+      <!-- bodyHtml ↑ -->
+    </article>
+  </div>
+</body>
+</html>

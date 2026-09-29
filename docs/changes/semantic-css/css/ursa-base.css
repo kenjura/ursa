@@ -1,0 +1,160 @@
+/* =============================================================================
+   ursa-base.css — layer order, design tokens, root reset.
+
+   Load order (the bundler concatenates in this order):
+     ursa-base.css      tokens + reset           (page AND embed)
+     ursa-content.css   portable document styles (page AND embed)
+     ursa-chrome.css    the page frame           (page only)
+     <site style.css chain>                      unlayered, always wins
+
+   Everything Ursa ships is inside an `ursa.*` layer. A site stylesheet is
+   unlayered, and an unlayered rule beats every layered one whatever its
+   specificity — so a site never needs an ID, a long selector or !important
+   to override Ursa.
+
+   Nothing in any Ursa stylesheet matches outside an element with class
+   `ursa`. On a full page that is <body>; an embedder puts it on whatever
+   element holds the document. `html`, `:root` and bare `body` are never
+   styled, so Ursa CSS loaded into a host page cannot touch the host.
+   ============================================================================= */
+
+@layer ursa.reset, ursa.tokens, ursa.content, ursa.chrome;
+
+
+/* -----------------------------------------------------------------------------
+   Tokens.
+
+   Three tiers:
+     1. Base tokens    — the public API. Override these first.
+     2. Derived tokens — computed from base tokens; override only to break the
+                         relationship (e.g. a border that is not a tint of fg).
+     3. Component tokens (--_x) — private, declared on each component in
+                         ursa-chrome.css, each reading a public
+                         `--ursa-<component>-<prop>` with a fallback to tier 1/2.
+
+   Colours use light-dark(), so one declaration covers both schemes and
+   `color-scheme` alone decides which half is used. A site that overrides a
+   colour with a plain value opts that colour out of scheme switching; use
+   light-dark() in the override to keep it.
+
+   Derived tokens are tints of `currentColor`, not of --ursa-fg. An unregistered
+   custom property keeps `currentColor` as a keyword until a property uses it,
+   so a border or hover tint is always computed from the text colour *where it
+   is drawn*. Recolouring a subtree is therefore plain CSS — set `color` (and
+   `background`) on it and every Ursa tint inside follows. Likewise light-dark()
+   is resolved where it is used, so `color-scheme: dark` on any element flips
+   that subtree's scheme.
+
+   Aliases (a token that defaults to another token) are not declared here; the
+   using rule writes `var(--ursa-sticky-bg, var(--ursa-surface))`, so the
+   default tracks the other token wherever it is overridden.
+   ----------------------------------------------------------------------------- */
+@layer ursa.tokens {
+  :where(.ursa) {
+    color-scheme: light dark;
+
+    /* --- colour: base --- */
+    --ursa-bg:            light-dark(#ffffff, #121212);
+    --ursa-fg:            light-dark(#000000, #f2f2f2);
+    --ursa-surface:       light-dark(#f2f2f2, #242424);   /* topbar, panels, dropdowns, stuck headings */
+    --ursa-accent:        light-dark(#00a3a3, #00ffff);   /* current page, active TOC entry, focus */
+    --ursa-link:          light-dark(#0645ad, #8ab4f8);
+    --ursa-link-visited:  light-dark(#551a8b, #c58af9);
+
+    /* --- typography --- */
+    --ursa-font-body:     sans-serif;
+    --ursa-font-heading:  var(--ursa-font-body);
+    --ursa-font-mono:     ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    --ursa-font-chrome:   var(--ursa-font-body);
+    --ursa-line-height:   normal;
+
+    /* --- layout --- */
+    --ursa-doc-width:         50rem;
+    --ursa-topbar-height:     48px;
+    --ursa-sitenav-width:     260px;
+    --ursa-gutter:            1rem;
+    --ursa-radius:            4px;
+    --ursa-space-xs:          0.25rem;
+    --ursa-space-s:           0.5rem;
+    --ursa-space-m:           1rem;
+    --ursa-space-l:           2rem;
+    --ursa-icon-size:         20px;
+    --ursa-transition:        0.15s ease;
+
+    /* --- sticky headings (page only; see ursa-chrome.css) --- */
+    --ursa-sticky-top:        var(--ursa-topbar-height);
+    --ursa-sticky-h1:         3rem;
+    --ursa-sticky-h2:         2.25rem;
+    --ursa-sticky-h3:         1.75rem;
+
+    /* --- stacking --- */
+    --ursa-z-sticky:   90;
+    --ursa-z-sitenav:  1000;
+    --ursa-z-topbar:   1001;
+    --ursa-z-dropdown: 1005;
+    --ursa-z-panel:    1100;
+    /* The lightbox is a modal <dialog> in the top layer and needs no z-index. */
+  }
+
+  /* Derived: tints of the local text colour (see above). */
+  :where(.ursa) {
+    --ursa-muted:     color-mix(in oklab, currentColor 60%, transparent);
+    --ursa-border:    color-mix(in oklab, currentColor 15%, transparent);
+    --ursa-hover:     color-mix(in oklab, currentColor 10%, transparent);
+    --ursa-selected:  color-mix(in oklab, currentColor 18%, transparent);
+    --ursa-highlight: color-mix(in oklab, var(--ursa-accent) 20%, transparent);
+    --ursa-shadow:    0 4px 12px rgb(0 0 0 / 0.2);
+  }
+
+  /* An explicit scheme, for a site that is only ever one or a future
+     scheme toggle. `data-ursa-color-scheme` goes on the .ursa element. */
+  :where(.ursa[data-ursa-color-scheme="light"]) { color-scheme: light; }
+  :where(.ursa[data-ursa-color-scheme="dark"])  { color-scheme: dark; }
+}
+
+
+/* -----------------------------------------------------------------------------
+   Reset. Only what the rest of the stylesheet relies on.
+   ----------------------------------------------------------------------------- */
+@layer ursa.reset {
+  :where(.ursa) {
+    background: var(--ursa-bg);
+    color: var(--ursa-fg);
+    font-family: var(--ursa-font-body);
+    line-height: var(--ursa-line-height);
+  }
+
+  /* `hidden` is how every Ursa script shows and hides things (no .hidden /
+     .active classes), so it must win over any `display` a component sets. */
+  :where(.ursa) [hidden]:not([hidden="until-found"]) {
+    display: none !important;
+  }
+
+  /* Tabler outline icons, inlined. Presentation lives here rather than on each
+     <svg>, so a theme can restyle them and they take currentColor. */
+  :where(.ursa) .ursa-icon {
+    width: var(--ursa-icon-size);
+    height: var(--ursa-icon-size);
+    flex: none;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  :where(.ursa) .ursa-visually-hidden:not(:focus-within) {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+
+/* @keyframes cannot be scoped or layered; the prefix is the namespace. */
+@keyframes ursa-spin {
+  to { rotate: 360deg; }
+}
