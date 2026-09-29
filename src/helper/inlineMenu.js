@@ -9,10 +9,11 @@
  *
  *     {menu:classes}
  *
- * The anchor becomes a static `<nav class="ursa-menu">` at that point in the
- * body — part of the document, not a fixed element — with the menu's items
- * as a horizontal strip (the default) or a vertical list (`appearance:
- * vertical`). The item whose href is the current page is marked.
+ * The anchor becomes a static `<nav class="ursa-nav ursa-menu">` at that point
+ * in the body — part of the document, not a fixed element — with the menu's
+ * items as a horizontal strip (`data-layout="bar"`, from the default
+ * `appearance: horizontal`) or a vertical list (`data-layout="tree"`, from
+ * `appearance: vertical`). The item whose href is the current page is marked.
  *
  * A folder can also ask for a menu on every document beneath it without an
  * anchor in each one: `"inject-menu": {"id": "classes", "position": "top"}`
@@ -328,7 +329,7 @@ export function menuNotFoundComment(id, reason = "not found") {
  */
 export function leadingMenusEnd(html) {
   let i = 0;
-  const re = /^\s*(<nav class="ursa-menu[^"]*"[^>]*>[\s\S]*?<\/nav>|<!-- ursa: menu [^>]*-->)/;
+  const re = /^\s*(<nav class="ursa-nav ursa-menu"[^>]*>[\s\S]*?<\/nav>|<!-- ursa: menu [^>]*-->)/;
   for (;;) {
     const m = re.exec(html.slice(i));
     if (!m) return i;
@@ -346,8 +347,8 @@ export function leadingMenusEnd(html) {
  * @param {string} opts.id
  * @param {string} [opts.appearance="horizontal"]
  * @param {string|null} [opts.currentUrl] - The page's root-absolute `.html` URL, to mark the current
- *   item (`ursa-menu-current`), items above it in the menu (`ursa-menu-active`) and items whose
- *   folder the page is in without being that page (`ursa-menu-path`)
+ *   item (`aria-current="page"` on its link), items above it in the menu (`data-trail`) and items
+ *   whose folder the page is in without being that page (`data-path`)
  * @returns {string}
  */
 export function renderInlineMenuHtml(content, { id, appearance = DEFAULT_APPEARANCE, currentUrl = null }) {
@@ -357,31 +358,32 @@ export function renderInlineMenuHtml(content, { id, appearance = DEFAULT_APPEARA
     : [{ kind: "items", items: content || [] }];
   const inner = segments.map((seg) =>
     seg.kind === "text"
-      ? `<div class="ursa-menu-text">${seg.html}</div>`
-      : renderLevel(seg.items || [], current, 0)
+      ? `<div class="ursa-nav-text">${seg.html}</div>`
+      : renderLevel(seg.items || [], current)
   ).join("");
-  return `<nav class="ursa-menu ursa-menu-${appearance}" data-menu-id="${escapeHtml(id)}" aria-label="${escapeHtml(id)}">${inner}</nav>`;
+  const layout = appearance === "vertical" ? "tree" : "bar";
+  return `<nav class="ursa-nav ursa-menu" data-layout="${layout}" data-menu-id="${escapeHtml(id)}" aria-label="${escapeHtml(id)}">${inner}</nav>`;
 }
 
-function renderLevel(items, current, depth) {
+function renderLevel(items, current) {
   if (!items || items.length === 0) return "";
   const lis = items.map((item) => {
     const children = item.children || [];
     const isCurrent = current !== null && item.href && normalizeUrl(item.href) === current;
     const hasCurrentBelow = !isCurrent && containsCurrent(children, current);
     const isOnPath = !isCurrent && !hasCurrentBelow && item.href && coversPath(normalizeUrl(item.href), current);
-    const classes = ["ursa-menu-item"];
-    if (children.length > 0) classes.push("ursa-menu-has-children");
-    if (isCurrent) classes.push("ursa-menu-current");
-    if (hasCurrentBelow) classes.push("ursa-menu-active");
-    if (isOnPath) classes.push("ursa-menu-path");
+    const flags = [
+      children.length > 0 && " data-branch",
+      hasCurrentBelow && " data-trail",
+      isOnPath && " data-path",
+    ].filter(Boolean).join("");
     const label = escapeHtml(item.label ?? "");
     const link = item.href
-      ? `<a href="${escapeHtml(item.href)}"${isCurrent ? ' aria-current="page"' : ""}>${label}</a>`
-      : `<span>${label}</span>`;
-    return `<li class="${classes.join(" ")}">${link}${renderLevel(children, current, depth + 1)}</li>`;
+      ? `<a class="ursa-nav-link" href="${escapeHtml(item.href)}"${isCurrent ? ' aria-current="page"' : ""}>${label}</a>`
+      : `<span class="ursa-nav-link">${label}</span>`;
+    return `<li class="ursa-nav-item"${flags}>${link}${renderLevel(children, current)}</li>`;
   });
-  return `<ul class="ursa-menu-level" data-depth="${depth}">${lis.join("")}</ul>`;
+  return `<ul class="ursa-nav-list">${lis.join("")}</ul>`;
 }
 
 function containsCurrent(items, current) {

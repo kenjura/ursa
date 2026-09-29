@@ -4,7 +4,7 @@ import { wikiToHtml } from "./wikitextHelper.js";
 import { renderMDX, generateHydrationScript } from "./mdxRenderer.js";
 import { parseWithWorker, terminateParserPool } from "./parserPool.js";
 
-const DEFAULT_WIKITEXT_ARGS = { db: "noDB", noSection: true, noTOC: true };
+const DEFAULT_WIKITEXT_ARGS = { db: "noDB" };
 
 /**
  * Render a file synchronously (legacy/fallback)

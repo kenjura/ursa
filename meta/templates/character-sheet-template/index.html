@@ -1,9 +1,12 @@
-<html>
+<!DOCTYPE html>
+<html lang="${lang}">
 
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="stylesheet" href="/public/default.css" />
+  <link rel="stylesheet" href="/public/ursa-base.css" />
+  <link rel="stylesheet" href="/public/ursa-content.css" />
+  <link rel="stylesheet" href="/public/ursa-chrome.css" />
   <link rel="stylesheet" href="/public/cssui.bundle.min.css" />
   <link rel="stylesheet" href="/public/character-sheet.css" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css" />
@@ -12,8 +15,8 @@
   </style>
 </head>
 
-<body data-template-id="character-sheet">
-  <nav id="nav-main">
+<body class="ursa" data-ursa-template="character-sheet">
+  <nav class="ursa-nav" data-layout="tree" aria-label="Site">
     <span id="menu-icon" class="material-symbols-outlined">
       menu
     </span>
@@ -26,7 +29,7 @@
         </ul> -->
 
   </nav>
-  <article>
+  <article class="ursa-doc" data-ursa-path="${docPath}">
     <div id="tab-container" data-tabs>
       <input checked="checked" id="tab1" type="radio" name="tab" data-tab="tab1" />
       <input id="tab2" type="radio" name="tab" data-tab="tab2" />
@@ -42,9 +45,6 @@
       </section>
     </div>
   </article>
-  <div id="global-nav">
-    global nav here
-  </div>
 
   <script src="https://cdn.ably.com/lib/ably.min-1.js"></script>
   <script>

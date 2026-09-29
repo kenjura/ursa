@@ -11,6 +11,7 @@ import { remarkDefinitionList, defListHastHandlers } from "remark-definition-lis
 import remarkSupersub from "remark-supersub";
 import remarkGfm from "remark-gfm";
 import { visit } from "unist-util-visit";
+import { createSlugger } from "./slug.cjs";
 
 /**
  * remark-definition-list only registers the `:` (charcode 58) marker, but
@@ -42,9 +43,68 @@ function remarkAsideContainers() {
       if (node.type === "containerDirective") {
         const data = node.data || (node.data = {});
         data.hName = "aside";
+        data.hProperties = { ...(data.hProperties || {}), className: ["ursa-aside"] };
       }
     });
   };
+}
+
+/**
+ * Document structure, matching markdownHelper.cjs's ursaStructure (SPEC §3):
+ * slug ids on every heading, tables wrapped in .ursa-table-scroll, and one
+ * section.ursa-section per top-level h1 with one per h2 nested inside it.
+ * Runs on the hast tree, so React renders the sections itself and the server
+ * HTML is the structure the page shows.
+ */
+function rehypeUrsaStructure() {
+  return (tree) => {
+    const slug = createSlugger();
+
+    visit(tree, "element", (node, index, parent) => {
+      if (/^h[1-6]$/.test(node.tagName)) {
+        node.properties = { ...(node.properties || {}) };
+        if (node.properties.id == null) node.properties.id = slug(hastText(node));
+      }
+      if (node.tagName === "table" && parent && !isTableScroll(parent)) {
+        parent.children[index] = {
+          type: "element",
+          tagName: "div",
+          properties: { className: ["ursa-table-scroll"] },
+          children: [node],
+        };
+      }
+    });
+
+    const root = { children: [] };
+    const open = [root]; // open sections, innermost last; root is level 0
+    for (const node of tree.children) {
+      const level = node.type === "element" && /^h[12]$/.test(node.tagName) ? Number(node.tagName[1]) : 0;
+      if (level) {
+        while (open.length > 1 && open[open.length - 1].level >= level) open.pop();
+        const section = {
+          type: "element",
+          tagName: "section",
+          properties: { className: ["ursa-section"], dataLevel: String(level) },
+          children: [],
+          level,
+        };
+        open[open.length - 1].children.push(section);
+        open.push(section);
+      }
+      open[open.length - 1].children.push(node);
+    }
+    visit(root, "element", (node) => { delete node.level; });
+    tree.children = root.children;
+  };
+}
+
+function isTableScroll(node) {
+  return node.type === "element" && node.properties?.className?.includes?.("ursa-table-scroll");
+}
+
+function hastText(node) {
+  if (node.type === "text") return node.value;
+  return (node.children || []).map(hastText).join("");
 }
 
 // ---------------------------------------------------------------------------
@@ -53,9 +113,9 @@ function remarkAsideContainers() {
 // Components imported directly into an .mdx file are wrapped in an island: the
 // server renders each inside <ursa-island data-island="N">, and the client
 // hydrates each of those elements as its own React root. The markdown around
-// them is never handed to React, so the template is free to restructure it
-// (sectionify.js wraps H1 sections, breadcrumbs are injected, etc.) without
-// causing a hydration mismatch. See docs/changes/island-hydration.md.
+// them is never handed to React, so the template is free to add to it
+// (breadcrumbs and injected menus in the document header, image actions,
+// etc.) without causing a hydration mismatch. See docs/changes/island-hydration.md.
 // ---------------------------------------------------------------------------
 
 const ISLAND_MODULE = "ursa:island";
@@ -319,6 +379,7 @@ export async function renderMDX({ source, filePath, sourceRoot, hydrate = false 
       remarkDefinitionListTildeMarker,
       remarkSupersub,
     ];
+    options.rehypePlugins = [...(options.rehypePlugins || []), rehypeUrsaStructure];
     // remark-definition-list needs custom handlers for remark-rehype conversion
     options.remarkRehypeOptions = {
       ...(options.remarkRehypeOptions || {}),
@@ -504,7 +565,7 @@ export async function buildReactRuntime(publicDir) {
  * The bundled MDX module is rendered into a detached root purely to run the
  * component tree: every island in it hydrates its own <ursa-island> element in
  * the live document (see islandRuntimeSource). Nothing outside those elements
- * is handed to React, so the template's DOM post-processing (sectionify,
+ * is handed to React, so the template's DOM post-processing (image actions,
  * breadcrumbs, TOC) cannot cause a hydration mismatch.
  *
  * @param {string} clientCode - The bundled MDX client code from renderMDX
@@ -539,7 +600,7 @@ export function generateHydrationScript(clientCode) {
 
       // Hydrate when DOM is ready. Running after the template's own
       // DOMContentLoaded handlers is fine: islands are found by id, so it
-      // does not matter where sectionify has moved them.
+      // does not matter what the template has added around them.
       function hydrate() {
         try {
           if (!window.ReactDOM || !window.ReactDOM.createRoot) {

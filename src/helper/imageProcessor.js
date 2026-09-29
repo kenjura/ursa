@@ -585,7 +585,7 @@ export function transformImageTags(html, imageMap, docUrlPath = '/') {
       }
       
       // Wrap in anchor tag linking to full-size image
-      return `<a href="${fullSizeUrl}" target="_blank" class="image-link">${imgTag}</a>`;
+      return `<a href="${fullSizeUrl}" target="_blank" class="ursa-image-link">${imgTag}</a>`;
     }
   );
 }

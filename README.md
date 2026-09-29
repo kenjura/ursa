@@ -123,7 +123,9 @@ ursa content --json-only --output data
 ```
 
 What it emits: every document's `<name>.json` and every directory's `<dir>.json`
-record list — the same files a normal build writes, byte for byte.
+record list — the same files a normal build writes, byte for byte — and
+`public/ursa-content.css`, the stylesheet for rendering a `bodyHtml` (see
+[Embedding a document](#embedding-a-document)).
 
 What it skips: HTML, XML, images and their previews, meta/template assets, the
 React runtime, per-folder CSS/JS bundles, static file copying (fonts, audio,
@@ -332,36 +334,65 @@ your-project/
 
 Drop a `style.css` (or `style-ursa.css`, or `_style.css`) in any source folder and it applies to every document in that folder and below. Every such file from the docroot down to the document's own folder is included, nearest last, so a deeper file overrides a shallower one.
 
-Ursa's own stylesheet is scoped and layered so that your CSS wins without a fight:
+Ursa's markup and stylesheet follow one contract, written up in [docs/changes/semantic-css/SPEC.md](docs/changes/semantic-css/SPEC.md). A site upgrading from 0.100.x or earlier should follow [MIGRATION.md](docs/changes/semantic-css/MIGRATION.md): the old selectors (`#main-content`, `nav#nav-main`, `.sectionOuter`, `.widget-dropdown`, …) no longer match anything, and the build warns about each site stylesheet or script that still uses them.
 
-- **Document content** — headings, images, figures, the article box itself — is styled inside `@layer ursa.content`. Your stylesheet is unlayered, and an unlayered rule beats a layered one no matter how specific it is, so a plain `h1 { position: static }` or `#main-content { width: 1000px }` overrides whatever Ursa sets. No `article#main-content h1` escalation, no `!important`.
-- **Chrome** — the top bar, menus, widgets, search, footer, breadcrumbs, image hover controls and lightbox — is scoped but *not* layered, so a broad rule like `a { color: … }` in your stylesheet cannot bleed into the navigation. Overriding chrome works as it always did: use a more specific selector than the built-in one.
-- **Nothing built in reaches into content it shouldn't.** Chrome rules stop at the article's children; content rules stop at the article's edge.
-- **`class="ursa-unstyled"`** on any element puts it and its descendants outside every one of Ursa's scopes — none of Ursa's CSS applies in there at all, and the lightbox leaves images in there alone.
+### Tokens first
 
-This uses the CSS `@scope` and `@layer` rules: Chrome 118+, Safari 17.4+, Firefox 128+.
-
-### Styling one widget at a time
-
-The two widget panels are shared containers — the right-hand one holds the table
-of contents, search and profile in turn — so styling `.widget-dropdown` styles
-all of them at once. While a panel is open it carries `data-active-widget` naming
-whichever widget is showing, and the attribute is removed when it closes, so a
-site can give each one its own treatment:
+Every colour, font and size in Ursa's stylesheet comes from a custom property declared on `.ursa` (the `<body>`). Theme a site by setting them there — not on `:root`, where Ursa's own defaults on `.ursa` would shadow them:
 
 ```css
-/* Only the table of contents; search and profile keep the default panel. */
-.widget-dropdown[data-active-widget="toc"] {
-  background: rgba(20, 24, 28, 0.78);
-  backdrop-filter: blur(10px);
+.ursa {
+  --ursa-bg: light-dark(#f4ecd8, #1b1712);
+  --ursa-fg: light-dark(#2b2118, #e8dcc2);
+  --ursa-accent: #b33;
+  --ursa-font-heading: "Site Goudy", serif;
+  --ursa-doc-width: 56rem;
 }
 ```
 
-Both panels carry it: `#widget-dropdown` for the right-hand widgets (`toc`,
-`search`, `profile`) and `#widget-dropdown-left` for the left-hand ones
-(`recent-activity`, `suggested`). The value is the widget's `data-widget` name.
-Ursa uses this hook itself, to lay the TOC out along the bottom of the viewport
-on a narrow screen.
+The full list is in [SPEC.md §6](docs/changes/semantic-css/SPEC.md#6-tokens). Borders and hover tints are mixes of `currentColor`, so they follow whatever colour a region is given.
+
+### The content scope
+
+Everything Ursa ships is in `@layer ursa.*`; a site stylesheet is unlayered, so any site rule beats any Ursa rule regardless of specificity — no ID chains, no `!important`. The flip side is that a broad rule like `a { … }` now reaches the navigation too. Put rules for document content inside the content scope:
+
+```css
+@scope (.ursa-doc) to (.ursa-unstyled) {
+  h1 { color: darkred; }
+  .ursa-section[data-level="1"] > p:first-of-type::first-letter { font-size: 3em; }
+}
+```
+
+Documents are sectioned when they render: each h1 and what follows it is a `section.ursa-section[data-level="1"]`, with one `data-level="2"` section per h2 inside it, and every heading has an id slugged from its text. `.ursa-doc[data-ursa-path="/classes/fighter"]` targets one document.
+
+### Components
+
+Restyle a component with its tokens, then with one class: `.ursa-sitefooter`, `.ursa-panel[data-widget="toc"]`, `.ursa-sitenav .ursa-nav-link`, `.ursa-breadcrumbs`. State is attributes, not classes — `[aria-current="page"]`, `[aria-expanded="true"]`, `[data-trail]`, `[hidden]`. Each widget panel is its own `aside.ursa-panel[data-widget]`, so styling one widget is a single attribute selector:
+
+```css
+.ursa-panel[data-widget="toc"] { background: rgb(20 24 28 / .78); }
+```
+
+**`class="ursa-unstyled"`** on any element puts it and its descendants outside every one of Ursa's scopes — none of Ursa's CSS applies in there at all, and the lightbox leaves images in there alone.
+
+### Colour schemes
+
+`.ursa` has `color-scheme: light dark` and every colour token is a `light-dark()` pair, so a site follows the OS by default. `data-ursa-color-scheme="light|dark"` on the root pins one; `color-scheme` on any element flips that subtree. See [examples/site-color-scheme.css](docs/changes/semantic-css/examples/site-color-scheme.css).
+
+### Embedding a document
+
+Every build (including `--json-only`) writes `/public/ursa-content.css`: the base and content styles alone, with no page frame. A document's JSON `bodyHtml` is its sections only — no breadcrumbs or injected menus — so an application can render it with:
+
+```html
+<link rel="stylesheet" href="/public/ursa-content.css">
+<article class="ursa ursa-doc">${bodyHtml}</article>
+```
+
+Nothing in Ursa's CSS matches outside `.ursa`. See [examples/embed.html](docs/changes/semantic-css/examples/embed.html).
+
+If the host shows the document in an `<iframe>`, the framing page needs `<meta name="color-scheme" content="light dark">`. Without it, a frame whose `--ursa-bg` is transparent shows the browser's white canvas under dark-scheme text.
+
+This needs `@scope`, `@layer` and `light-dark()`: Chrome 123+, Safari 17.5+, Firefox 128+.
 
 ## Recent Activity
 
@@ -386,7 +417,7 @@ import PowerList from '_components/PowerList.jsx';
 
 Every document is rendered to HTML at build time, components included, so a page reads the same with JavaScript off. `hydrate: true` in the frontmatter additionally ships the page's components to the browser so they can run there.
 
-Hydration works per component, not per page. Each component imported directly into the `.mdx` file becomes an **island**: the build wraps its output in `<ursa-island data-island="N">`, and in the browser each island is hydrated as its own React root against exactly the markup the build produced for it. The Markdown around the islands is never handed to React, so the template is free to rearrange it — section wrappers for sticky headings, breadcrumbs, the table of contents — without any hydration mismatch. Two things follow from this:
+Hydration works per component, not per page. Each component imported directly into the `.mdx` file becomes an **island**: the build wraps its output in `<ursa-island data-island="N">`, and in the browser each island is hydrated as its own React root against exactly the markup the build produced for it. The Markdown around the islands is never handed to React, so the template is free to add to it — breadcrumbs, image actions, the table of contents — without any hydration mismatch. Two things follow from this:
 
 - A component's first render must produce the same markup in the browser as it did at build time (the usual hydration contract). Fetch data in an effect and render a placeholder first.
 - React context does not cross from one island to another. Components that need to share state should be one island, with the shared state inside it.
@@ -456,19 +487,22 @@ Fighters are…
 - Name the file `menu.md` or `menu-<anything>.md` (`menu-classes.md`,
   `menu-2.txt`); a folder can hold several. The `id` is required for
   `menu-<anything>.md`; `menu.md` without one is the folder menu above.
-- The anchor renders as a static `<nav class="ursa-menu ursa-menu-<appearance>">`
-  exactly where it stands in the document, not as a fixed element. The item
-  whose link is the current page gets `ursa-menu-current` (its ancestors
-  `ursa-menu-active`), so a menu of sibling pages works as a category switcher.
-  An item whose folder holds the current page without being it — "Ancestry"
-  (`ancestry/index.md`) while reading `ancestry/dragon.md` — gets
-  `ursa-menu-path`, styled more lightly than current: you are inside that
-  section, and can still click through to its page.
-  `horizontal` is a strip of items with hover dropdowns for nested items;
-  `vertical` is a stacked, indented list.
+- The anchor renders as a static
+  `<nav class="ursa-nav ursa-menu" data-layout="bar|tree">` exactly where it
+  stands in the document, not as a fixed element. The link to the current page
+  gets `aria-current="page"` (the items above it `data-trail`), so a menu of
+  sibling pages works as a category switcher. An item whose folder holds the
+  current page without being it — "Ancestry" (`ancestry/index.md`) while
+  reading `ancestry/dragon.md` — gets `data-path`, styled more lightly than
+  current: you are inside that section, and can still click through to its page.
+  `appearance: horizontal` (`data-layout="bar"`) is a strip of items with hover
+  dropdowns for nested items; `vertical` (`data-layout="tree"`) is a stacked,
+  indented list.
 - The nearest file with that `id` wins, so a deeper folder can shadow a menu
   defined above it. `auto-generate-menu` and `menu-depth` work as in `menu.md`.
-- A menu anchored above the first heading stays above the page title.
+- A menu anchored above the first heading stays above the page title, in the
+  document header (`header.ursa-doc-header`, with the breadcrumbs). Like the
+  breadcrumbs, it is page furniture and is not part of the JSON's `bodyHtml`.
 - The anchor must be on its own line. It works in `.md`, `.txt` and `.mdx`.
   An anchor inside a code span or code block is left as written.
 - Anything in the menu file that is not a list item — a label before the
@@ -500,8 +534,10 @@ anchoring it in each one, name it in the folder's `config.json`:
   exactly as an anchor is (nearest file up the tree with that id). `position`
   is `top` (default) or `bottom`. An array injects several:
   `[{ "id": "classes" }, { "id": "footer-links", "position": "bottom" }]`.
-- A menu injected at the top goes above the page title, like an anchor on the
-  first line; one at the bottom goes after the last content. A document that
+- A menu injected at the top goes above the page title, in the document
+  header, like an anchor on the first line; one at the bottom goes in the
+  document footer (`footer.ursa-doc-footer`) after the last content. Neither is
+  part of the JSON's `bodyHtml`. A document that
   already anchors the same id is left alone — it is not given the menu twice.
 - Menus **accumulate** down the tree. A deeper folder's `config.json` with
   its own `inject-menu` adds its menus after the ones its ancestors inject:

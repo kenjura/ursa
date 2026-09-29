@@ -25,7 +25,7 @@ describe("generateBreadcrumbs", () => {
     const html = generateBreadcrumbs("campaigns/bnw/", "quests", null, source);
 
     expect(html).toContain(">BNW - Brave New World</a>");
-    expect(html).toContain('aria-current="page">Quests</span>');
+    expect(html).toContain('aria-current="page">Quests</a>');
   });
 
   it("falls back to config.json when a folder has no index", async () => {
@@ -49,7 +49,7 @@ describe("generateBreadcrumbs", () => {
 
     const html = generateBreadcrumbs("campaigns/bnw/", "index", null, source);
 
-    expect(html).toContain('aria-current="page">BNW - Brave New World</span>');
+    expect(html).toContain('aria-current="page">BNW - Brave New World</a>');
   });
 
   it("keeps the document's own frontmatter override for the last crumb", () => {
@@ -57,15 +57,15 @@ describe("generateBreadcrumbs", () => {
       "menu-label": "Getting Started",
       title: "Setup Guide",
     });
-    expect(withMenuLabel).toContain('aria-current="page">Getting Started</span>');
+    expect(withMenuLabel).toContain('aria-current="page">Getting Started</a>');
 
     // menu-label absent: title still wins, as it always has
     const withTitle = generateBreadcrumbs("guides/", "setup", { title: "Setup Guide" });
-    expect(withTitle).toContain('aria-current="page">Setup Guide</span>');
+    expect(withTitle).toContain('aria-current="page">Setup Guide</a>');
   });
 
   it("preserves interior capitalization without a source root", () => {
     const html = generateBreadcrumbs("campaigns/SoL/", "index", null);
-    expect(html).toContain('aria-current="page">SoL</span>');
+    expect(html).toContain('aria-current="page">SoL</a>');
   });
 });

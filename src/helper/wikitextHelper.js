@@ -1,4 +1,5 @@
 import { getImageTag } from './WikiImage.js';
+import { createSlugger, slugify } from './slug.cjs';
 
 let instance = {};
 
@@ -39,13 +40,11 @@ const REGEX = {
   codeRestore: /\$CODE_(\d*)\$/g,
   codeJoin: /<\/code>\s*<code>/g,
   htmlRestore: /\$HTML_(\d*)\$/g,
-  sectionH1: /(?:<h1>)([^\|<]*)(?:\|([^<\|]*))?(?:\|([^<]*))?(?:<\/h1>)([\d\D]*?)(?=<h1|$)/g,
-  sectionH2: /(?:<h2>)([^\|<]*)(?:\|([^<\|]*))?(?:\|([^<]*))?(?:<\/h2>)([\d\D]*?)(?=<h2|<\!--SECTION-END|$)/g,
-  tocHeader: /(?:<h(\d)>)([^<]*)(?:<\/h\1>)/g,
+  heading: /<h([1-6])>([\d\D]*?)<\/h\1>/g,
 };
 
 export function wikiToHtml({ wikitext, articleName, args } = {}) {
-  if (!args) args = { db: "noDB", noSection: true, noTOC: true };
+  if (!args) args = { db: "noDB" };
   if (!wikitext) return "nothing to render";
 
   const db = args.db || "noDB";
@@ -95,13 +94,13 @@ export function wikiToHtml({ wikitext, articleName, args } = {}) {
   // strikethrough
   // html = html.replace( /--(.*?)--/g , '<strike>$1</strike>' );
   // embiggen
-  html = html.replace(REGEX.embiggen3, '<span style="font-size: 200%;">$1</span>');
-  html = html.replace(REGEX.embiggen2, '<span style="font-size: 150%;">$1</span>');
+  html = html.replace(REGEX.embiggen3, '<span class="ursa-big" data-level="2">$1</span>');
+  html = html.replace(REGEX.embiggen2, '<span class="ursa-big" data-level="1">$1</span>');
   // tables
   html = html.replace(REGEX.table, processTable);
   // div/indent
-  html = html.replace(REGEX.indent3, '<div class="indent2">$1</div>');
-  html = html.replace(REGEX.indent2, '<div class="indent1">$1</div>');
+  html = html.replace(REGEX.indent3, '<div class="ursa-indent" data-level="2">$1</div>');
+  html = html.replace(REGEX.indent2, '<div class="ursa-indent" data-level="1">$1</div>');
   html = html.replace(REGEX.indent1, "<div>$1</div>");
   // links
   html = html.replace(REGEX.wikiLink1, processLink);
@@ -128,59 +127,11 @@ export function wikiToHtml({ wikitext, articleName, args } = {}) {
   html = html.replace(REGEX.htmlRestore, processHTMLRestore);
   //html = html.replace( /\$JSON_(\d*)\$/g , processJSONRestore );
 
-  // WORKING CODE for sectioning h1 and h2
-  if (!args.noSection) {
-    var find = REGEX.sectionH1;
-    var replace =
-      '\
-			<div class="sectionOuter sectionOuter1 $2" style="$3">\
-				<h1>$1</h1>\
-				<a name="$1"></a>\
-				<div class="section section1">\
-					$4\
-					<!--SECTION-END-->\
-					<!--<div style="clear: both;"></div>-->\
-				</div>\
-			</div>';
-    var sidebarHtml = "";
-    // html = html.replace( find , replace );
-    html = html.replace(find, function (em, title, args, style, body) {
-      if (args == "right") {
-        sidebarHtml += em.replace(
-          find,
-          '<aside class="sidebarSection">$4</aside>'
-        );
-        return em.replace(
-          find,
-          '<aside class="right sidebarSection">$4</aside>'
-        );
-      }
-      return em.replace(find, replace);
-    });
+  // sections and heading ids (SPEC §3). Unlike the old sectionOuter
+  // templates this always runs: sections are part of the document markup now,
+  // not something the page adds.
+  html = sectionize(html);
 
-    find = REGEX.sectionH2;
-    replace =
-      '\
-	    		<div class="sectionOuter2 $2">\
-	    			<h2>$1</h2>\
-					<a id="$1" name="$1"></a>\
-	    			<div class="section2">\
-	    				$4\
-						<!--<div style="clear: both;"></div>-->\
-	    			</div>\
-	    		</div>';
-    html = html.replace(find, replace);
-  }
-
-  // adding IDs to headers for TOC seeks
-  if (!args.noTOC) {
-    var find = REGEX.tocHeader;
-    var replace = '<h$1 id="$2">$2</h$1>';
-    html = html.replace(find, function (em, g1, g2) {
-      var id = g2.replace(/\s/g, "_");
-      return "<h" + g1 + ' id="' + id + '">' + g2 + "</h" + g1 + ">";
-    });
-  }
   // toc html
   if (args.toc) return html;
   var tocHtml = getTOC(wikitext);
@@ -188,7 +139,6 @@ export function wikiToHtml({ wikitext, articleName, args } = {}) {
   // return html;
   return {
     html: html,
-    sidebarHtml: sidebarHtml,
     wikitext: wikitext,
     tocHtml: tocHtml,
   };
@@ -211,6 +161,49 @@ export function wikiToHtml({ wikitext, articleName, args } = {}) {
       noSection: true,
       noH1: true,
     });
+  }
+
+  /**
+   * Wrap each h1 run, and each h2 run inside it, in section.ursa-section, and
+   * give every heading a slug id. A heading's `|classes|style` arguments go on
+   * its section; an h1 whose argument is `right` becomes aside.ursa-sidebar
+   * (no heading) holding everything up to the next h1.
+   */
+  function sectionize(html) {
+    const slug = createSlugger();
+    const open = []; // closing tags of the open sections, innermost last
+    const levels = [];
+    let out = "";
+    let last = 0;
+    let match;
+    REGEX.heading.lastIndex = 0;
+    while ((match = REGEX.heading.exec(html))) {
+      out += html.slice(last, match.index);
+      last = REGEX.heading.lastIndex;
+      const level = Number(match[1]);
+      const [title, classes = "", style = ""] = match[2].split("|").map((part) => part.trim());
+      if (level <= 2) {
+        while (levels.length && levels[levels.length - 1] >= level) {
+          levels.pop();
+          out += open.pop();
+        }
+        if (level === 1 && classes === "right") {
+          out += '<aside class="ursa-sidebar">';
+          open.push("</aside>");
+          levels.push(level);
+          continue;
+        }
+        const classAttr = ["ursa-section", classes].filter(Boolean).join(" ");
+        const styleAttr = style ? ` style="${style}"` : "";
+        out += `<section class="${classAttr}" data-level="${level}"${styleAttr}>`;
+        open.push("</section>");
+        levels.push(level);
+      }
+      out += `<h${level} id="${slug(stripTags(title))}">${title}</h${level}>`;
+    }
+    out += html.slice(last);
+    while (open.length) out += open.pop();
+    return out;
   }
 
   function processLink(entireMatch, articleName, displayName, anchor) {
@@ -236,7 +229,7 @@ export function wikiToHtml({ wikitext, articleName, args } = {}) {
     if (!articleName)
       return (
         '<a data-scroll href="#' +
-        anchor.replace(/\s/g, "_") +
+        slugify(anchor) +
         '">' +
         anchor +
         "</a>"
@@ -247,21 +240,21 @@ export function wikiToHtml({ wikitext, articleName, args } = {}) {
       displayName = displayName.substr(1);
 
     if (!anchor) anchor = "";
-    else anchor = "#" + anchor;
+    else anchor = "#" + slugify(anchor);
 
     // Note: Link validation (active/inactive status) is now handled by linkValidator.js
     // after HTML generation, so we don't set active/inactive class here.
 
     if (articleName.indexOf("/") >= 0) {
       // assume the link is fully formed
-      return `<a class="wikiLink" data-articleName="${articleName}" href="${articleName}">${
+      return `<a class="ursa-wikilink" data-article="${articleName}" href="${articleName}">${
         displayName || articleName
       }</a>`;
     } else {
       var link = linkbase + articleName + anchor;
 
       return (
-        '<a class="wikiLink" data-articleName="' +
+        '<a class="ursa-wikilink" data-article="' +
         articleName +
         '" href="' +
         link +
@@ -392,6 +385,7 @@ export function wikiToHtml({ wikitext, articleName, args } = {}) {
   function processParagraphs(entireMatch) {
     if (entireMatch.substr(0, 1) == "<") return entireMatch; // html? looks like it's already been converted, let's leave it alone
     if (entireMatch.indexOf("$HTML") > -1) return entireMatch;
+    if (entireMatch.indexOf("<figure") > -1) return entireMatch; // a figure can't sit in a <p>
 
     return "<p>" + entireMatch + "</p>";
   }
@@ -444,7 +438,7 @@ export function wikiToHtml({ wikitext, articleName, args } = {}) {
     // ***************** FINAL ******************
     entireMatch = entireMatch.replace(
       /¦TABLE¦([^¦]*)¦/g,
-      '<div class="tableContainer"><table $1><tr>'
+      '<div class="ursa-table-scroll"><table $1><tr>'
     );
     entireMatch = entireMatch.replace(/¦END TABLE¦/g, "</tr></table></div>");
 
@@ -480,6 +474,8 @@ export function wikiToHtml({ wikitext, articleName, args } = {}) {
     // }
   }
 }
+
+const stripTags = (html) => html.replace(/<[^>]*>/g, "");
 
 const stringRepeat = function (chr, count) {
   var ret = "";

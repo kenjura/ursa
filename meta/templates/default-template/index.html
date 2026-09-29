@@ -1,174 +1,178 @@
 <!DOCTYPE html>
-<html>
+<html lang="${lang}">
 
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="color-scheme" content="light dark">
     <title>${title}</title>
-    <link rel="stylesheet" href="/public/default.css" />
-    <link rel="stylesheet" href="/public/lightbox.css" />
+    <!-- Bundled in this order into one stylesheet; ursa-base.css + ursa-content.css
+         are also published alone as /public/ursa-content.css for embedders. -->
+    <link rel="stylesheet" href="/public/ursa-base.css" />
+    <link rel="stylesheet" href="/public/ursa-content.css" />
+    <link rel="stylesheet" href="/public/ursa-chrome.css" />
     ${styleLink}
 </head>
 
-<body data-template-id="default">
-    <nav id="nav-global">
-        <div class="nav-left-controls">
+<body class="ursa" data-ursa-template="default">
+    <a class="ursa-skip-link" href="#ursa-main">Skip to content</a>
+
+    <header class="ursa-topbar">
+        <div class="ursa-topbar-start">
             <!-- Tabler icons (outline), inlined: see @tabler/icons in devDependencies.
              The bounding <path> Tabler ships in each file is dropped — the viewBox
              already fixes the coordinate system — and the six shared presentation
-             attributes live on .ursa-icon in default.css rather than on every tag.
+             attributes live on .ursa-icon in ursa-chrome.css rather than on every tag.
 
              This button is three icons in one: a house on desktop, where it goes
              home, and a hamburger that becomes a cross on mobile, where it opens
              the menu. menu.js picks between them with data-icon, so the artwork
              stays here with the rest of it instead of being pasted into strings. -->
-        <button class="menu-button" data-icon="menu" aria-label="Menu">
-            <svg class="ursa-icon" data-icon="menu" viewBox="0 0 24 24" aria-hidden="true"><!-- tabler: menu-2 -->
-                <path d="M4 6l16 0" /><path d="M4 12l16 0" /><path d="M4 18l16 0" />
-            </svg>
-            <svg class="ursa-icon" data-icon="close" viewBox="0 0 24 24" aria-hidden="true"><!-- tabler: x -->
-                <path d="M18 6l-12 12" /><path d="M6 6l12 12" />
-            </svg>
-            <svg class="ursa-icon" data-icon="home" viewBox="0 0 24 24" aria-hidden="true"><!-- tabler: home -->
-                <path d="M5 12l-2 0l9 -9l9 9l-2 0" />
-                <path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2 -2v-7" />
-                <path d="M9 21v-6a2 2 0 0 1 2 -2h2a2 2 0 0 1 2 2v6" />
-            </svg>
-        </button>
-            <div class="widget-bar widget-bar-left">
-                <button class="widget-button" data-widget="recent-activity" data-widget-side="left" aria-label="Recent Activity" title="Recent Activity">
-                    <span class="widget-icon">
-                        <svg class="ursa-icon" viewBox="0 0 24 24" aria-hidden="true"><!-- tabler: history -->
+            <button class="ursa-button ursa-sitenav-toggle" type="button" data-icon="menu"
+                    aria-controls="ursa-sitenav" aria-expanded="false" aria-label="Menu">
+                <svg class="ursa-icon" data-icon="menu" viewBox="0 0 24 24" aria-hidden="true"><!-- tabler: menu-2 -->
+                    <path d="M4 6l16 0" /><path d="M4 12l16 0" /><path d="M4 18l16 0" />
+                </svg>
+                <svg class="ursa-icon" data-icon="close" viewBox="0 0 24 24" aria-hidden="true"><!-- tabler: x -->
+                    <path d="M18 6l-12 12" /><path d="M6 6l12 12" />
+                </svg>
+                <svg class="ursa-icon" data-icon="home" viewBox="0 0 24 24" aria-hidden="true"><!-- tabler: home -->
+                    <path d="M5 12l-2 0l9 -9l9 9l-2 0" />
+                    <path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2 -2v-7" />
+                    <path d="M9 21v-6a2 2 0 0 1 2 -2h2a2 2 0 0 1 2 2v6" />
+                </svg>
+            </button>
+            <div class="ursa-toolbar">
+                <button class="ursa-button" type="button" data-widget="recent-activity"
+                        aria-controls="ursa-panel-recent-activity" aria-expanded="false"
+                        aria-label="Recent activity" title="Recent activity">
+                    <svg class="ursa-icon" viewBox="0 0 24 24" aria-hidden="true"><!-- tabler: history -->
                         <path d="M12 8l0 4l2 2" />
                         <path d="M3.05 11a9 9 0 1 1 .5 4m-.5 5v-5h5" />
-                        </svg>
-                    </span>
+                    </svg>
                 </button>
-                <button class="widget-button" data-widget="suggested" data-widget-side="left" aria-label="Suggested Content" title="Suggested Content">
-                    <span class="widget-icon">
-                        <svg class="ursa-icon" viewBox="0 0 24 24" aria-hidden="true"><!-- tabler: star -->
+                <button class="ursa-button" type="button" data-widget="suggested"
+                        aria-controls="ursa-panel-suggested" aria-expanded="false"
+                        aria-label="Suggested content" title="Suggested content">
+                    <svg class="ursa-icon" viewBox="0 0 24 24" aria-hidden="true"><!-- tabler: star -->
                         <path d="M12 17.75l-6.172 3.245l1.179 -6.873l-5 -4.867l6.9 -1l3.086 -6.253l3.086 6.253l6.9 1l-5 4.867l1.179 6.873l-6.158 -3.245" />
-                        </svg>
-                    </span>
+                    </svg>
                 </button>
             </div>
-            <div id="ursa-update-indicator" class="ursa-update-indicator" style="display:none;" title="Updating...">
-                <div class="ursa-spinner"></div>
-            </div>
+            <!-- Live-reload status: shown by `ursa serve` while a rebuild runs -->
+            <output class="ursa-status" data-state="updating" title="Updating…" hidden><span class="ursa-spinner"></span></output>
         </div>
 
-        <div class="nav-center">
-            <nav id="nav-main-top">
-                <!-- Top menu will be populated by JavaScript when data-menu-position="top" -->
-            </nav>
+        <div class="ursa-topbar-center">
+            <!-- Populated by menu.js when data-ursa-menu-position="top" -->
+            <nav class="ursa-nav ursa-topnav" data-layout="bar" aria-label="Site"></nav>
 
-            <div class="search-wrapper search-wrapper-inline">
-                <input id="global-search" type="text" placeholder="Search..." />
-            </div>
+            <search class="ursa-search" data-placement="topbar">
+                <input class="ursa-search-input" id="ursa-search-input" type="search"
+                       placeholder="Search…" aria-label="Search this site" autocomplete="off"
+                       role="combobox" aria-expanded="false" aria-controls="ursa-search-results">
+                <button class="ursa-button ursa-search-clear" type="button" aria-label="Clear search" hidden>×</button>
+                <div class="ursa-search-results" id="ursa-search-results" role="listbox" aria-label="Search results" hidden></div>
+            </search>
         </div>
 
-        <div class="nav-right-controls">
-            <div class="widget-bar">
-                <button class="widget-button" data-widget="toc" aria-label="Table of Contents" title="Table of Contents">
-                    <span class="widget-icon">
-                        <svg class="ursa-icon" viewBox="0 0 24 24" aria-hidden="true"><!-- tabler: list-details -->
+        <div class="ursa-topbar-end">
+            <div class="ursa-toolbar">
+                <button class="ursa-button" type="button" data-widget="toc"
+                        aria-controls="ursa-panel-toc" aria-expanded="false"
+                        aria-label="On this page" title="On this page">
+                    <svg class="ursa-icon" viewBox="0 0 24 24" aria-hidden="true"><!-- tabler: list-details -->
                         <path d="M13 5h8" /><path d="M13 9h5" /><path d="M13 15h8" /><path d="M13 19h5" />
                         <path d="M3 5a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v4a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1l0 -4" />
                         <path d="M3 15a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v4a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1l0 -4" />
-                        </svg>
-                    </span>
+                    </svg>
                 </button>
-                <button class="widget-button" data-widget="search" aria-label="Search" title="Search">
-                    <span class="widget-icon">
-                        <svg class="ursa-icon" viewBox="0 0 24 24" aria-hidden="true"><!-- tabler: search -->
+                <button class="ursa-button" type="button" data-widget="search"
+                        aria-controls="ursa-panel-search" aria-expanded="false"
+                        aria-label="Search" title="Search">
+                    <svg class="ursa-icon" viewBox="0 0 24 24" aria-hidden="true"><!-- tabler: search -->
                         <path d="M3 10a7 7 0 1 0 14 0a7 7 0 1 0 -14 0" /><path d="M21 21l-6 -6" />
-                        </svg>
-                    </span>
+                    </svg>
                 </button>
-                <button class="widget-button" data-widget="profile" aria-label="Profile" title="Profile">
-                    <span class="widget-icon">
-                        <svg class="ursa-icon" viewBox="0 0 24 24" aria-hidden="true"><!-- tabler: user-circle -->
+                <button class="ursa-button" type="button" data-widget="profile"
+                        aria-controls="ursa-panel-profile" aria-expanded="false"
+                        aria-label="Profile" title="Profile">
+                    <svg class="ursa-icon" viewBox="0 0 24 24" aria-hidden="true"><!-- tabler: user-circle -->
                         <path d="M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0" />
                         <path d="M9 10a3 3 0 1 0 6 0a3 3 0 1 0 -6 0" />
                         <path d="M6.168 18.849a4 4 0 0 1 3.832 -2.849h4a4 4 0 0 1 3.834 2.855" />
-                        </svg>
-                    </span>
+                    </svg>
                 </button>
             </div>
         </div>
-    </nav>
+    </header>
 
-    <!-- Widget dropdown panel for LEFT-side widgets -->
-    <div id="widget-dropdown-left" class="widget-dropdown widget-dropdown-left hidden">
-        <div id="widget-content-recent-activity" class="widget-content" data-widget="recent-activity">
-            <div class="widget-header">
-                <span class="widget-header-title">Recent Activity</span>
-                <button class="widget-close-btn" aria-label="Close">✕</button>
-            </div>
-            <div class="recent-activity-list">
-                <!-- Populated by JavaScript -->
-            </div>
-        </div>
-        <div id="widget-content-suggested" class="widget-content" data-widget="suggested">
-            <div class="widget-header">
-                <span class="widget-header-title">Suggested</span>
-                <button class="widget-close-btn" aria-label="Close">✕</button>
-            </div>
-            <div class="suggested-content-list">
-                <!-- Populated by JavaScript -->
-            </div>
-        </div>
-    </div>
-
-    <!-- Widget dropdown panel for RIGHT-side widgets -->
-    <div id="widget-dropdown" class="widget-dropdown hidden">
-        <div id="widget-content-toc" class="widget-content" data-widget="toc">
-            <div class="widget-header">
-                <span class="widget-header-title">Table of Contents</span>
-                <button class="widget-close-btn" aria-label="Close">✕</button>
-            </div>
-            <!-- TOC will be generated by JavaScript -->
-        </div>
-        <div id="widget-content-search" class="widget-content" data-widget="search">
-            <div class="widget-header">
-                <span class="widget-header-title">Search</span>
-                <button class="widget-close-btn" aria-label="Close">✕</button>
-            </div>
-            <!-- Search input + results placed here by JS -->
-        </div>
-        <div id="widget-content-profile" class="widget-content" data-widget="profile">
-            <div class="widget-header">
-                <span class="widget-header-title">Profile</span>
-                <button class="widget-close-btn" aria-label="Close">✕</button>
-            </div>
-            <div class="widget-profile-placeholder">
-                <span class="widget-profile-avatar">👤</span>
-                <p>Sign in to access your profile</p>
-                <button class="widget-profile-signin" disabled>Sign In</button>
-                <p class="widget-profile-note">Authentication coming soon</p>
-            </div>
-        </div>
-    </div>
-
-    <nav id="nav-main">
+    <!-- The server renders the menu data and the root level; menu.js builds
+         the columns (desktop) or the tree (mobile) from it. -->
+    <nav class="ursa-nav ursa-sitenav" id="ursa-sitenav" data-layout="columns" aria-label="Site">
         ${menu}
     </nav>
-    <article id="main-content">
-        ${body}
-    </article>
-    <footer id="site-footer">
+
+    <main class="ursa-main" id="ursa-main">
+        <article class="ursa-doc" data-ursa-path="${docPath}">
+            ${body}
+        </article>
+    </main>
+
+    <aside class="ursa-panel" id="ursa-panel-toc" data-widget="toc" data-side="end" aria-labelledby="ursa-panel-toc-title" hidden>
+        <header class="ursa-panel-header">
+            <h2 class="ursa-panel-title" id="ursa-panel-toc-title">On this page</h2>
+            <button class="ursa-button ursa-panel-close" type="button" aria-label="Close">✕</button>
+        </header>
+        <!-- toc.js -->
+    </aside>
+
+    <aside class="ursa-panel" id="ursa-panel-search" data-widget="search" data-side="end" aria-labelledby="ursa-panel-search-title" hidden>
+        <header class="ursa-panel-header">
+            <h2 class="ursa-panel-title" id="ursa-panel-search-title">Search</h2>
+            <button class="ursa-button ursa-panel-close" type="button" aria-label="Close">✕</button>
+        </header>
+        <!-- widgets.js -->
+    </aside>
+
+    <aside class="ursa-panel" id="ursa-panel-profile" data-widget="profile" data-side="end" aria-labelledby="ursa-panel-profile-title" hidden>
+        <header class="ursa-panel-header">
+            <h2 class="ursa-panel-title" id="ursa-panel-profile-title">Profile</h2>
+            <button class="ursa-button ursa-panel-close" type="button" aria-label="Close">✕</button>
+        </header>
+        <div class="ursa-profile">
+            <span class="ursa-profile-avatar" aria-hidden="true">👤</span>
+            <p>Sign in to access your profile</p>
+            <button class="ursa-profile-signin" type="button" disabled>Sign in</button>
+            <p class="ursa-profile-note">Authentication coming soon</p>
+        </div>
+    </aside>
+
+    <aside class="ursa-panel" id="ursa-panel-recent-activity" data-widget="recent-activity" data-side="start" aria-labelledby="ursa-panel-recent-activity-title" hidden>
+        <header class="ursa-panel-header">
+            <h2 class="ursa-panel-title" id="ursa-panel-recent-activity-title">Recent activity</h2>
+            <button class="ursa-button ursa-panel-close" type="button" aria-label="Close">✕</button>
+        </header>
+        <!-- widgets.js -->
+    </aside>
+
+    <aside class="ursa-panel" id="ursa-panel-suggested" data-widget="suggested" data-side="start" aria-labelledby="ursa-panel-suggested-title" hidden>
+        <header class="ursa-panel-header">
+            <h2 class="ursa-panel-title" id="ursa-panel-suggested-title">Suggested</h2>
+            <button class="ursa-button ursa-panel-close" type="button" aria-label="Close">✕</button>
+        </header>
+        <!-- widgets.js -->
+    </aside>
+
+    <footer class="ursa-sitefooter">
         ${footer}
     </footer>
-    <div id="global-nav">
-    </div>
 
     <script src="/public/content-hooks.js"></script>
     <script src="/public/toc.js"></script>
-    <script src="/public/toc-generator.js"></script>
     <script src="/public/menu.js"></script>
     <script src="/public/search.js"></script>
     <script src="/public/widgets.js"></script>
-    <script src="/public/sectionify.js"></script>
     <script src="/public/sticky.js"></script>
     <script src="/public/lightbox.js"></script>
     ${customScript}

@@ -48,6 +48,8 @@ import { injectFrontmatterTable } from "../frontmatterTable.js";
 import { extractSections } from "../sectionExtractor.js";
 import { renderFile, renderFileAsync } from "../fileRenderer.js";
 import { generateBreadcrumbs } from "../breadcrumbs.js";
+import { ensureTitleSection, docWithFurniture } from "./docStructure.js";
+import { findLegacySelectors, hasLegacyHtml, legacySelectorWarning } from "../legacySelectors.js";
 import { getAutomenu } from "../automenu.js";
 import {
   findCustomMenu,
@@ -118,7 +120,7 @@ export const INTERNAL_KINDS = [
 /** Site-wide singletons. */
 export const SITE_KINDS = [
   "documentSet", "validPaths", "templates", "metaAssets", "menuData", "menuHtml",
-  "footer", "reactRuntime", "ursaMetadata", "searchIndex", "fullTextIndex",
+  "footer", "reactRuntime", "contentCss", "ursaMetadata", "searchIndex", "fullTextIndex",
   "recentActivity", "customMenus",
 ];
 
@@ -391,17 +393,27 @@ export function createSite(env) {
 
   /** Fill a template. A function replacer: `$&` in a document body must not be interpreted. */
   function fillTemplate(template, replacements) {
-    const pattern = /\$\{(title|menu|meta|transformedMetadata|body|styleLink|customScript|searchIndex|footer)\}/g;
+    const pattern = /\$\{(title|menu|meta|transformedMetadata|body|styleLink|customScript|searchIndex|footer|docPath|lang)\}/g;
     return template.replace(pattern, (match) => replacements[match] ?? match);
   }
 
-  /** Body attributes: menu position, custom menu path, build id (for JSON fetch cache-busting). */
+  /**
+   * Body attributes: menu position, custom menu path, build id (for JSON
+   * fetch cache-busting). The body is the Ursa root, so it also gets
+   * class="ursa" if a template left it off.
+   */
   function bodyAttributes(html, customMenuInfo) {
     const attrs = [];
-    if (customMenuInfo) attrs.push(`data-custom-menu="${customMenuInfo.menuJsonPath}"`);
-    attrs.push(`data-menu-position="${customMenuInfo?.menuPosition || "top"}"`);
-    attrs.push(`data-build="${env.session.buildId}"`);
-    return html.replace(/<body([^>]*)>/, `<body$1 ${attrs.join(" ")}>`);
+    if (customMenuInfo) attrs.push(`data-ursa-custom-menu="${customMenuInfo.menuJsonPath}"`);
+    attrs.push(`data-ursa-menu-position="${customMenuInfo?.menuPosition || "top"}"`);
+    attrs.push(`data-ursa-build="${env.session.buildId}"`);
+    return html.replace(/<body([^>]*)>/, (_, existing) => {
+      const hasRoot = /\sclass=["'][^"']*\bursa\b/.test(existing);
+      const withRoot = hasRoot ? existing
+        : /\sclass=["']/.test(existing) ? existing.replace(/\sclass=(["'])/, " class=$1ursa ")
+        : ` class="ursa"${existing}`;
+      return `<body${withRoot} ${attrs.join(" ")}>`;
+    });
   }
 
   /** Assemble a page from a body and write it. Shared by documents, auto-indices and listings. */
@@ -437,11 +449,37 @@ export function createSite(env) {
       "${customScript}": customScript,
       "${searchIndex}": "[]", // Placeholder - search index written separately as JSON file
       "${footer}": footer,
+      "${docPath}": docUrlPath.replace(/\.html$/, ""),
+      "${lang}": siteLang(),
     });
     html = bodyAttributes(html, customMenuInfo);
     html = resolveRelativeUrls(html, docUrlPath);
     html = await resolveLinks(ctx, html, docUrlPath);
     return finishAssets(ctx, html, docUrlPath);
+  }
+
+  /**
+   * Warn once per site stylesheet/script that still uses names Ursa no longer
+   * emits, and per stylesheet that declares Ursa tokens on :root/html (where
+   * .ursa's own defaults shadow them). Warnings only; nothing is rewritten.
+   */
+  async function warnLegacySelectors(ctx, paths) {
+    for (const path of paths) {
+      const text = (await ctx.read(path, null)).toString("utf8");
+      const rel = relOf(path);
+      const names = findLegacySelectors(text);
+      if (names.length > 0) warn(`legacy-selectors:${rel}`, legacySelectorWarning(rel, names));
+      if (path.endsWith(".css") && /(?:^|[\s,}])(?::root|html)\s*\{[^}]*--ursa-/.test(text)) {
+        warn(`legacy-root-tokens:${rel}`,
+          `⚠️  ${rel} declares --ursa-* tokens on :root/html, where Ursa's defaults on .ursa override them — declare them on .ursa instead`);
+      }
+    }
+  }
+
+  /** The site's language, from the docroot config.json `lang` (default "en"). */
+  function siteLang() {
+    const lang = getFolderConfig(source)?.lang;
+    return typeof lang === "string" && lang.trim() ? escapeAttr(lang.trim()) : "en";
   }
 
   /**
@@ -484,9 +522,9 @@ export function createSite(env) {
    * to the top and bottom of its body. A menu the document already anchors
    * itself is not added again.
    */
-  async function injectNamedMenus(ctx, body, rel, anchoredIds) {
+  async function injectNamedMenus(ctx, rel, anchoredIds) {
     const entries = await ctx.get(nodeId("injectMenusFor", dirRelOf(rel)));
-    if (entries.length === 0) return body;
+    if (entries.length === 0) return { top: "", bottom: "" };
     const currentUrl = "/" + outputPathFor(rel);
     const anchored = new Set(anchoredIds);
     let top = "";
@@ -494,10 +532,10 @@ export function createSite(env) {
     for (const { id, position } of entries) {
       if (anchored.has(id)) continue;
       const html = await renderNamedMenu(ctx, rel, id, currentUrl, "inject");
-      if (position === "bottom") bottom += "\n" + html;
+      if (position === "bottom") bottom += html + "\n";
       else top += html + "\n";
     }
-    return top + body + bottom;
+    return { top, bottom };
   }
 
   // -------------------------------------------------------------------------
@@ -601,7 +639,8 @@ export function createSite(env) {
       if (ctx.exists(templatesDir)) {
         await copyDir(join(meta, "shared"), "");
         for (const entry of await ctx.listDir(templatesDir)) {
-          if (entry.kind === "dir") await copyDir(join(templatesDir, entry.name), "", ["index.html"]);
+          // public/ursa-content.css is contentCss's (base + content), not a copy
+          if (entry.kind === "dir") await copyDir(join(templatesDir, entry.name), "", ["index.html", "ursa-content.css"]);
         }
         // Files at the meta root are not part of any template
         const orphans = [];
@@ -706,6 +745,25 @@ export function createSite(env) {
       // individual <script> tags so one broken file does not break them all
       const toRewrite = { ...assets, cssFiles: cssOk ? assets.cssFiles : [], jsFiles: jsOk ? assets.jsFiles : [] };
       return rewriteTemplateWithBundles(templateHtml, templateName, toRewrite, urls);
+    },
+
+    /**
+     * /public/ursa-content.css: the default template's base and content
+     * stylesheets alone, for applications that embed a document's bodyHtml
+     * (SPEC §2 Embedding). Written in --json-only builds too, since that is
+     * what embedders build.
+     */
+    contentCss: () => async (ctx) => {
+      const dir = join(meta, "templates", DEFAULT_TEMPLATE_NAME);
+      const parts = [];
+      for (const name of ["ursa-base.css", "ursa-content.css"]) {
+        const path = join(dir, name);
+        if (!ctx.exists(path)) return null;
+        parts.push((await ctx.read(path, null)).toString("utf8"));
+      }
+      const { code } = await esbuild.transform(parts.join("\n\n"), { loader: "css", minify: true });
+      const hash = await writeOutput(ctx, "public/ursa-content.css", code);
+      return { hash };
     },
 
     /** React + ReactDOM bundled for MDX hydration; a function of ursa's version only. */
@@ -944,6 +1002,7 @@ export function createSite(env) {
     cssBundle: (dirRel) => async (ctx) => {
       const paths = await findAllStyleCss(abs(dirRel), source);
       if (paths.length === 0) return null;
+      await warnLegacySelectors(ctx, paths);
       let css = await bundleCssContent(paths, { minify: true, rebaseUrls: true, sourceDir: source });
       const hashes = new Map();
       for (const u of collectCssUrls(css)) {
@@ -959,6 +1018,7 @@ export function createSite(env) {
     jsBundle: (dirRel) => async (ctx) => {
       const paths = await findAllScriptJs(abs(dirRel), source);
       if (paths.length === 0) return null;
+      await warnLegacySelectors(ctx, paths);
       const { success, code } = await bundleJsContent(paths, { minify: true, minifySyntax: true });
       if (!success) return null;
       const rel = `public/${bundleName(dirRel)}.bundle.js`;
@@ -1051,6 +1111,7 @@ export function createSite(env) {
       }
       const title = titleOf(rel);
       const shouldHydrate = type === ".mdx" && meta?.hydrate === true;
+      if (hasLegacyHtml(raw)) env.noteLegacyHtml?.(rel);
 
       const renderResult = await renderFileAsync({
         fileContents: type === ".mdx" ? prepareMdxMenuAnchors(raw) : raw,
@@ -1089,20 +1150,23 @@ export function createSite(env) {
       // the folder's config.json can inject menus at the top and bottom
       const anchoredIds = collectMenuAnchorIds(body || "");
       body = await resolveNamedMenus(ctx, body || "", rel);
-      body = await injectNamedMenus(ctx, body, rel, anchoredIds);
+      const injected = await injectNamedMenus(ctx, rel, anchoredIds);
 
-      // Inject default H1 if body doesn't start with one. A menu anchored at
-      // the very top stays above the title.
+      // Menus anchored at the very top are page furniture, like the injected
+      // ones: they go in the document header, above the title.
       const afterMenus = leadingMenusEnd(body);
-      if (!body.slice(afterMenus).trimStart().startsWith("<h1")) {
-        const h1Title = meta?.title || title;
-        body = body.slice(0, afterMenus) + `<h1>${h1Title}</h1>\n` + body.slice(afterMenus);
-      }
+      const leadingMenus = body.slice(0, afterMenus);
+      body = body.slice(afterMenus);
 
-      // Breadcrumbs before the H1 (folder labels come from docMeta projections)
+      // Give the document an h1 section when it doesn't start with one; any
+      // content before its first h1 becomes that section's body.
+      body = ensureTitleSection(body, meta?.title || title);
+
+      // Breadcrumbs head the document header (folder labels come from docMeta projections)
       await preloadFrontmatter(ctx, ancestorIndexDocs(ctx, dirRelOf(rel)));
       const breadcrumbs = generateBreadcrumbs(dir, base, meta, source);
-      if (breadcrumbs) body = breadcrumbs + body;
+      const header = breadcrumbs + injected.top + leadingMenus;
+      const footer = injected.bottom;
 
       // Frontmatter table after the first H1 (markdown only)
       if ((type === ".md" || type === ".mdx") && meta) {
@@ -1115,11 +1179,18 @@ export function createSite(env) {
         await preloadFrontmatter(ctx, await docsBelow(ctx, dirRelOf(rel), autoIndexConfig.depth + 1));
         const autoIndexHtml = await generateAutoIndexHtmlFromSource(dirname(path), autoIndexConfig.depth);
         if (autoIndexHtml) {
-          body = autoIndexConfig.position === "bottom" ? body + "\n" + autoIndexHtml : autoIndexHtml + "\n" + body;
+          if (autoIndexConfig.position === "bottom") {
+            body = body + "\n" + autoIndexHtml;
+          } else {
+            // Under the title, inside its section
+            const h1End = body.indexOf("</h1>");
+            const at = h1End < 0 ? 0 : h1End + "</h1>".length;
+            body = body.slice(0, at) + "\n" + autoIndexHtml + "\n" + body.slice(at);
+          }
         }
       }
 
-      return { body, hydrationScript, meta, title, type, base, dir };
+      return { body, header, footer, hydrationScript, meta, title, type, base, dir };
     },
 
     /**
@@ -1138,7 +1209,8 @@ export function createSite(env) {
         return { shadowedBy: owner };
       }
       const rendered = await ctx.get(nodeId("bodyHtml", rel));
-      const { body, hydrationScript, meta, title } = rendered;
+      const { hydrationScript, meta, title } = rendered;
+      const body = docWithFurniture(rendered);
       const dirRel = dirRelOf(rel);
       const docUrlPath = "/" + outRel;
       const templateName = meta?.template || DEFAULT_TEMPLATE_NAME;
@@ -1291,7 +1363,7 @@ export function createSite(env) {
           const href = "/" + (ext ? f.slice(0, -ext.length) : f) + ".html";
           return `<li><a href="${href}">${basename(f, ext)}</a></li>`;
         });
-      const body = `<ul>${items.join("")}</ul>`;
+      const body = ensureTitleSection(`<ul>${items.join("")}</ul>`, "Index");
       const { html } = await assemblePage(ctx, {
         templateName: DEFAULT_TEMPLATE_NAME,
         dirRel: dirRelOf(dirRel),
@@ -1320,7 +1392,10 @@ export function createSite(env) {
       const folderDisplayName = dirRel ? getFolderLabel(dirAbs, getFolderConfig(dirAbs), folderName) : "Home";
       await preloadFrontmatter(ctx, ancestorIndexDocs(ctx, dirRel));
       const breadcrumbHtml = generateBreadcrumbs(dirRel ? dirRel + "/" : "/", "index", null, source);
-      const body = `${breadcrumbHtml}<h1>${folderDisplayName}</h1>\n${listing}`;
+      const body = docWithFurniture({
+        header: breadcrumbHtml,
+        body: ensureTitleSection(listing, folderDisplayName),
+      });
       const { html } = await assemblePage(ctx, {
         templateName: DEFAULT_TEMPLATE_NAME,
         dirRel,
@@ -1400,6 +1475,8 @@ export function createSite(env) {
   };
 }
 
+const escapeAttr = (s) => String(s).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+
 /**
  * The footer without its per-session build metadata line and git comment.
  * Only the parts that are functions of the source tree (footer.md, the doc
@@ -1407,7 +1484,7 @@ export function createSite(env) {
  */
 export function footerFingerprint(html) {
   const stable = String(html ?? "")
-    .replace(/<div class="footer-meta">[\s\S]*?<\/div>/, "")
+    .replace(/<p class="ursa-sitefooter-meta">[\s\S]*?<\/p>/, "")
     .replace(/<!-- git: [^>]*-->/, "");
   return hashBytes(stable);
 }

@@ -130,6 +130,7 @@ export async function createBuild({
 
   let writtenCount = 0;
   const warned = new Set();
+  const legacyHtmlDocs = new Set();
   const env = {
     source, meta, output, whitelist, exclude, jsonOnly, session,
     log,
@@ -139,6 +140,7 @@ export async function createBuild({
       console.warn(msg);
     },
     onWrite: () => { writtenCount++; },
+    noteLegacyHtml: (rel) => { legacyHtmlDocs.add(rel); },
   };
   const site = createSite(env);
   graph.resolver(site.resolve);
@@ -160,6 +162,7 @@ export async function createBuild({
     const timings = {};
     const time = (name, start) => { timings[name] = Date.now() - start; };
     warned.clear();
+    legacyHtmlDocs.clear();
     writtenCount = 0;
     deletedCount = 0;
     orphanQueue = [];
@@ -248,6 +251,10 @@ export async function createBuild({
       viewedNodes,
     };
     report(summary);
+    if (legacyHtmlDocs.size > 0) {
+      const docs = [...legacyHtmlDocs].sort();
+      console.warn(`⚠️  ${docs.length} document(s) use Ursa's pre-0.101.0 class names in raw HTML (${docs.slice(0, 3).join(", ")}${docs.length > 3 ? ", …" : ""}) — see docs/changes/semantic-css/MIGRATION.md`);
+    }
     return summary;
   }
 
@@ -351,6 +358,7 @@ export async function createBuild({
   function pageRoots(set, customMenus, metaAssets, templates) {
     const ids = [];
     if (jsonOnly) {
+      ids.push(nodeId("contentCss"));
       for (const d of set.articles) ids.push(nodeId("docData", d));
       return ids;
     }
@@ -358,6 +366,7 @@ export async function createBuild({
     // Every template's bundles exist whether or not a page uses it yet
     for (const t of Object.keys(templates).sort()) ids.push(nodeId("metaBundle", t));
     ids.push(nodeId("reactRuntime"));
+    ids.push(nodeId("contentCss"));
     for (const d of set.articles) ids.push(nodeId("pageHtml", d));
     for (const h of set.html) ids.push(nodeId("htmlPassthrough", h));
     for (const dir of ["", ...set.dirs]) ids.push(nodeId("autoIndexPage", dir));

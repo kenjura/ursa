@@ -1,5 +1,5 @@
 /**
- * Convert YAML frontmatter metadata to an HTML table
+ * Convert YAML frontmatter metadata to a definition list (dl.ursa-frontmatter)
  * and inject it into the document body after the first H1
  */
 
@@ -65,9 +65,9 @@ function formatKey(key) {
 }
 
 /**
- * Generate an HTML table from metadata object
+ * Generate the frontmatter definition list from a metadata object
  * @param {Object} metadata - The parsed YAML frontmatter
- * @returns {string} HTML table string
+ * @returns {string} HTML string
  */
 export function metadataToTable(metadata) {
   if (!metadata || typeof metadata !== 'object' || Object.keys(metadata).length === 0) {
@@ -101,17 +101,12 @@ export function metadataToTable(metadata) {
   const rows = entries.map(([key, value]) => {
     const formattedValue = formatValue(value);
     // Don't escape HTML in formatted value since it may contain our formatting
-    return `    <tr>
-      <th>${escapeHtml(formatKey(key))}</th>
-      <td>${formattedValue}</td>
-    </tr>`;
+    return `  <div><dt>${escapeHtml(formatKey(key))}</dt><dd>${formattedValue}</dd></div>`;
   }).join('\n');
 
-  return `<table class="frontmatter-table">
-  <tbody>
+  return `<dl class="ursa-frontmatter">
 ${rows}
-  </tbody>
-</table>`;
+</dl>`;
 }
 
 /**

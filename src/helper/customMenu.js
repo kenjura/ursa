@@ -34,10 +34,85 @@ const SOURCE_EXTENSIONS = ['.md', '.mdx', '.txt'];
 // Index file names for folder links
 const INDEX_NAMES = ['index', 'home'];
 
-// Default icons
+// Default icons (menu data only; the rendered menu shows just the home icon)
 const FOLDER_ICON = '📁';
 const DOCUMENT_ICON = '📄';
 const HOME_ICON = '🏠';
+
+// Tabler "home" (outline), as in the default template's menu toggle. The
+// stroke/fill presentation attributes live on .ursa-icon in the stylesheet.
+const HOME_ICON_SVG = '<svg class="ursa-icon" viewBox="0 0 24 24" aria-hidden="true">'
+  + '<path d="M5 12l-2 0l9 -9l9 9l-2 0" />'
+  + '<path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2 -2v-7" />'
+  + '<path d="M9 21v-6a2 2 0 0 1 2 -2h2a2 2 0 0 1 2 2v6" />'
+  + '</svg>';
+
+/**
+ * The menu's embedded JSON (read by menu.js). `<` is escaped so the payload
+ * can never close the script element early.
+ * @param {object} data
+ * @returns {string}
+ */
+export function menuDataScript(data) {
+  const json = JSON.stringify(data).replace(/</g, '\\u003c');
+  return `<script type="application/json" id="ursa-menu-data">${json}</script>`;
+}
+
+/** Normalise an href or pathname for "is this the current page" comparison. */
+function normalizePageHref(href) {
+  let decoded = href;
+  try { decoded = decodeURIComponent(href); } catch { /* keep as-is */ }
+  return decoded.replace(/\/index\.html$/, '').replace(/\.html$/, '').replace(/\/$/, '');
+}
+
+/**
+ * Render menu items as `.ursa-nav-list` markup — the vocabulary menu.js uses
+ * for every layout, so the server-rendered list upgrades without renaming.
+ *
+ *   <ul class="ursa-nav-list">
+ *     <li class="ursa-nav-item" data-path [data-branch] [data-index] [data-home]>
+ *       <a class="ursa-nav-link" href [aria-current="page"] [data-ursa-broken]>Label</a>
+ *       (or <span class="ursa-nav-link"> when the entry has no page)
+ *       [<ul class="ursa-nav-list">…</ul>]   (only with `nested`)
+ *
+ * No blank lines: the markup goes through the Markdown renderer, where a
+ * blank line would end the HTML block.
+ *
+ * @param {Array} items - Menu data items
+ * @param {object} [options]
+ * @param {string} [options.currentHref] - The current page's href, if known (marks aria-current)
+ * @param {boolean} [options.nested] - Render children as nested lists (default: root level only)
+ * @returns {string} - HTML string
+ */
+export function renderNavListHtml(items, { currentHref = null, nested = false } = {}) {
+  const current = currentHref ? normalizePageHref(currentHref) : null;
+  const lis = items.map(item => {
+    const hasChildren = !!item.hasChildren;
+    const attrs = [
+      item.path !== undefined ? ` data-path="${item.path}"` : '',
+      hasChildren ? ' data-branch' : '',
+      item.isIndex ? ' data-index' : '',
+      item.isHome ? ' data-home' : '',
+    ].join('');
+    const icon = item.isHome ? HOME_ICON_SVG : '';
+
+    let linkHtml;
+    if (item.href) {
+      const isCurrent = current !== null && item.href !== '#' && normalizePageHref(item.href) === current;
+      const linkAttrs = (isCurrent ? ' aria-current="page"' : '') + (item.inactive ? ' data-ursa-broken' : '');
+      linkHtml = `<a class="ursa-nav-link" href="${item.href}"${linkAttrs}>${icon}${item.label}</a>`;
+    } else {
+      linkHtml = `<span class="ursa-nav-link">${icon}${item.label}</span>`;
+    }
+
+    const childrenHtml = nested && hasChildren && item.children && item.children.length > 0
+      ? `\n${renderNavListHtml(item.children, { currentHref, nested })}\n`
+      : '';
+
+    return `<li class="ursa-nav-item"${attrs}>${linkHtml}${childrenHtml}</li>`;
+  }).join('\n');
+  return lis ? `<ul class="ursa-nav-list">\n${lis}\n</ul>` : '<ul class="ursa-nav-list"></ul>';
+}
 
 /**
  * Check if a menu item represents an index-like file.
@@ -286,7 +361,7 @@ export function autoGenerateMenuFromFolder(folderPath, sourceRoot, depth = 10, i
           path: entry.name.toLowerCase().replace(/\s+/g, '-'),
           href: relativePath + '/index.html',
           hasChildren: children.length > 0,
-          icon: `<span class="menu-icon">${FOLDER_ICON}</span>`,
+          icon: FOLDER_ICON,
           children,
         });
       } else {
@@ -308,7 +383,7 @@ export function autoGenerateMenuFromFolder(folderPath, sourceRoot, depth = 10, i
           path: baseName.toLowerCase().replace(/\s+/g, '-'),
           href: relativePath.replace(ext, '.html'),
           hasChildren: false,
-          icon: `<span class="menu-icon">${DOCUMENT_ICON}</span>`,
+          icon: DOCUMENT_ICON,
           children: [],
         });
       }
@@ -341,7 +416,8 @@ export function autoGenerateMenuFromFolder(folderPath, sourceRoot, depth = 10, i
       path: 'home',
       href: homeHref,
       hasChildren: topLevelFiles.length > 0,
-      icon: `<span class="menu-icon">${HOME_ICON}</span>`,
+      icon: HOME_ICON,
+      isHome: true,
       children: topLevelFiles,
     };
     
@@ -624,7 +700,7 @@ export function parseCustomMenu(content, menuDir, sourceRoot) {
       path: label.toLowerCase().replace(/\s+/g, '-'), // Generate path from label
       href,
       hasChildren: false, // Will be updated if children are added
-      icon: `<span class="menu-icon">${href ? DOCUMENT_ICON : FOLDER_ICON}</span>`,
+      icon: href ? DOCUMENT_ICON : FOLDER_ICON,
       children: [],
     };
     
@@ -640,7 +716,7 @@ export function parseCustomMenu(content, menuDir, sourceRoot) {
     // If this is the first child, mark parent as having children
     if (parent.menuItem) {
       parent.menuItem.hasChildren = true;
-      parent.menuItem.icon = `<span class="menu-icon">${FOLDER_ICON}</span>`;
+      parent.menuItem.icon = FOLDER_ICON;
     }
     
     // Push this item onto the stack as a potential parent
@@ -689,112 +765,36 @@ export function getCustomMenuForFile(filePath, sourceRoot) {
 }
 
 /**
- * Build menu HTML structure from custom menu data
- * This matches the format expected by the existing menu.js client-side code
+ * Build menu HTML structure from custom menu data: the embedded menu data
+ * script plus the menu as `.ursa-nav-list` markup (see renderNavListHtml).
+ * It goes inside the template's `nav.ursa-nav`, which supplies the wrapper.
  * @param {Array} menuData - The parsed menu data
  * @param {string} position - 'side' or 'top'
+ * @param {object} [options]
+ * @param {string} [options.currentHref] - The current page's href, if known
  * @returns {string} - HTML string for the menu
  */
-export function buildCustomMenuHtml(menuData, position = 'side') {
+export function buildCustomMenuHtml(menuData, position = 'side', { currentHref = null } = {}) {
   if (position === 'top') {
-    return buildTopMenuHtml(menuData);
+    return buildTopMenuHtml(menuData, { currentHref });
   }
   
-  const menuConfigScript = `<script type="application/json" id="menu-config">${JSON.stringify({ openMenuItems: [], customMenu: true })}</script>`;
-  
-  const breadcrumbHtml = `
-<div class="menu-breadcrumb" style="display: none;">
-  <button class="menu-back" title="Go back">←</button>
-  <button class="menu-home" title="Go to root">🏠</button>
-  <span class="menu-current-path"></span>
-</div>`;
-
-  const menuHtml = renderCustomMenuLevel(menuData);
-  
-  return `${menuConfigScript}${breadcrumbHtml}<ul class="menu-level" data-level="0">${menuHtml}</ul>`;
+  const script = menuDataScript({ openMenuItems: [], customMenu: true });
+  // Root level only: menu.js loads the rest from the menu's JSON
+  return `${script}\n${renderNavListHtml(menuData, { currentHref })}`;
 }
 
 /**
- * Build top navigation menu HTML
- * Top-level items are horizontal, with dropdowns for children
+ * Build top navigation menu HTML: the whole tree as nested lists, which the
+ * `bar` layout shows as a strip with dropdowns and flyouts.
  * @param {Array} menuData - The parsed menu data
+ * @param {object} [options]
+ * @param {string} [options.currentHref] - The current page's href, if known
  * @returns {string} - HTML string for the top menu
  */
-function buildTopMenuHtml(menuData) {
-  const menuConfigScript = `<script type="application/json" id="menu-config">${JSON.stringify({ openMenuItems: [], customMenu: true, position: 'top' })}</script>`;
-  
-  const menuItems = menuData.map(item => {
-    const hasChildrenClass = item.hasChildren ? ' has-dropdown' : '';
-    
-    const labelHtml = item.href
-      ? `<a href="${item.href}" class="top-menu-label">${item.label}</a>`
-      : `<span class="top-menu-label">${item.label}</span>`;
-    
-    let dropdownHtml = '';
-    if (item.hasChildren && item.children && item.children.length > 0) {
-      dropdownHtml = `<ul class="top-menu-dropdown">${renderTopMenuDropdown(item.children)}</ul>`;
-    }
-    
-    return `
-<li class="top-menu-item${hasChildrenClass}">
-  ${labelHtml}
-  ${dropdownHtml}
-</li>`;
-  }).join('');
-  
-  return `${menuConfigScript}<ul class="top-menu-level">${menuItems}</ul>`;
-}
-
-/**
- * Render dropdown items for top menu
- * @param {Array} items - Menu items
- * @returns {string} - HTML string
- */
-function renderTopMenuDropdown(items) {
-  return items.map(item => {
-    const hasChildrenClass = item.hasChildren ? ' has-flyout' : '';
-    
-    const labelHtml = item.href
-      ? `<a href="${item.href}" class="dropdown-label">${item.label}</a>`
-      : `<span class="dropdown-label">${item.label}</span>`;
-    
-    let flyoutHtml = '';
-    if (item.hasChildren && item.children && item.children.length > 0) {
-      flyoutHtml = `<ul class="top-menu-flyout">${renderTopMenuDropdown(item.children)}</ul>`;
-    }
-    
-    return `
-<li class="dropdown-item${hasChildrenClass}">
-  ${labelHtml}
-  ${item.hasChildren ? '<span class="flyout-indicator">▶</span>' : ''}
-  ${flyoutHtml}
-</li>`;
-  }).join('');
-}
-
-/**
- * Render a level of the custom menu
- * @param {Array} items - Menu items at this level
- * @returns {string} - HTML string
- */
-function renderCustomMenuLevel(items) {
-  return items.map(item => {
-    const hasChildrenClass = item.hasChildren ? ' has-children' : '';
-    const hasChildrenIndicator = item.hasChildren ? '<span class="menu-more">⋯</span>' : '';
-    
-    const labelHtml = item.href
-      ? `<a href="${item.href}" class="menu-label">${item.label}</a>`
-      : `<span class="menu-label">${item.label}</span>`;
-    
-    return `
-<li class="menu-item${hasChildrenClass}" data-path="${item.path}">
-  <div class="menu-item-row">
-    ${item.icon}
-    ${labelHtml}
-    ${hasChildrenIndicator}
-  </div>
-</li>`;
-  }).join('');
+function buildTopMenuHtml(menuData, { currentHref = null } = {}) {
+  const script = menuDataScript({ openMenuItems: [], customMenu: true, position: 'top' });
+  return `${script}\n${renderNavListHtml(menuData, { currentHref, nested: true })}`;
 }
 
 /**

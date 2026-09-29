@@ -25,7 +25,7 @@ const TEMPLATE = `<!DOCTYPE html>
 <link rel="stylesheet" href="/public/base.css" />
 \${styleLink}
 </head>
-<body><nav id="nav-main">\${menu}</nav><article>\${body}</article><footer>\${footer}</footer>
+<body><nav class="ursa-nav ursa-sitenav">\${menu}</nav><article>\${body}</article><footer>\${footer}</footer>
 <script src="/public/app.js"></script>
 \${customScript}
 </body></html>`;
@@ -100,9 +100,9 @@ async function snapshot(dir) {
         if (entry.name.endsWith(".html")) {
           const text = buf
             .toString("utf8")
-            .replace(/<div class="footer-meta">[\s\S]*?<\/div>/, "")
+            .replace(/<p class="ursa-sitefooter-meta">[\s\S]*?<\/p>/, "")
             .replace(/<!-- git: [^>]*-->/, "")
-            .replace(/ data-build="\d+"/, "");
+            .replace(/ data-ursa-build="\d+"/, "");
           buf = Buffer.from(text);
         }
         out.set(relative(dir, p), hashBytes(buf));
@@ -284,7 +284,7 @@ describe("7–8. several sources for one output", () => {
 
     await unlink(join(source, "rules/index.mdx"));
     r = await built.pass();
-    expect(await read("rules/index.html")).toContain('class="auto-index');
+    expect(await read("rules/index.html")).toContain('class="ursa-autoindex');
     expect(r.deleted).toBeGreaterThan(0);
     await built.close();
     await expectConverged();
@@ -348,7 +348,7 @@ describe("9–10. renames and deletions leave no ghosts", () => {
     await unlink(join(source, "rules/index.md"));
     await built.pass();
     const html = await read("rules/index.html");
-    expect(html).toContain('class="auto-index');
+    expect(html).toContain('class="ursa-autoindex');
     expect(html).toContain("combat");
     await built.close();
     await expectConverged();
@@ -365,7 +365,7 @@ describe("11–12. dead links that come alive", () => {
     expect(r.wrote).toContain("rules/img/map.png");
     expect(r.wrote).toContain("rules/img/map.preview.webp");
     const html = await read("rules/combat.html");
-    expect(html).toMatch(/<a href="\/rules\/img\/map\.png" target="_blank" class="image-link"><img src="\/rules\/img\/map\.preview\.webp\?v=[0-9a-f]{16}"/);
+    expect(html).toMatch(/<a href="\/rules\/img\/map\.png" target="_blank" class="ursa-image-link"><img src="\/rules\/img\/map\.preview\.webp\?v=[0-9a-f]{16}"/);
 
     // Replacing the image changes the ?v= token
     await write("rules/img/map.png", pngOf(1300, 900));
@@ -378,13 +378,13 @@ describe("11–12. dead links that come alive", () => {
 
   it("creating a linked-to document rewrites only the pages that link to it", async () => {
     const built = await coldBuild();
-    expect(await read("index.html")).toContain('class="inactive" href="/rules/grappling"');
+    expect(await read("index.html")).toContain('href="/rules/grappling" data-ursa-broken');
     await write("rules/grappling.md", "# Grappling\n");
     const r = await built.pass();
     expect(r.wrote).toContain("index.html");
     expect(r.wrote).not.toContain("character/powers/absorb.html");
     expect(await read("index.html")).toContain('href="/rules/grappling.html"');
-    expect(await read("index.html")).not.toContain("inactive");
+    expect(await read("index.html")).not.toContain("data-ursa-broken");
     await built.close();
     await expectConverged();
   });
@@ -520,16 +520,16 @@ describe("named menus: menu-<name>.md rendered where a page anchors it", () => {
     await built.close();
 
     const absorb = await read("character/powers/absorb.html");
-    expect(absorb).toContain('<nav class="ursa-menu ursa-menu-horizontal" data-menu-id="powers"');
-    expect(absorb).toContain('<li class="ursa-menu-item ursa-menu-current"><a href="/character/powers/absorb.html" aria-current="page">Absorb</a>');
-    expect(absorb).toContain('<li class="ursa-menu-item"><a href="/character/powers/blast.html">Blast</a>');
+    expect(absorb).toContain('<nav class="ursa-nav ursa-menu" data-layout="bar" data-menu-id="powers"');
+    expect(absorb).toContain('<li class="ursa-nav-item"><a class="ursa-nav-link" href="/character/powers/absorb.html" aria-current="page">Absorb</a>');
+    expect(absorb).toContain('<li class="ursa-nav-item"><a class="ursa-nav-link" href="/character/powers/blast.html">Blast</a>');
     expect(absorb).not.toContain("{menu:powers}");
     // Anchored above the heading: the menu stays above the title
-    expect(absorb.indexOf('data-menu-id="powers"')).toBeLessThan(absorb.indexOf("<h1>Absorb</h1>"));
+    expect(absorb.indexOf('data-menu-id="powers"')).toBeLessThan(absorb.indexOf('<h1 id="absorb">Absorb</h1>'));
 
     const blast = await read("character/powers/blast.html");
-    expect(blast).toContain('ursa-menu-current"><a href="/character/powers/blast.html"');
-    expect(blast.indexOf("<h1>Blast</h1>")).toBeLessThan(blast.indexOf('data-menu-id="powers"'));
+    expect(blast).toContain('<a class="ursa-nav-link" href="/character/powers/blast.html" aria-current="page"');
+    expect(blast.indexOf('<h1 id="blast">Blast</h1>')).toBeLessThan(blast.indexOf('data-menu-id="powers"'));
 
     // The menu file is navigation, not a document
     expect(existsSync(join(output, "character/powers/menu-powers.html"))).toBe(false);
@@ -545,11 +545,9 @@ describe("named menus: menu-<name>.md rendered where a page anchors it", () => {
 
     await write("character/powers/menu-powers.md", MENU + "- [Rules](../../rules/)\n");
     let r = await built.pass();
-    expect(r.wrote).toEqual([
-      "character/powers/absorb.html",
-      "character/powers/absorb.json",
-      "character/powers/absorb.xml",
-    ]);
+    // The menu is anchored above the title, so it is document-header furniture:
+    // the page changes, the JSON's bodyHtml (sections only) does not
+    expect(r.wrote).toEqual(["character/powers/absorb.html"]);
     expect(await read("character/powers/absorb.html")).toContain(">Rules</a>");
 
     // A vertical appearance is a menu change too
@@ -557,7 +555,7 @@ describe("named menus: menu-<name>.md rendered where a page anchors it", () => {
     r = await built.pass();
     expect(r.wrote).toContain("character/powers/absorb.html");
     expect(r.wrote).not.toContain("character/powers/blast.html");
-    expect(await read("character/powers/absorb.html")).toContain("ursa-menu-vertical");
+    expect(await read("character/powers/absorb.html")).toContain('data-layout="tree"');
 
     await built.close();
     await expectConverged();
@@ -586,7 +584,7 @@ describe("named menus: menu-<name>.md rendered where a page anchors it", () => {
     expect(r.wrote).toContain("character/powers/blast.html");
     blast = await read("character/powers/blast.html");
     expect(blast).toContain('data-menu-id="powers"');
-    expect(blast).toContain('ursa-menu-current"><a href="/character/powers/blast.html"');
+    expect(blast).toContain('<a class="ursa-nav-link" href="/character/powers/blast.html" aria-current="page"');
 
     // Deleting it puts the comment back
     await unlink(join(source, "character/menu-powers.md"));
@@ -602,7 +600,7 @@ describe("named menus: menu-<name>.md rendered where a page anchors it", () => {
     const built = await coldBuild();
     await built.close();
     const blast = await read("character/powers/blast.html");
-    expect(blast).not.toContain("data-custom-menu=");
+    expect(blast).not.toContain("data-ursa-custom-menu=");
     expect(blast).toContain('data-menu-id="sidebar"');
     expect(existsSync(join(output, "public/custom-menu-character.json"))).toBe(false);
   });
@@ -613,8 +611,8 @@ describe("named menus: menu-<name>.md rendered where a page anchors it", () => {
     const built = await coldBuild();
     await built.close();
     const blast = await read("character/powers/blast.html");
-    const nav = blast.match(/<nav class="ursa-menu[\s\S]*?<\/nav>/)[0];
-    expect(nav).toContain('<div class="ursa-menu-text"><p>Powers:</p>');
+    const nav = blast.match(/<nav class="ursa-nav ursa-menu[\s\S]*?<\/nav>/)[0];
+    expect(nav).toContain('<div class="ursa-nav-text"><p>Powers:</p>');
     expect(nav.indexOf("Powers:")).toBeLessThan(nav.indexOf("<ul"));
     expect(nav).toContain('href="/character/powers/absorb.html"');
     expect(nav).toContain('<a href="/rules/index.html">the rules</a>');
@@ -629,8 +627,8 @@ describe("named menus: menu-<name>.md rendered where a page anchors it", () => {
     await built.close();
     const absorb = await read("character/powers/absorb.html");
     expect(absorb).toContain('data-menu-id="powers"');
-    expect(absorb).toContain('ursa-menu-current"><a href="/character/powers/absorb.html"');
-    expect(absorb).not.toContain("data-ursa-menu");
+    expect(absorb).toContain('<a class="ursa-nav-link" href="/character/powers/absorb.html" aria-current="page"');
+    expect(absorb).not.toContain("data-ursa-menu=");
   });
 });
 
@@ -645,14 +643,14 @@ describe("config.json inject-menu: a folder puts a named menu on every document 
     await built.close();
 
     const blast = await read("character/powers/blast.html");
-    const navs = blast.match(/<nav class="ursa-menu[^"]*" data-menu-id="powers"/g) ?? [];
+    const navs = blast.match(/<nav class="ursa-nav ursa-menu" data-layout="\w+" data-menu-id="powers"/g) ?? [];
     expect(navs).toHaveLength(2);
-    expect(blast.indexOf('data-menu-id="powers"')).toBeLessThan(blast.indexOf("<h1>Blast</h1>"));
+    expect(blast.indexOf('data-menu-id="powers"')).toBeLessThan(blast.indexOf('<h1 id="blast">Blast</h1>'));
     expect(blast.lastIndexOf('data-menu-id="powers"')).toBeGreaterThan(blast.indexOf("<p>Boom.</p>"));
-    expect(blast).toContain('ursa-menu-current"><a href="/character/powers/blast.html"');
+    expect(blast).toContain('<a class="ursa-nav-link" href="/character/powers/blast.html" aria-current="page"');
     // absorb has no H1 of its own: the injected title still comes after the menu
     const absorb = await read("character/powers/absorb.html");
-    expect(absorb.indexOf('data-menu-id="powers"')).toBeLessThan(absorb.indexOf("<h1>Absorb</h1>"));
+    expect(absorb.indexOf('data-menu-id="powers"')).toBeLessThan(absorb.indexOf('<h1 id="absorb">Absorb</h1>'));
     expect((absorb.match(/<h1[ >]/g) ?? []).length).toBe(1);
     // a document directly in the folder gets it too; one outside does not
     expect(await read("character/notes.html")).toContain('data-menu-id="powers"');
@@ -667,7 +665,7 @@ describe("config.json inject-menu: a folder puts a named menu on every document 
     await built.close();
     const blast = await read("character/powers/blast.html");
     expect(blast.match(/data-menu-id="powers"/g)).toHaveLength(1);
-    expect(blast.indexOf("<h1>Blast</h1>")).toBeLessThan(blast.indexOf('data-menu-id="powers"'));
+    expect(blast.indexOf('<h1 id="blast">Blast</h1>')).toBeLessThan(blast.indexOf('data-menu-id="powers"'));
   });
 
   it("a deeper config.json adds its menus after the ancestors' unless it replaces them", async () => {
@@ -690,7 +688,7 @@ describe("config.json inject-menu: a folder puts a named menu on every document 
     expect(combat.match(/data-menu-id="site"/g)).toHaveLength(2);
     // "powers" lives under character/, so rules/ cannot resolve it: comment plus warning, page intact
     expect(combat).toContain('<!-- ursa: menu "powers" not found -->');
-    expect(combat).toContain("<h1>Combat</h1>");
+    expect(combat).toContain('<h1 id="combat">Combat</h1>');
     expect(ids(await read("index.html"))).toEqual(["site", "site"]);
   });
 

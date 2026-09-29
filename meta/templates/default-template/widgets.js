@@ -1,28 +1,27 @@
 /**
- * Widget system for the top nav panel.
- * 
- * Widgets appear as icon buttons in the nav bar. Clicking a button toggles a
- * dropdown panel below the nav. Left-side and right-side widgets have separate
- * dropdown panels. One widget can be open per side at a time.
- * 
+ * Widget system for the topbar toolbars.
+ *
+ * Widgets appear as icon buttons in the topbar. Each button controls one panel,
+ * an `aside.ursa-panel` named by the same `data-widget` and pointed at by the
+ * button's `aria-controls`. Panels hang from one edge of the page, given by
+ * their `data-side` (start or end), and one widget can be open per side at a
+ * time.
+ *
+ * Open and closed are said with `hidden` on the panel and `aria-expanded` on its
+ * button — nothing else. Every panel is its own element, so CSS (Ursa's and a
+ * site's) tells one widget's panel from another's by `.ursa-panel[data-widget]`.
+ *
  * Widget state (open/closed) is persisted in localStorage so it survives page reloads.
  *
- * An open panel carries data-active-widget naming whichever widget is showing,
- * and loses it when it closes. The panels are shared containers, so this is what
- * lets CSS — Ursa's own and a site's — tell one widget's panel from another's.
- * See "Styling one widget at a time" in the README.
- * 
  * Built-in widgets:
- *   Left: Recent Activity (open by default)
- *   Right: TOC (open by default, persistent), Search, Profile
+ *   Start: Recent Activity (open by default), Suggested
+ *   End: TOC (open by default, persistent), Search, Profile
  */
 class WidgetManager {
   constructor() {
-    this.dropdownRight = document.getElementById('widget-dropdown');
-    this.dropdownLeft = document.getElementById('widget-dropdown-left');
-    this.buttons = document.querySelectorAll('.widget-button[data-widget]');
-    this.activeRight = null;
-    this.activeLeft = null;
+    this.buttons = document.querySelectorAll('.ursa-button[data-widget]');
+    this.panels = new Map(); // widget name → aside.ursa-panel, filled by init()
+    this.openBySide = { start: null, end: null };
 
     // Widgets that default to open on first visit. The TOC is here because it
     // is reference furniture rather than a tool you go and fetch: it belongs
@@ -41,54 +40,65 @@ class WidgetManager {
     // article and the TOC was off for good, on that page and every page after.
     // Escape is out for the same reason: it would be remembered.
     //
-    // And they own their side of the nav. Another widget opening there is
+    // And they own their side of the page. Another widget opening there is
     // borrowing it, not replacing them — the loan is not recorded as a closure,
     // and they come back when it is handed back.
     //
-    // Which leaves the button in the nav and the panel's own close button as
-    // the only two things that decide whether a persistent widget is showing.
+    // Which leaves the toolbar button and the panel's own close button as the
+    // only two things that decide whether a persistent widget is showing.
     // Those are unambiguous, and those are remembered.
     this.persistent = new Set(['toc']);
-    
+
     if (this.buttons.length === 0) return;
-    
+
     this.init();
   }
-  
+
   /**
-   * Get the side (left/right) for a widget based on its button's data-widget-side attribute
+   * Get the side (start/end) for a widget from its panel's data-side attribute
    */
   getSide(widgetName) {
-    const btn = document.querySelector(`.widget-button[data-widget="${widgetName}"]`);
-    return btn?.dataset.widgetSide === 'left' ? 'left' : 'right';
+    return this.panels.get(widgetName)?.dataset.side === 'start' ? 'start' : 'end';
   }
-  
-  /**
-   * Get the dropdown element for a given side
-   */
-  getDropdown(side) {
-    return side === 'left' ? this.dropdownLeft : this.dropdownRight;
-  }
-  
+
   /**
    * Get the active widget name for a given side
    */
   getActive(side) {
-    return side === 'left' ? this.activeLeft : this.activeRight;
+    return this.openBySide[side] || null;
   }
-  
+
   /**
    * Set the active widget name for a given side
    */
   setActive(side, widgetName) {
-    if (side === 'left') {
-      this.activeLeft = widgetName;
-    } else {
-      this.activeRight = widgetName;
-    }
+    this.openBySide[side] = widgetName;
+  }
+
+  /**
+   * Point a widget's toolbar button(s) at the panel's state.
+   */
+  setExpanded(widgetName, isOpen) {
+    this.buttons.forEach(btn => {
+      if (btn.dataset.widget === widgetName) {
+        btn.setAttribute('aria-expanded', String(isOpen));
+      }
+    });
   }
 
   init() {
+    document.querySelectorAll('.ursa-panel[data-widget]').forEach(panel => {
+      this.panels.set(panel.dataset.widget, panel);
+    });
+
+    // Everything starts closed; restoreState() below decides what opens. The
+    // server markup already says so — this just makes sure the panels and
+    // their buttons agree before anything reads either.
+    for (const [widgetName, panel] of this.panels) {
+      panel.hidden = true;
+      this.setExpanded(widgetName, false);
+    }
+
     // Bind button clicks
     this.buttons.forEach(btn => {
       btn.addEventListener('click', (e) => {
@@ -97,55 +107,51 @@ class WidgetManager {
         this.toggle(widgetName);
       });
     });
-    
-    // Bind close buttons inside widget headers
-    document.querySelectorAll('.widget-close-btn').forEach(closeBtn => {
+
+    // Bind close buttons inside panel headers
+    document.querySelectorAll('.ursa-panel .ursa-panel-close').forEach(closeBtn => {
       closeBtn.addEventListener('click', (e) => {
         e.stopPropagation();
-        const widgetContent = closeBtn.closest('.widget-content');
-        if (widgetContent) {
-          const widgetName = widgetContent.dataset.widget;
-          this.close(this.getSide(widgetName));
+        const panel = closeBtn.closest('.ursa-panel');
+        if (panel) {
+          this.closeWidget(panel.dataset.widget);
         }
       });
     });
-    
+
     // Close on outside click
     document.addEventListener('click', (e) => {
-      // Close right-side widget if click is outside
-      if (this.activeRight && this.dropdownRight &&
-          !this.persistent.has(this.activeRight) &&
-          !this.dropdownRight.contains(e.target) &&
-          !e.target.closest('.widget-button')) {
-        this.close('right');
-      }
-      // Close left-side widget if click is outside
-      if (this.activeLeft && this.dropdownLeft &&
-          !this.persistent.has(this.activeLeft) &&
-          !this.dropdownLeft.contains(e.target) &&
-          !e.target.closest('.widget-button')) {
-        this.close('left');
+      for (const side of ['start', 'end']) {
+        const active = this.getActive(side);
+        if (!active || this.persistent.has(active)) continue;
+        const panel = this.panels.get(active);
+        if (panel && !panel.contains(e.target) &&
+            !e.target.closest('.ursa-button[data-widget]')) {
+          this.close(side);
+        }
       }
     });
-    
+
     // Close on Escape
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
-        if (this.activeRight && !this.persistent.has(this.activeRight)) this.close('right');
-        if (this.activeLeft && !this.persistent.has(this.activeLeft)) this.close('left');
+        for (const side of ['start', 'end']) {
+          const active = this.getActive(side);
+          if (active && !this.persistent.has(active)) this.close(side);
+        }
       }
     });
 
     // Initialize search widget content
     this.initSearchWidget();
-    
+
     // Initialize recent activity widget
     this.initRecentActivityWidget();
     // `ursa serve` says recent activity changed: refetch in place
     document.addEventListener('ursa:data-updated', (e) => {
       if ((e.detail?.what || []).includes('recent-activity')) this.initRecentActivityWidget();
     });
-    
+
     // Track current page view and initialize suggested content widget
     this.trackPageView();
     this.initSuggestedWidget();
@@ -153,7 +159,7 @@ class WidgetManager {
     // Restore saved widget states from localStorage
     this.restoreState();
   }
-  
+
   /**
    * Save widget open/closed state to localStorage
    */
@@ -163,7 +169,7 @@ class WidgetManager {
       localStorage.setItem(key, isOpen ? 'open' : 'closed');
     } catch (e) { /* localStorage not available */ }
   }
-  
+
   /**
    * Whether a widget should be showing, as far as the reader's own choices go:
    * what they last decided, or the default if they have not decided anything.
@@ -173,46 +179,46 @@ class WidgetManager {
     try {
       saved = localStorage.getItem(`ursa-widget-${widgetName}`);
     } catch (e) { /* localStorage not available */ }
-    
+
     return saved === 'open' || (saved == null && this.defaultOpen.has(widgetName));
   }
-  
+
   /**
-   * The widget that owns a side of the nav when nothing else is using it.
+   * The widget that owns a side of the page when nothing else is using it.
    */
   residentOf(side) {
     for (const widgetName of this.persistent) {
-      if (this.getSide(widgetName) === side) return widgetName;
+      if (this.panels.has(widgetName) && this.getSide(widgetName) === side) return widgetName;
     }
     return null;
   }
-  
+
   /**
-   * Restore widget states from localStorage. 
+   * Restore widget states from localStorage.
    * For widgets with no saved state, use their default (defaultOpen set).
    */
   restoreState() {
     // Gather all widget names
     const widgetNames = new Set();
     this.buttons.forEach(btn => widgetNames.add(btn.dataset.widget));
-    
+
     for (const widgetName of widgetNames) {
       if (this.wantsToBeOpen(widgetName) && this.hasContent(widgetName)) {
         this.open(widgetName);
       }
     }
   }
-  
+
   /**
    * Whether a widget has anything to show. A widget that has hidden its own
-   * button has nothing — the TOC generator does exactly that on a page with no
+   * button has nothing — the TOC script does exactly that on a page with no
    * headings — and restoring it would put an empty panel on screen with no
    * button to shut it again. Only relevant on restore: a widget the reader
    * opens by hand plainly has a button to have clicked.
    */
   hasContent(widgetName) {
-    const btn = document.querySelector(`.widget-button[data-widget="${widgetName}"]`);
-    return !btn || btn.style.display !== 'none';
+    const btn = document.querySelector(`.ursa-button[data-widget="${widgetName}"]`);
+    return !btn || !btn.hidden;
   }
 
   /**
@@ -224,21 +230,21 @@ class WidgetManager {
       this.close(side);
       return;
     }
-    
+
     this.open(widgetName);
   }
-  
+
   /**
-   * Open a specific widget panel.
+   * Open a specific widget panel. Returns whether there was a panel to open.
    */
   open(widgetName) {
+    const panel = this.panels.get(widgetName);
+    if (!panel) return false;
     const side = this.getSide(widgetName);
-    const dropdown = this.getDropdown(side);
-    if (!dropdown) return;
-    
+
     // Close any open widget on the same side first
     const currentActive = this.getActive(side);
-    if (currentActive) {
+    if (currentActive && currentActive !== widgetName) {
       this.deactivateContent(currentActive);
       // Save the closed widget's state — unless it is only lending its side out,
       // in which case it has not been closed and should not be written down as
@@ -247,59 +253,46 @@ class WidgetManager {
         this.saveState(currentActive, false);
       }
     }
-    
+
     this.setActive(side, widgetName);
-    
-    // Show dropdown
-    dropdown.classList.remove('hidden');
-    dropdown.dataset.activeWidget = widgetName;
-    
-    // Show the correct content panel
+
+    // Show the panel and mark its button
     this.activateContent(widgetName);
-    
-    // Update button states (only for this side's buttons)
-    this.buttons.forEach(btn => {
-      if (this.getSide(btn.dataset.widget) === side) {
-        btn.classList.toggle('active', btn.dataset.widget === widgetName);
-      }
-    });
 
     // Save state
     this.saveState(widgetName, true);
 
     // Fire event for other scripts to listen to
     document.dispatchEvent(new CustomEvent('widget-opened', { detail: { widget: widgetName, side } }));
+    return true;
   }
-  
+
+  /**
+   * Close a widget if it is the one open on its side.
+   */
+  closeWidget(widgetName) {
+    if (!this.panels.has(widgetName)) return;
+    const side = this.getSide(widgetName);
+    if (this.getActive(side) === widgetName) this.close(side);
+  }
+
   /**
    * Close the currently open widget on a given side.
    */
   close(side) {
     const active = this.getActive(side);
     if (!active) return;
-    
-    const dropdown = this.getDropdown(side);
+
     this.deactivateContent(active);
-    
+
     // Save state
     this.saveState(active, false);
-    
+
     this.setActive(side, null);
-    if (dropdown) {
-      dropdown.classList.add('hidden');
-      delete dropdown.dataset.activeWidget;
-    }
-    
-    // Update button states for this side
-    this.buttons.forEach(btn => {
-      if (this.getSide(btn.dataset.widget) === side) {
-        btn.classList.remove('active');
-      }
-    });
-    
+
     // Fire event
     document.dispatchEvent(new CustomEvent('widget-closed', { detail: { widget: active, side } }));
-    
+
     // Give the side back to its resident, if it has one and the reader has not
     // put it away themselves. Guarded against the resident being the very thing
     // just closed — otherwise closing the TOC would reopen it. (It cannot
@@ -311,283 +304,101 @@ class WidgetManager {
       this.open(resident);
     }
   }
-  
+
   /**
-   * Show a widget's content panel.
+   * Show a widget's panel.
    */
   activateContent(widgetName) {
-    const side = this.getSide(widgetName);
-    const dropdown = this.getDropdown(side);
-    if (!dropdown) return;
+    const panel = this.panels.get(widgetName);
+    if (!panel) return;
 
-    const content = dropdown.querySelector(`.widget-content[data-widget="${widgetName}"]`);
-    if (content) {
-      content.classList.add('active');
-    }
-    
+    panel.hidden = false;
+    this.setExpanded(widgetName, true);
+
     // Widget-specific activation
     if (widgetName === 'search') {
       this.activateSearch();
     }
   }
-  
+
   /**
-   * Hide a widget's content panel.
+   * Hide a widget's panel.
    */
   deactivateContent(widgetName) {
-    const side = this.getSide(widgetName);
-    const dropdown = this.getDropdown(side);
-    if (!dropdown) return;
+    const panel = this.panels.get(widgetName);
+    if (!panel) return;
 
-    const content = dropdown.querySelector(`.widget-content[data-widget="${widgetName}"]`);
-    if (content) {
-      content.classList.remove('active');
-    }
-    
+    panel.hidden = true;
+    this.setExpanded(widgetName, false);
+
     // Widget-specific deactivation
     if (widgetName === 'search') {
       this.deactivateSearch();
     }
   }
-  
+
   /**
-   * Initialize search widget — move the search input and results into the widget panel.
+   * Replace a panel's body — everything below its header — with the given
+   * nodes.
+   */
+  setPanelBody(panel, ...nodes) {
+    for (const child of [...panel.children]) {
+      if (!child.classList.contains('ursa-panel-header')) child.remove();
+    }
+    panel.append(...nodes);
+  }
+
+  /**
+   * A loading / empty / error line for a panel body.
+   */
+  panelMessage(text) {
+    const p = document.createElement('p');
+    p.className = 'ursa-panel-message';
+    p.textContent = text;
+    return p;
+  }
+
+  /**
+   * Initialize search widget — render the panel placement of the search
+   * component and hand it to search.js, which drives both placements the same
+   * way. Whichever script runs first, the box ends up attached exactly once:
+   * search.js attaches every `.ursa-search` present when it starts, and
+   * attach() ignores one it already has.
    */
   initSearchWidget() {
-    const searchContent = document.getElementById('widget-content-search');
-    if (!searchContent) return;
-    
-    // The search input and wrapper are created by search.js (GlobalSearch).
-    // We need to wait for it to be ready, then move elements into the widget.
-    // Use a short delay to let GlobalSearch initialize first.
-    const moveSearch = () => {
-      const searchWrapper = document.querySelector('.search-wrapper-inline');
-      const searchResults = document.getElementById('search-results');
-      
-      if (searchWrapper) {
-        // Clone the search input into the widget (the inline one stays for non-top-menu/mobile)
-        // Actually, we'll relocate the existing elements when the widget is activated.
-        // For now, create a dedicated search input for the widget.
-        const widgetInput = document.createElement('input');
-        widgetInput.id = 'widget-search-input';
-        widgetInput.type = 'text';
-        widgetInput.placeholder = 'Search...';
-        widgetInput.className = 'widget-search-input';
-        
-        const widgetWrapper = document.createElement('div');
-        widgetWrapper.className = 'widget-search-wrapper';
-        widgetWrapper.appendChild(widgetInput);
-        
-        // Create dedicated results container for widget
-        const widgetResults = document.createElement('div');
-        widgetResults.id = 'widget-search-results';
-        widgetResults.className = 'widget-search-results';
-        
-        searchContent.appendChild(widgetWrapper);
-        searchContent.appendChild(widgetResults);
-        
-        // Bind the widget search input to the GlobalSearch instance
-        this.bindWidgetSearch(widgetInput, widgetResults);
-      }
-    };
-    
-    // Wait for search.js to initialize
-    setTimeout(moveSearch, 50);
-  }
-  
-  /**
-   * Bind the widget search input to use GlobalSearch's search functionality.
-   */
-  bindWidgetSearch(input, resultsContainer) {
-    this._widgetSearchInput = input;
-    this._widgetSearchResults = resultsContainer;
-    
-    let currentSelection = -1;
-    
-    input.addEventListener('input', () => {
-      const query = input.value.trim();
-      this.performWidgetSearch(query);
-    });
-    
-    input.addEventListener('keydown', (e) => {
-      const items = resultsContainer.querySelectorAll('.search-result-item');
-      
-      switch (e.key) {
-        case 'ArrowDown':
-          e.preventDefault();
-          if (items.length > 0) {
-            currentSelection = Math.min(currentSelection + 1, items.length - 1);
-            this.updateWidgetSearchSelection(items, currentSelection);
-          }
-          break;
-        case 'ArrowUp':
-          e.preventDefault();
-          if (items.length > 0) {
-            currentSelection = Math.max(currentSelection - 1, 0);
-            this.updateWidgetSearchSelection(items, currentSelection);
-          }
-          break;
-        case 'Enter':
-          e.preventDefault();
-          if (currentSelection >= 0 && items[currentSelection]) {
-            items[currentSelection].click();
-          }
-          break;
-        case 'Escape':
-          this.close();
-          break;
-      }
-    });
+    const panel = this.panels.get('search');
+    if (!panel) return;
 
-    // Reset selection on new search
-    input.addEventListener('input', () => { currentSelection = -1; });
+    let search = panel.querySelector('.ursa-search');
+    if (!search) {
+      search = document.createElement('search');
+      search.className = 'ursa-search';
+      search.dataset.placement = 'panel';
+      search.innerHTML = `
+        <input class="ursa-search-input" type="search" placeholder="Search…"
+               aria-label="Search this site" autocomplete="off"
+               role="combobox" aria-expanded="false" aria-controls="ursa-panel-search-results">
+        <button class="ursa-button ursa-search-clear" type="button" aria-label="Clear search" hidden>×</button>
+        <div class="ursa-search-results" id="ursa-panel-search-results" role="listbox"
+             aria-label="Search results" hidden></div>`;
+      this.setPanelBody(panel, search);
+    }
+    this._searchInput = search.querySelector('.ursa-search-input');
+
+    window.globalSearch?.attach(search);
   }
-  
-  /**
-   * Perform search using GlobalSearch's search logic, rendering into widget results.
-   */
-  performWidgetSearch(query) {
-    const gs = window.globalSearch;
-    const container = this._widgetSearchResults;
-    if (!gs || !container) return;
-    
-    container.innerHTML = '';
-    
-    if (!query || query.length < gs.MIN_QUERY_LENGTH) {
-      if (query && query.length > 0) {
-        container.innerHTML = `<div class="search-result-message">Type at least ${gs.MIN_QUERY_LENGTH} characters to search</div>`;
-      }
-      return;
-    }
-    
-    if (!gs.indexLoaded) {
-      container.innerHTML = '<div class="search-result-message">Loading search index...</div>';
-      return;
-    }
-    
-    const pathResults = gs.searchPaths(query);
-    const fullTextResults = gs.searchFullText(query);
-    
-    // Deduplicate
-    const pathPaths = new Set(pathResults.map(r => r.path));
-    const uniqueFullTextResults = fullTextResults.filter(r => !pathPaths.has(r.path));
-    
-    if (pathResults.length === 0 && uniqueFullTextResults.length === 0) {
-      container.innerHTML = `<div class="search-result-message">No results for "${query}"</div>`;
-      return;
-    }
-    
-    // Path results section
-    if (pathResults.length > 0) {
-      const section = document.createElement('div');
-      section.className = 'search-section';
-      const header = document.createElement('div');
-      header.className = 'search-section-header';
-      header.textContent = `Title/Path Matches (${pathResults.length})`;
-      section.appendChild(header);
-      
-      const limit = Math.min(pathResults.length, 10);
-      for (let i = 0; i < limit; i++) {
-        section.appendChild(this.createWidgetResultItem(pathResults[i]));
-      }
-      if (pathResults.length > 10) {
-        const more = document.createElement('div');
-        more.className = 'search-result-message';
-        more.textContent = `... and ${pathResults.length - 10} more`;
-        section.appendChild(more);
-      }
-      container.appendChild(section);
-    }
-    
-    // Full-text results section
-    if (uniqueFullTextResults.length > 0) {
-      const section = document.createElement('div');
-      section.className = 'search-section';
-      const header = document.createElement('div');
-      header.className = 'search-section-header';
-      header.textContent = `Content Matches (${uniqueFullTextResults.length})`;
-      section.appendChild(header);
-      
-      const limit = Math.min(uniqueFullTextResults.length, 10);
-      for (let i = 0; i < limit; i++) {
-        section.appendChild(this.createWidgetResultItem(uniqueFullTextResults[i]));
-      }
-      if (uniqueFullTextResults.length > 10) {
-        const more = document.createElement('div');
-        more.className = 'search-result-message';
-        more.textContent = `... and ${uniqueFullTextResults.length - 10} more`;
-        section.appendChild(more);
-      }
-      container.appendChild(section);
-    }
-  }
-  
-  /**
-   * Create a search result item for the widget.
-   */
-  createWidgetResultItem(result) {
-    const item = document.createElement('div');
-    item.className = 'search-result-item';
-    
-    const title = document.createElement('div');
-    title.className = 'search-result-title';
-    title.textContent = result.title || 'Untitled';
-    
-    const path = document.createElement('div');
-    path.className = 'search-result-path';
-    path.textContent = result.path || result.url || '';
-    
-    item.appendChild(title);
-    item.appendChild(path);
-    
-    item.addEventListener('click', () => {
-      // Close the search widget panel before navigating, so it isn't left
-      // open when the new page loads (or when a same-page anchor link
-      // doesn't trigger a fresh page load at all).
-      const side = this.getSide('search');
-      // Clear the widget search input so the field is empty next time the
-      // user opens the search panel.
-      if (this._widgetSearchInput) {
-        this._widgetSearchInput.value = '';
-      }
-      if (this._widgetSearchResults) {
-        this._widgetSearchResults.innerHTML = '';
-      }
-      this.close(side);
-      window.location.href = result.url || result.path;
-    });
-    
-    item.addEventListener('mouseenter', () => {
-      // Clear other selections
-      item.closest('.widget-search-results')?.querySelectorAll('.search-result-item').forEach(el => {
-        el.classList.remove('selected');
-      });
-      item.classList.add('selected');
-    });
-    
-    return item;
-  }
-  
-  updateWidgetSearchSelection(items, index) {
-    items.forEach((item, i) => {
-      item.classList.toggle('selected', i === index);
-    });
-    if (index >= 0 && items[index]) {
-      items[index].scrollIntoView({ block: 'nearest' });
-    }
-  }
-  
+
   /**
    * Called when the search widget is activated.
    */
   activateSearch() {
-    const input = this._widgetSearchInput;
+    const input = this._searchInput;
     if (input) {
       // Focus with small delay to allow panel animation
       setTimeout(() => input.focus(), 50);
     }
   }
-  
+
   /**
    * Called when the search widget is deactivated.
    */
@@ -599,10 +410,10 @@ class WidgetManager {
    * Initialize the Recent Activity widget — fetch data and render the list.
    */
   initRecentActivityWidget() {
-    const container = document.querySelector('.recent-activity-list');
-    if (!container) return;
+    const panel = this.panels.get('recent-activity');
+    if (!panel) return;
 
-    container.innerHTML = '<div class="recent-activity-loading">Loading...</div>';
+    this.setPanelBody(panel, this.panelMessage('Loading...'));
 
     fetch('/public/recent-activity.json')
       .then(res => {
@@ -610,32 +421,31 @@ class WidgetManager {
         return res.json();
       })
       .then(items => {
-        container.innerHTML = '';
         if (!items || items.length === 0) {
-          container.innerHTML = '<div class="recent-activity-empty">No recent activity</div>';
+          this.setPanelBody(panel, this.panelMessage('No recent activity'));
           return;
         }
         const ul = document.createElement('ul');
-        ul.className = 'recent-activity-items';
+        ul.className = 'ursa-linklist';
         for (const item of items) {
           const li = document.createElement('li');
-          li.className = 'recent-activity-item';
           const a = document.createElement('a');
           a.href = item.url;
           a.textContent = item.title || 'Untitled';
-          a.className = 'recent-activity-link';
-          const time = document.createElement('span');
-          time.className = 'recent-activity-time';
+          const time = document.createElement('time');
+          time.className = 'ursa-linklist-meta';
+          const date = new Date(item.mtime);
+          if (!Number.isNaN(date.getTime())) time.dateTime = date.toISOString();
           time.textContent = this.formatRelativeTime(item.mtime);
-          time.title = new Date(item.mtime).toLocaleString();
+          time.title = date.toLocaleString();
           li.appendChild(a);
           li.appendChild(time);
           ul.appendChild(li);
         }
-        container.appendChild(ul);
+        this.setPanelBody(panel, ul);
       })
       .catch(() => {
-        container.innerHTML = '<div class="recent-activity-empty">Recent activity unavailable</div>';
+        this.setPanelBody(panel, this.panelMessage('Recent activity unavailable'));
       });
   }
 
@@ -670,20 +480,20 @@ class WidgetManager {
     const url = window.location.pathname;
     // Skip tracking for index/home pages to keep suggestions more focused
     if (url === '/' || url === '/index.html') return;
-    
+
     const STORAGE_KEY = 'ursa-page-views';
     const MAX_TRACKED_PAGES = 100; // Limit storage size
-    
+
     try {
       let pageViews = {};
       const stored = localStorage.getItem(STORAGE_KEY);
       if (stored) {
         pageViews = JSON.parse(stored);
       }
-      
+
       // Get page title from the document
       const title = document.title || url;
-      
+
       // Update or create entry for this page
       if (pageViews[url]) {
         pageViews[url].count += 1;
@@ -696,7 +506,7 @@ class WidgetManager {
           title: title
         };
       }
-      
+
       // Prune oldest entries if we exceed the limit
       const entries = Object.entries(pageViews);
       if (entries.length > MAX_TRACKED_PAGES) {
@@ -704,7 +514,7 @@ class WidgetManager {
         entries.sort((a, b) => b[1].lastVisit - a[1].lastVisit);
         pageViews = Object.fromEntries(entries.slice(0, MAX_TRACKED_PAGES));
       }
-      
+
       localStorage.setItem(STORAGE_KEY, JSON.stringify(pageViews));
     } catch (e) {
       // localStorage not available or quota exceeded
@@ -716,25 +526,26 @@ class WidgetManager {
    * Shows frequently viewed pages based on localStorage tracking.
    */
   initSuggestedWidget() {
-    const container = document.querySelector('.suggested-content-list');
-    if (!container) return;
+    const panel = this.panels.get('suggested');
+    if (!panel) return;
 
     const STORAGE_KEY = 'ursa-page-views';
     const MAX_SUGGESTIONS = 10;
     const currentUrl = window.location.pathname;
+    const empty = () => this.setPanelBody(panel, this.panelMessage('Visit more pages to see suggestions'));
 
     try {
       const stored = localStorage.getItem(STORAGE_KEY);
       if (!stored) {
-        container.innerHTML = '<div class="suggested-empty">Visit more pages to see suggestions</div>';
+        empty();
         return;
       }
 
       const pageViews = JSON.parse(stored);
       const entries = Object.entries(pageViews);
-      
+
       if (entries.length === 0) {
-        container.innerHTML = '<div class="suggested-empty">Visit more pages to see suggestions</div>';
+        empty();
         return;
       }
 
@@ -751,36 +562,33 @@ class WidgetManager {
         .slice(0, MAX_SUGGESTIONS);
 
       if (sorted.length === 0) {
-        container.innerHTML = '<div class="suggested-empty">Visit more pages to see suggestions</div>';
+        empty();
         return;
       }
 
-      container.innerHTML = '';
       const ul = document.createElement('ul');
-      ul.className = 'suggested-items';
+      ul.className = 'ursa-linklist';
 
       for (const [url, data] of sorted) {
         const li = document.createElement('li');
-        li.className = 'suggested-item';
-        
+
         const a = document.createElement('a');
         a.href = url;
-        a.className = 'suggested-link';
         a.textContent = data.title || url;
-        
+
         const meta = document.createElement('span');
-        meta.className = 'suggested-meta';
+        meta.className = 'ursa-linklist-meta';
         meta.textContent = `${data.count} view${data.count !== 1 ? 's' : ''}`;
         meta.title = `Last visited: ${new Date(data.lastVisit).toLocaleString()}`;
-        
+
         li.appendChild(a);
         li.appendChild(meta);
         ul.appendChild(li);
       }
 
-      container.appendChild(ul);
+      this.setPanelBody(panel, ul);
     } catch (e) {
-      container.innerHTML = '<div class="suggested-empty">Unable to load suggestions</div>';
+      this.setPanelBody(panel, this.panelMessage('Unable to load suggestions'));
     }
   }
 }

@@ -1,79 +1,91 @@
+// Sticky headings
+//
+// ursa-chrome.css makes h1–h3 in the page's document sticky, each within its
+// own section (sections are rendered by the server, one per h1 and one per h2
+// nested inside it). This marks the ones currently stuck with
+// data-ursa-stuck, and writes the stuck h2/h3 text into the stuck h1's
+// data-ursa-trail ("Hit Points › Level 1"), which the stylesheet shows after
+// the h1's own text. The headings' own DOM is never touched.
 document.addEventListener('DOMContentLoaded', () => {
-    const article = document.querySelector('article#main-content');
-    if (!article) return;
+    const doc = document.querySelector('.ursa-main .ursa-doc');
+    if (!doc) return;
 
+    const TRAIL_SEPARATOR = ' › '; // the one before the trail is the stylesheet's
+
+    // The headings the stylesheet makes sticky: not those in an author's
+    // unstyled block or in a named menu, where its sticky scope stops.
     // Re-collected on ursa:content-changed, since an island may add headings
     // after load (see content-hooks.js).
-    let headings = article.querySelectorAll('h1, h2, h3');
+    const collect = () => Array.from(doc.querySelectorAll('h1, h2, h3'))
+        .filter(h => !h.closest('.ursa-unstyled, .ursa-nav, .ursa-breadcrumbs'));
+    let headings = collect();
+
+    // Stuck: at (or sliding out from under) the line it sticks at. A heading
+    // whose section is ending stays stuck until it has slid all the way past
+    // that line, then lets go; the next section's heading arrives at the line
+    // in the same moment, so the handover is seamless.
+    function isStuck(el) {
+        const style = getComputedStyle(el);
+        if (style.position !== 'sticky' || style.top === 'auto') return false;
+        const top = parseFloat(style.top) || 0;
+        const rect = el.getBoundingClientRect();
+        return rect.top <= top + 0.5 && rect.bottom > top;
+    }
+
+    function setFlag(el, name, on) {
+        if (on) { if (!el.hasAttribute(name)) el.setAttribute(name, ''); }
+        else el.removeAttribute(name);
+    }
 
     function updateStuckState() {
-        let currentStuckHeading = null;
-        
+        // In document order: each h1 collects the stuck h2/h3 after it. An h2
+        // clears the h3 before it — an h3 that sits in the h1's own section,
+        // ahead of the first h2, stays stuck for the whole h1 section, but it
+        // no longer describes where the reader is once an h2 has stuck.
+        let current = null;
+        const trails = [];
+
         headings.forEach(el => {
-            const wasStuck = el.classList.contains('stuck');
-            const style = window.getComputedStyle(el);
-            if (style.position === 'sticky' && style.top !== 'auto') {
-                const rect = el.getBoundingClientRect();
-                const top = parseInt(style.top, 10) || 0;
-                if (rect.top <= top && rect.bottom > top) {
-                    el.classList.add('stuck');
-                    currentStuckHeading = el;
-                } else {
-                    el.classList.remove('stuck');
-                }
-            } else {
-                el.classList.remove('stuck');
-            }
-            
-            // Dispatch event if stuck state changed
-            if (wasStuck !== el.classList.contains('stuck')) {
-                const event = new CustomEvent('headingStuckStateChanged', {
-                    detail: { 
-                        heading: el, 
-                        stuck: el.classList.contains('stuck'),
-                        currentStuckHeading: currentStuckHeading
-                    }
-                });
-                document.dispatchEvent(event);
-            }
-            
-            // Handle text updates for H1 elements
+            const stuck = isStuck(el);
+            setFlag(el, 'data-ursa-stuck', stuck);
+
             if (el.tagName === 'H1') {
-                // Store original text if not already stored
-                if (!el.dataset.originalText) {
-                    el.dataset.originalText = el.textContent;
-                }
-                
-                // Only update text if this H1 is stuck
-                if (el.classList.contains('stuck')) {
-                    // Find the last stuck h2 and h3 (i.e., the "current" ones)
-                    const stuckH2s = Array.from(headings).filter(h => h.tagName === 'H2' && h.classList.contains('stuck'));
-                    const stuckH3s = Array.from(headings).filter(h => h.tagName === 'H3' && h.classList.contains('stuck'));
-                    const stuckH2 = stuckH2s.length ? stuckH2s[stuckH2s.length - 1] : null;
-                    const stuckH3 = stuckH3s.length ? stuckH3s[stuckH3s.length - 1] : null;
+                current = { h1: el, h2: null, h3: null };
+                trails.push(current);
+            } else if (current && stuck) {
+                if (el.tagName === 'H2') { current.h2 = el; current.h3 = null; }
+                else current.h3 = el;
+            }
+        });
 
-                    let newText = el.dataset.originalText;
-
-                    if (stuckH3 && stuckH2) {
-                        newText += ' > ' + (stuckH2.dataset.originalText || stuckH2.textContent) + ' > ' + (stuckH3.dataset.originalText || stuckH3.textContent);
-                    } else if (stuckH2) {
-                        newText += ' > ' + (stuckH2.dataset.originalText || stuckH2.textContent);
-                    }
-
-                    el.textContent = newText;
-                } else {
-                    // Restore original text if not stuck
-                    el.textContent = el.dataset.originalText;
-                }
+        trails.forEach(({ h1, h2, h3 }) => {
+            const parts = h1.hasAttribute('data-ursa-stuck')
+                ? [h2, h3].filter(Boolean).map(h => h.textContent.trim())
+                : [];
+            const trail = parts.join(TRAIL_SEPARATOR);
+            if (trail) {
+                if (h1.getAttribute('data-ursa-trail') !== trail) h1.setAttribute('data-ursa-trail', trail);
+            } else {
+                h1.removeAttribute('data-ursa-trail');
             }
         });
     }
 
+    let queued = false;
+    function queueUpdate() {
+        if (queued) return;
+        queued = true;
+        requestAnimationFrame(() => {
+            queued = false;
+            updateStuckState();
+        });
+    }
+
     updateStuckState();
-    window.addEventListener('scroll', updateStuckState, { passive: true });
-    window.addEventListener('resize', updateStuckState);
+    window.addEventListener('scroll', queueUpdate, { passive: true });
+    window.addEventListener('resize', queueUpdate);
     document.addEventListener('ursa:content-changed', () => {
-        headings = article.querySelectorAll('h1, h2, h3');
+        headings = collect();
         updateStuckState();
     });
 });

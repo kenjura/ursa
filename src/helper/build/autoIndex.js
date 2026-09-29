@@ -157,7 +157,9 @@ export async function generateAutoIndexHtmlFromSource(sourceDir, depth = 1, curr
       items.push(itemHtml);
     }
     
-    return `<ul class="auto-index depth-${currentDepth + 1}">\n${items.join('\n')}\n</ul>`;
+    const list = `<ul>\n${items.join('\n')}\n</ul>`;
+    // The top level is the landmark; deeper levels are nested lists inside it.
+    return currentDepth === 0 ? `<nav class="ursa-autoindex" aria-label="Contents">\n${list}\n</nav>` : list;
   } catch (e) {
     console.error(`Error generating auto-index HTML for ${sourceDir}: ${e.message}`);
     return '';

@@ -88,20 +88,22 @@ function getHotReloadScript(wsPort) {
   let indicatorEl = null;
   function getIndicator() {
     if (indicatorEl) return indicatorEl;
-    indicatorEl = document.getElementById('ursa-update-indicator');
+    indicatorEl = document.querySelector('.ursa-status');
     return indicatorEl;
   }
-  function showIndicator(color) {
+  // output.ursa-status: data-state="updating" while a rebuild runs,
+  // "updated" once it is known to affect this page
+  function showIndicator(state) {
     const el = getIndicator();
     if (!el) return;
-    el.style.display = 'flex';
-    el.className = 'ursa-update-indicator ursa-update-' + color;
+    el.dataset.state = state;
+    el.title = state === 'updated' ? 'Updated, reloading…' : 'Updating…';
+    el.hidden = false;
   }
   function hideIndicator() {
     const el = getIndicator();
     if (!el) return;
-    el.style.display = 'none';
-    el.className = 'ursa-update-indicator';
+    el.hidden = true;
   }
 
   function sendUrl() {
@@ -129,10 +131,10 @@ function getHotReloadScript(wsPort) {
             window.location.reload();
             break;
           case 'update-start':
-            showIndicator('gray');
+            showIndicator('updating');
             break;
           case 'update-affects-you':
-            showIndicator('green');
+            showIndicator('updated');
             break;
           case 'update-no-affect':
             hideIndicator();

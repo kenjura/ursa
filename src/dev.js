@@ -30,6 +30,7 @@ import { getAutomenu } from "./helper/automenu.js";
 import { renderFile } from "./helper/fileRenderer.js";
 import { processImage } from "./helper/imageProcessor.js";
 import { generateBreadcrumbs } from "./helper/breadcrumbs.js";
+import { ensureTitleSection, docWithFurniture } from "./helper/build/docStructure.js";
 import { extractImageReferences } from "./helper/imageExtractor.js";
 import { recurse } from "./helper/recursive-readdir.js";
 import { isFolderHidden, clearConfigCache } from "./helper/folderConfig.js";
@@ -161,10 +162,10 @@ function getHotReloadScript(wsPort) {
             console.log('[Ursa Dev] Search index ready');
             showStatus('Search ready', 'ready');
             // Enable search functionality
-            const searchInput = document.getElementById('global-search');
+            const searchInput = document.getElementById('ursa-search-input');
             if (searchInput) {
               searchInput.disabled = false;
-              searchInput.placeholder = 'Search...';
+              searchInput.placeholder = 'Search…';
             }
             break;
           case 'menu-ready':
@@ -421,16 +422,10 @@ async function renderDocument(urlPath) {
   // Title from filename (for index/home, use parent folder name)
   const titleBase = (base === 'index' || base === 'home') ? basename(dirname(sourcePath)) : base;
   const title = toTitleCase(titleBase || base);
-  if (!body || !body.trimStart().startsWith('<h1')) {
-    const h1Title = fileMeta?.title || title;
-    body = `<h1>${h1Title}</h1>\n` + (body || '');
-  }
+  body = ensureTitleSection(body || '', fileMeta?.title || title);
 
-  // Inject breadcrumbs before the H1
+  // Breadcrumbs go in the document header, added below
   const breadcrumbs = generateBreadcrumbs(dir, base, fileMeta, source);
-  if (breadcrumbs) {
-    body = breadcrumbs + body;
-  }
   
   // Inject frontmatter table for markdown/mdx files
   if ((type === '.md' || type === '.mdx') && fileMeta) {
@@ -448,7 +443,9 @@ async function renderDocument(urlPath) {
         if (autoIndexConfig.position === 'bottom') {
           body = body + '\n' + autoIndexHtml;
         } else {
-          body = autoIndexHtml + '\n' + body;
+          const h1End = body.indexOf('</h1>');
+          const at = h1End < 0 ? 0 : h1End + '</h1>'.length;
+          body = body.slice(0, at) + '\n' + autoIndexHtml + '\n' + body.slice(at);
         }
       }
     }
@@ -456,6 +453,7 @@ async function renderDocument(urlPath) {
   
   // Process images in this document
   body = await processDocumentImages(body, sourcePath);
+  body = docWithFurniture({ header: breadcrumbs, body });
   
   const html = await wrapInTemplate(body, title, fileMeta, urlPath, sourcePath, hydrationScript);
   
@@ -518,7 +516,7 @@ async function wrapInTemplate(body, title, fileMeta, urlPath, sourcePath, hydrat
   }
   
   // Use auto-menu if background menu not ready yet
-  const menu = menuHtml || '<nav id="nav-global"><p>Loading menu...</p></nav>';
+  const menu = menuHtml || '<p class="ursa-nav-message">Loading menu…</p>';
   
   // Calculate document URL path
   const docUrlPath = urlPath.endsWith('.html') ? urlPath : urlPath + '.html';
@@ -538,11 +536,13 @@ async function wrapInTemplate(body, title, fileMeta, urlPath, sourcePath, hydrat
     "${styleLink}": styleLink,
     "${customScript}": finalCustomScript,
     "${searchIndex}": "[]",
-    "${footer}": footer || ""
+    "${footer}": footer || "",
+    "${docPath}": docUrlPath.replace(/\.html$/, ''),
+    "${lang}": "en"
   };
   
   // Single-pass replacement
-  const pattern = /\$\{(title|menu|meta|transformedMetadata|body|styleLink|customScript|searchIndex|footer)\}/g;
+  const pattern = /\$\{(title|menu|meta|transformedMetadata|body|styleLink|customScript|searchIndex|footer|docPath|lang)\}/g;
   let finalHtml = template.replace(pattern, (match) => replacements[match] ?? match);
   
   // Add menu data attributes to body
@@ -552,20 +552,20 @@ async function wrapInTemplate(body, title, fileMeta, urlPath, sourcePath, hydrat
       const menuPosition = customMenuInfo.menuPosition || 'top';
       finalHtml = finalHtml.replace(
         /<body([^>]*)>/,
-        `<body$1 data-custom-menu="${customMenuInfo.menuJsonPath}" data-menu-position="${menuPosition}">`
+        `<body$1 data-ursa-custom-menu="${customMenuInfo.menuJsonPath}" data-ursa-menu-position="${menuPosition}">`
       );
     } else {
       // No custom menu — default to top menu
       finalHtml = finalHtml.replace(
         /<body([^>]*)>/,
-        `<body$1 data-menu-position="top">`
+        `<body$1 data-ursa-menu-position="top">`
       );
     }
   } else {
     // No custom menus at all — default to top menu
     finalHtml = finalHtml.replace(
       /<body([^>]*)>/,
-      `<body$1 data-menu-position="top">`
+      `<body$1 data-ursa-menu-position="top">`
     );
   }
   
@@ -974,8 +974,8 @@ export async function dev({
       // Add search not ready notice if applicable
       if (!devState.searchReady) {
         finalHtml = finalHtml.replace(
-          /<input[^>]*id=["']global-search["'][^>]*>/i,
-          '<input id="global-search" type="text" placeholder="Building search index..." disabled>'
+          /(<input[^>]*id=["']ursa-search-input["'][^>]*?)\s*placeholder=["'][^"']*["']([^>]*>)/i,
+          '$1 placeholder="Building search index…" disabled$2'
         );
       }
       

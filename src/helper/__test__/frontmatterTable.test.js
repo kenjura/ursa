@@ -30,7 +30,7 @@ describe("injectFrontmatterTable", () => {
   it("does not inject when render-frontmatter flag is missing", () => {
     const result = injectFrontmatterTable(body, { type: "power", cost: 3 });
     expect(result).toBe(body);
-    expect(result).not.toContain("frontmatter-table");
+    expect(result).not.toContain("ursa-frontmatter");
   });
 
   it("does not inject when render-frontmatter is false", () => {
@@ -47,11 +47,11 @@ describe("injectFrontmatterTable", () => {
       type: "power",
       cost: 3,
     });
-    expect(result).toContain('<table class="frontmatter-table">');
-    expect(result).toContain("<th>Type</th>");
-    expect(result).toContain("<td>power</td>");
+    expect(result).toContain('<dl class="ursa-frontmatter">');
+    expect(result).toContain("<dt>Type</dt>");
+    expect(result).toContain("<dd>power</dd>");
     // Table appears after the </h1>
-    expect(result.indexOf("</h1>")).toBeLessThan(result.indexOf("frontmatter-table"));
+    expect(result.indexOf("</h1>")).toBeLessThan(result.indexOf("ursa-frontmatter"));
   });
 
   it("accepts string 'true' for the flag", () => {
@@ -59,7 +59,7 @@ describe("injectFrontmatterTable", () => {
       "render-frontmatter": "true",
       type: "power",
     });
-    expect(result).toContain('<table class="frontmatter-table">');
+    expect(result).toContain('<dl class="ursa-frontmatter">');
   });
 
   it("does not include render-frontmatter itself as a row", () => {
@@ -82,7 +82,7 @@ describe("injectFrontmatterTable", () => {
 describe("metadataToTable", () => {
   it("still produces a table when called directly (used by other consumers)", () => {
     const html = metadataToTable({ type: "power", cost: 3 });
-    expect(html).toContain('<table class="frontmatter-table">');
-    expect(html).toContain("<th>Type</th>");
+    expect(html).toContain('<dl class="ursa-frontmatter">');
+    expect(html).toContain("<dt>Type</dt>");
   });
 });

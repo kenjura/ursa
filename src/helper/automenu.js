@@ -2,7 +2,7 @@ import { isHiddenOrSystemPath } from "./hiddenPaths.js";
 import { extname, basename, join, dirname } from "path";
 import { existsSync, readFileSync, readdirSync, isIgnoredDirEntry } from "./build/tracedFs.js";
 import { getFolderConfig, isFolderHidden, getRootConfig } from "./folderConfig.js";
-import { isMenuFile } from "./customMenu.js";
+import { isMenuFile, menuDataScript, renderNavListHtml } from "./customMenu.js";
 import {
   INDEX_EXTENSIONS,
   toDisplayName,
@@ -16,7 +16,8 @@ import {
 // Icon extensions to check for custom icons
 const ICON_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.ico'];
 
-// Default icons (using emoji for simplicity, can be replaced with SVG)
+// Default icons, carried in the menu data (the rendered menu shows only the
+// home icon, as an SVG: see renderNavListHtml in customMenu.js)
 const FOLDER_ICON = '📁';
 const DOCUMENT_ICON = '📄';
 const HOME_ICON = '🏠';
@@ -67,16 +68,16 @@ function findCustomIcon(dirPath, source) {
 
 function getIcon(item, source, isHome = false) {
   if (isHome) {
-    return `<span class="menu-icon">${HOME_ICON}</span>`;
+    return HOME_ICON;
   }
   
   if (item.children) {
     // It's a folder - check for custom icon
     const customIcon = findCustomIcon(item.path, source);
     if (customIcon) {
-      return `<span class="menu-icon"><img src="${customIcon}" alt="" /></span>`;
+      return `<img src="${customIcon}" alt="" />`;
     }
-    return `<span class="menu-icon">${FOLDER_ICON}</span>`;
+    return FOLDER_ICON;
   }
   
   // It's a file - check for custom icon in parent directory with matching name
@@ -85,11 +86,11 @@ function getIcon(item, source, isHome = false) {
   for (const ext of ICON_EXTENSIONS) {
     const iconPath = join(dir, `${base}-icon${ext}`);
     if (existsSync(iconPath)) {
-      return `<span class="menu-icon"><img src="${iconPath.replace(source, '/')}" alt="" /></span>`;
+      return `<img src="${iconPath.replace(source, '/')}" alt="" />`;
     }
   }
   
-  return `<span class="menu-icon">${DOCUMENT_ICON}</span>`;
+  return DOCUMENT_ICON;
 }
 
 /**
@@ -278,7 +279,7 @@ function buildMenuData(tree, source, validPaths, parentPath = '', includeDebug =
     // Determine icon - custom from config, or custom icon file, or default
     let icon = getIcon(item, source);
     if (folderConfig?.icon) {
-      icon = `<span class="menu-icon"><img src="${folderConfig.icon}" alt="${label}" /></span>`;
+      icon = `<img src="${folderConfig.icon}" alt="${label}" />`;
     }
     
     const menuItem = {
@@ -461,7 +462,8 @@ export async function getAutomenu(source, validPaths) {
     path: '',
     href: homeResolved.href,
     hasChildren: topLevelFiles.length > 0,
-    icon: `<span class="menu-icon">${HOME_ICON}</span>`,
+    icon: HOME_ICON,
+    isHome: true,
   };
   if (topLevelFiles.length > 0) {
     homeItem.children = topLevelFiles;
@@ -470,46 +472,17 @@ export async function getAutomenu(source, validPaths) {
   const fullMenuData = [homeItem, ...topLevelFolders];
   
   // Embed the openMenuItems config as JSON (small, safe to embed)
-  const menuConfigScript = `<script type="application/json" id="menu-config">${JSON.stringify({ openMenuItems })}</script>`;
+  const menuConfigScript = menuDataScript({ openMenuItems });
   
-  // Render the breadcrumb header (hidden by default, shown when navigating)
-  const breadcrumbHtml = `
-<div class="menu-breadcrumb" style="display: none;">
-  <button class="menu-back" title="Go back">←</button>
-  <button class="menu-home" title="Go to root">🏠</button>
-  <span class="menu-current-path"></span>
-</div>`;
-
-  // Render the initial menu (root level only - children loaded from external JSON)
-  const menuHtml = renderMenuLevel(fullMenuData, 0);
+  // Render the initial menu (root level only - children loaded from external JSON).
+  // It goes inside the template's nav.ursa-sitenav; menu.js upgrades it to columns.
+  const menuHtml = renderNavListHtml(fullMenuData);
   
   // Return both the HTML for embedding and the full menu data for the static JSON file
   return {
-    html: `${menuConfigScript}${breadcrumbHtml}<ul class="menu-level" data-level="0">${menuHtml}</ul>`,
+    html: `${menuConfigScript}\n${menuHtml}`,
     menuData: fullMenuData
   };
-}
-
-function renderMenuLevel(items, level) {
-  return items.map(item => {
-    const hasChildrenClass = item.hasChildren ? ' has-children' : '';
-    const hasChildrenIndicator = item.hasChildren ? '<span class="menu-more">⋯</span>' : '';
-    const inactiveClass = item.inactive ? ' inactive' : '';
-    const isIndexClass = item.isIndex ? ' is-index' : '';
-    
-    const labelHtml = item.href
-      ? `<a href="${item.href}" class="menu-label${inactiveClass}">${item.label}</a>`
-      : `<span class="menu-label">${item.label}</span>`;
-    
-    return `
-<li class="menu-item${hasChildrenClass}${isIndexClass}" data-path="${item.path}">
-  <div class="menu-item-row">
-    ${item.icon}
-    ${labelHtml}
-    ${hasChildrenIndicator}
-  </div>
-</li>`;
-  }).join('');
 }
 
 function childSorter(a, b) {

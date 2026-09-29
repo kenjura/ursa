@@ -1,0 +1,33 @@
+/* =============================================================================
+   Example: a folder stylesheet.                  (docroot/classes/style.css)
+
+   Every style.css from the docroot down to a document's folder is bundled
+   for that document, root first, nearest last. So this file applies on top
+   of the site stylesheet, to /classes/** only.
+
+   Because the whole page belongs to one folder, a folder stylesheet can
+   re-theme the frame too: tokens on .ursa are enough. Nothing here needs to
+   say "only in /classes/" — the bundler already did.
+   ============================================================================= */
+
+.ursa {
+  /* Class pages are the "martial" section of the site: steel instead of ink. */
+  --ursa-accent: light-dark(#2f4f6f, #8fb3d9);
+  --ursa-link:   light-dark(#2f4f6f, #a9c7e8);
+
+  /* Stat tables need the room */
+  --ursa-doc-width: 56rem;
+}
+
+@scope (.ursa-doc) to (.ursa-unstyled) {
+  /* The frontmatter block is the class's stat line: set it as a row */
+  .ursa-frontmatter {
+    grid-template-columns: repeat(3, max-content 1fr);
+  }
+}
+
+/* Per-document tweaks, without a per-document stylesheet: every article
+   carries its URL path. */
+.ursa-doc[data-ursa-path="/classes/index"] .ursa-autoindex {
+  columns: 2;
+}

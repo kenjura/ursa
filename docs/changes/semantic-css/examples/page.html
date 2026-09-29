@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<!--
+  Example render: a full page from the default template, /classes/fighter.md,
+  side-menu position, desktop, with the TOC panel open.
+
+  This is the DOM *after* the template scripts have run. Parts marked [js]
+  are built or changed client-side; everything else is server markup.
+  Opens standalone: the stylesheet links point at the default template's CSS and the site
+  stylesheet at ./site-grimoire.css (comment it out to see Ursa's defaults).
+-->
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Fighter</title>
+  <!-- In a build these three are one bundle: /public/ursa.css?v=<hash> -->
+  <link rel="stylesheet" href="../../../../meta/templates/default-template/ursa-base.css">
+  <link rel="stylesheet" href="../../../../meta/templates/default-template/ursa-content.css">
+  <link rel="stylesheet" href="../../../../meta/templates/default-template/ursa-chrome.css">
+  <!-- ${styleLink}: the site's style.css chain, root first, nearest last -->
+  <!-- <link rel="stylesheet" href="./site-grimoire.css"> -->
+</head>
+
+<!-- The Ursa root. Tokens live here; every Ursa selector is under it.
+     State the frame reacts to is on the root as data-ursa-* (the root may be a
+     host's element in an embed, so its attributes are namespaced). -->
+<body class="ursa"
+      data-ursa-template="default"
+      data-ursa-menu-position="side"
+      data-ursa-build="a1b2c3d">
+
+  <a class="ursa-skip-link" href="#ursa-main">Skip to content</a>
+
+  <!-- ===================== topbar (banner landmark) ===================== -->
+  <header class="ursa-topbar">
+    <div class="ursa-topbar-start">
+      <button class="ursa-button ursa-sitenav-toggle" type="button"
+              aria-controls="ursa-sitenav" aria-expanded="true" aria-label="Menu"
+              data-icon="home">
+        <svg class="ursa-icon" data-icon="menu" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6l16 0" /><path d="M4 12l16 0" /><path d="M4 18l16 0" /></svg>
+        <svg class="ursa-icon" data-icon="close" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6l-12 12" /><path d="M6 6l12 12" /></svg>
+        <svg class="ursa-icon" data-icon="home" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12l-2 0l9 -9l9 9l-2 0" /><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2 -2v-7" /><path d="M9 21v-6a2 2 0 0 1 2 -2h2a2 2 0 0 1 2 2v6" /></svg>
+      </button>
+      <div class="ursa-toolbar">
+        <button class="ursa-button" type="button" data-widget="recent-activity"
+                aria-controls="ursa-panel-recent-activity" aria-expanded="false"
+                aria-label="Recent activity" title="Recent activity">
+          <svg class="ursa-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8l0 4l2 2" /><path d="M3.05 11a9 9 0 1 1 .5 4m-.5 5v-5h5" /></svg>
+        </button>
+        <button class="ursa-button" type="button" data-widget="suggested"
+                aria-controls="ursa-panel-suggested" aria-expanded="false"
+                aria-label="Suggested content" title="Suggested content">
+          <svg class="ursa-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 17.75l-6.172 3.245l1.179 -6.873l-5 -4.867l6.9 -1l3.086 -6.253l3.086 6.253l6.9 1l-5 4.867l1.179 6.873l-6.158 -3.245" /></svg>
+        </button>
+      </div>
+      <!-- serve mode only; was #ursa-update-indicator with inline display:none -->
+      <output class="ursa-status" data-state="updating" hidden><span class="ursa-spinner"></span></output>
+    </div>
+
+    <div class="ursa-topbar-center">
+      <!-- data-ursa-menu-position="top" shows this and hides the inline search -->
+      <nav class="ursa-nav ursa-topnav" data-layout="bar" aria-label="Site"></nav>
+
+      <search class="ursa-search" data-placement="topbar">
+        <input class="ursa-search-input" id="ursa-search-input" type="search"
+               placeholder="Search…" aria-label="Search this site" autocomplete="off"
+               role="combobox" aria-expanded="false" aria-controls="ursa-search-results">
+        <button class="ursa-button ursa-search-clear" type="button" aria-label="Clear search" hidden>×</button>
+        <div class="ursa-search-results" id="ursa-search-results" role="listbox" aria-label="Search results" hidden></div>
+      </search>
+    </div>
+
+    <div class="ursa-topbar-end">
+      <div class="ursa-toolbar">
+        <button class="ursa-button" type="button" data-widget="toc"
+                aria-controls="ursa-panel-toc" aria-expanded="true"
+                aria-label="On this page" title="On this page">
+          <svg class="ursa-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M13 5h8" /><path d="M13 9h5" /><path d="M13 15h8" /><path d="M13 19h5" /><path d="M3 5a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v4a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1l0 -4" /><path d="M3 15a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v4a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1l0 -4" /></svg>
+        </button>
+        <button class="ursa-button" type="button" data-widget="search"
+                aria-controls="ursa-panel-search" aria-expanded="false"
+                aria-label="Search" title="Search">
+          <svg class="ursa-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10a7 7 0 1 0 14 0a7 7 0 1 0 -14 0" /><path d="M21 21l-6 -6" /></svg>
+        </button>
+        <button class="ursa-button" type="button" data-widget="profile"
+                aria-controls="ursa-panel-profile" aria-expanded="false"
+                aria-label="Profile" title="Profile">
+          <svg class="ursa-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0" /><path d="M9 10a3 3 0 1 0 6 0a3 3 0 1 0 -6 0" /><path d="M6.168 18.849a4 4 0 0 1 3.832 -2.849h4a4 4 0 0 1 3.834 2.855" /></svg>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- ===================== site navigation ===================== -->
+  <!-- Server renders the menu data (script#ursa-menu-data); [js] builds the
+       columns. On mobile the same element is rebuilt as data-layout="tree". -->
+  <nav class="ursa-nav ursa-sitenav" id="ursa-sitenav" data-layout="columns" aria-label="Site">
+    <script type="application/json" id="ursa-menu-data">{"…":"menu config"}</script>
+    <div class="ursa-nav-viewport">
+      <div class="ursa-nav-track">
+        <ul class="ursa-nav-list" data-column="0">
+          <li class="ursa-nav-item" data-index><a class="ursa-nav-link" href="/index.html">Home</a></li>
+          <li class="ursa-nav-item" data-branch data-trail><a class="ursa-nav-link" href="/classes/index.html">Classes</a></li>
+          <li class="ursa-nav-item" data-branch><a class="ursa-nav-link" href="/spells/index.html">Spells</a></li>
+          <li class="ursa-nav-item" data-branch><span class="ursa-nav-link">Bestiary</span></li>
+          <li class="ursa-nav-item"><a class="ursa-nav-link" data-ursa-broken href="/rules.html">Rules</a></li>
+        </ul>
+        <ul class="ursa-nav-list" data-column="1">
+          <li class="ursa-nav-item" data-index><a class="ursa-nav-link" href="/classes/index.html">Classes</a></li>
+          <li class="ursa-nav-item"><a class="ursa-nav-link" href="/classes/cleric.html">Cleric</a></li>
+          <li class="ursa-nav-item"><a class="ursa-nav-link" href="/classes/fighter.html" aria-current="page">Fighter</a></li>
+          <li class="ursa-nav-item"><a class="ursa-nav-link" href="/classes/rogue.html">Rogue</a></li>
+          <li class="ursa-nav-item"><a class="ursa-nav-link" href="/classes/wizard.html">Wizard</a></li>
+        </ul>
+      </div>
+    </div>
+    <button class="ursa-nav-scroll" type="button" data-direction="back" aria-label="Show shallower levels" disabled>‹</button>
+    <button class="ursa-nav-scroll" type="button" data-direction="forward" aria-label="Show deeper levels" disabled>›</button>
+    <button class="ursa-nav-jump" type="button" hidden>Current →</button>
+  </nav>
+
+  <!-- ===================== main ===================== -->
+  <main class="ursa-main" id="ursa-main">
+    <!-- data-ursa-path: the document's URL without extension, for scripts and
+         for per-document site CSS: .ursa-doc[data-ursa-path^="/classes/"] -->
+    <article class="ursa-doc" data-ursa-path="/classes/fighter">
+
+      <!-- Page header: Ursa furniture above the first heading -->
+      <header class="ursa-doc-header">
+        <nav class="ursa-breadcrumbs" aria-label="Breadcrumbs">
+          <ol>
+            <li><a href="/">Home</a></li>
+            <li><a href="/classes/">Classes</a></li>
+            <li><a href="/classes/fighter.html" aria-current="page">Fighter</a></li>
+          </ol>
+        </nav>
+
+        <!-- {menu:classes} or config.json inject-menu position:top -->
+        <nav class="ursa-nav ursa-menu" data-layout="bar" data-menu-id="classes" aria-label="Classes">
+          <div class="ursa-nav-text"><p>Classes:</p></div>
+          <ul class="ursa-nav-list">
+            <li class="ursa-nav-item"><a class="ursa-nav-link" href="/classes/cleric.html">Cleric</a></li>
+            <li class="ursa-nav-item"><a class="ursa-nav-link" href="/classes/fighter.html" aria-current="page">Fighter</a></li>
+            <li class="ursa-nav-item" data-branch><a class="ursa-nav-link" href="/classes/rogue.html">Rogue</a>
+              <ul class="ursa-nav-list">
+                <li class="ursa-nav-item"><a class="ursa-nav-link" href="/classes/rogue/assassin.html">Assassin</a></li>
+                <li class="ursa-nav-item"><a class="ursa-nav-link" href="/classes/rogue/thief.html">Thief</a></li>
+              </ul>
+            </li>
+            <li class="ursa-nav-item"><a class="ursa-nav-link" href="/classes/wizard.html">Wizard</a></li>
+          </ul>
+        </nav>
+      </header>
+
+      <!-- Sections are built at render time (not by sectionify.js), so the
+           same structure reaches the JSON's bodyHtml. One per h1, nested one
+           per h2. Heading ids are server-side slugs. -->
+      <section class="ursa-section" data-level="1">
+        <!-- [js] data-ursa-stuck / data-ursa-trail while scrolled under the topbar -->
+        <h1 id="fighter">Fighter</h1>
+
+        <!-- frontmatter: table: true -->
+        <dl class="ursa-frontmatter">
+          <div><dt>Hit die</dt><dd>d10</dd></div>
+          <div><dt>Primary ability</dt><dd>Strength or Dexterity</dd></div>
+          <div><dt>Saves</dt><dd>Strength, Constitution</dd></div>
+        </dl>
+
+        <figure>
+          <!-- [js] lightbox.js wraps the image and adds the actions -->
+          <span class="ursa-image-frame">
+            <a class="ursa-image-link" href="/img/fighter.webp" target="_blank">
+              <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='200'%3E%3Crect width='300' height='200' fill='%23789'/%3E%3C/svg%3E" alt="A fighter in plate armour" width="300" height="200">
+            </a>
+            <span class="ursa-image-actions">
+              <button class="ursa-image-action" type="button" data-action="view" aria-label="View full screen">
+                <svg class="ursa-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8v-2a2 2 0 0 1 2 -2h2" /><path d="M4 16v2a2 2 0 0 0 2 2h2" /><path d="M16 4h2a2 2 0 0 1 2 2v2" /><path d="M16 20h2a2 2 0 0 0 2 -2v-2" /></svg>
+              </button>
+            </span>
+          </span>
+          <figcaption>A fighter, suitably armoured.</figcaption>
+        </figure>
+
+        <p>Fighters share an unparalleled mastery with weapons and armor. See also
+          <a href="/classes/paladin.html">Paladin</a> and the
+          <a href="/classes/warlord.html" data-ursa-broken>Warlord</a> (not written yet).</p>
+
+        <aside class="ursa-aside">
+          <p>Multiclassing into fighter grants armor proficiency but not the
+            Fighting Style feature.</p>
+        </aside>
+
+        <section class="ursa-section" data-level="2">
+          <h2 id="hit-points">Hit Points</h2>
+          <div class="ursa-table-scroll">
+            <table>
+              <thead><tr><th>Level</th><th>Hit points</th></tr></thead>
+              <tbody>
+                <tr><td>1</td><td>10 + Con modifier</td></tr>
+                <tr><td>2+</td><td>1d10 (or 6) + Con modifier</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.</p>
+        </section>
+
+        <section class="ursa-section" data-level="2">
+          <h2 id="class-features">Class Features</h2>
+          <p>Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.</p>
+          <p>Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</p>
+        </section>
+      </section>
+
+      <section class="ursa-section" data-level="1">
+        <h1 id="subclasses">Subclasses</h1>
+        <p>Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.</p>
+        <!-- An author's opt-out: none of Ursa's CSS applies in here -->
+        <div class="ursa-unstyled">
+          <h2>Raw block</h2>
+          <p>Styled only by the site (or by nothing).</p>
+        </div>
+      </section>
+
+      <!-- Page footer: config.json inject-menu position:bottom renders here -->
+      <footer class="ursa-doc-footer"></footer>
+    </article>
+  </main>
+
+  <!-- ===================== panels (complementary landmarks) ===================== -->
+  <aside class="ursa-panel" id="ursa-panel-toc" data-widget="toc" data-side="end" aria-labelledby="ursa-panel-toc-title">
+    <header class="ursa-panel-header">
+      <h2 class="ursa-panel-title" id="ursa-panel-toc-title">On this page</h2>
+      <button class="ursa-button ursa-panel-close" type="button" aria-label="Close">✕</button>
+    </header>
+    <!-- [js] toc-generator.js -->
+    <nav class="ursa-toc" aria-labelledby="ursa-panel-toc-title">
+      <ol>
+        <li data-level="1"><a href="#fighter" aria-current="true">Fighter</a></li>
+        <li data-level="2"><a href="#hit-points">Hit Points</a></li>
+        <li data-level="2"><a href="#class-features">Class Features</a></li>
+        <li data-level="1"><a href="#subclasses">Subclasses</a></li>
+      </ol>
+    </nav>
+  </aside>
+
+  <aside class="ursa-panel" id="ursa-panel-search" data-widget="search" data-side="end" aria-labelledby="ursa-panel-search-title" hidden>
+    <header class="ursa-panel-header">
+      <h2 class="ursa-panel-title" id="ursa-panel-search-title">Search</h2>
+      <button class="ursa-button ursa-panel-close" type="button" aria-label="Close">✕</button>
+    </header>
+    <search class="ursa-search" data-placement="panel">
+      <input class="ursa-search-input" type="search" placeholder="Search…" aria-label="Search this site"
+             role="combobox" aria-expanded="true" aria-controls="ursa-panel-search-results"
+             aria-activedescendant="ursa-result-0">
+      <div class="ursa-search-results" id="ursa-panel-search-results" role="listbox" aria-label="Search results">
+        <div class="ursa-search-group" role="group" aria-labelledby="ursa-search-group-pages">
+          <h3 class="ursa-search-group-title" id="ursa-search-group-pages">Pages</h3>
+          <div class="ursa-search-result" id="ursa-result-0" role="option" aria-selected="true">
+            <span class="ursa-search-result-title">Fighter</span>
+            <span class="ursa-search-result-path">/classes/fighter</span>
+          </div>
+        </div>
+        <button class="ursa-search-more" type="button">Show 12 more</button>
+      </div>
+    </search>
+  </aside>
+
+  <aside class="ursa-panel" id="ursa-panel-recent-activity" data-widget="recent-activity" data-side="start" aria-labelledby="ursa-panel-recent-title" hidden>
+    <header class="ursa-panel-header">
+      <h2 class="ursa-panel-title" id="ursa-panel-recent-title">Recent activity</h2>
+      <button class="ursa-button ursa-panel-close" type="button" aria-label="Close">✕</button>
+    </header>
+    <ul class="ursa-linklist">
+      <li><a href="/classes/fighter.html">Fighter</a><time class="ursa-linklist-meta" datetime="2026-09-29T10:12:00Z">2h ago</time></li>
+      <li><a href="/spells/fireball.html">Fireball</a><time class="ursa-linklist-meta" datetime="2026-09-28T18:40:00Z">yesterday</time></li>
+    </ul>
+    <!-- or, while loading / when empty: -->
+    <!-- <p class="ursa-panel-message">No recent activity</p> -->
+  </aside>
+
+  <!-- ===================== site footer (contentinfo) ===================== -->
+  <footer class="ursa-sitefooter">
+    <div class="ursa-sitefooter-content"><p>The Grimoire — house rules for the Tuesday game.</p></div>
+    <p class="ursa-sitefooter-meta"><small>v2.3.0 • build a1b2c3d • <time datetime="2026-09-29T12:00:00Z">2026-09-29 12:00:00 UTC</time> • Generated by <a href="https://www.npmjs.com/package/@kenjura/ursa">ursa</a> v0.101.0</small></p>
+    <p class="ursa-sitefooter-copyright"><small>© 2026 Andrew London</small></p>
+  </footer>
+
+  <!-- [js] lightbox.js appends, and opens with showModal():
+  <dialog class="ursa-lightbox" aria-label="Image viewer">
+    <div class="ursa-lightbox-stage" tabindex="-1" data-pannable>
+      <img class="ursa-lightbox-image" alt="" data-placeholder>
+    </div>
+    <div class="ursa-lightbox-loading" hidden><span class="ursa-spinner"></span></div>
+    <div class="ursa-lightbox-toolbar">
+      <span class="ursa-lightbox-zoom">
+        <button class="ursa-lightbox-button" type="button" data-action="zoom-out" aria-label="Zoom out">−</button>
+        <output class="ursa-lightbox-level">100%</output>
+        <button class="ursa-lightbox-button" type="button" data-action="zoom-in" aria-label="Zoom in">+</button>
+      </span>
+      <a class="ursa-lightbox-button" data-action="download" download aria-label="Download image">…</a>
+    </div>
+    <button class="ursa-lightbox-button" type="button" data-action="close" aria-label="Close">…</button>
+  </dialog>
+  -->
+</body>
+</html>

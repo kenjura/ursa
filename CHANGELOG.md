@@ -1,3 +1,24 @@
+# 0.101.0
+2026-09-29
+
+**Breaking:** Ursa's page markup and default stylesheet are replaced. Every old selector — `#main-content`, `nav#nav-main`, `.sectionOuter`, `.widget-dropdown`, `.menu-column-item`, `.ursa-menu-current`, `--bg-color`, … — stops matching, with no compatibility layer. Sites with their own `style.css`/`script.js` should follow [MIGRATION.md](docs/changes/semantic-css/MIGRATION.md). Browser floor: **Chrome 123, Safari 17.5, Firefox 128** (`@scope`, `@layer`, `light-dark()`).
+
+The contract is [docs/changes/semantic-css/SPEC.md](docs/changes/semantic-css/SPEC.md); the rationale is its [README](docs/changes/semantic-css/README.md).
+
+- **One naming convention.** Everything Ursa names is `ursa-` prefixed; state is ARIA, `hidden` or a `data-*` flag, never a class (`.active`, `.hidden`, `.selected`, `.stuck`, `.collapsed` are gone).
+- **HTML5 page anatomy.** `body.ursa` is the root; `header.ursa-topbar`, `nav.ursa-sitenav`, `main.ursa-main > article.ursa-doc[data-ursa-path]`, one `aside.ursa-panel[data-widget]` per widget, `footer.ursa-sitefooter`, a skip link, and `<search>` with combobox/listbox ARIA. Body attributes are `data-ursa-menu-position`, `data-ursa-custom-menu`, `data-ursa-build`. `<html lang>` comes from the docroot `config.json` `lang` (default `en`).
+- **Sections and heading ids at render time.** Markdown, wikitext and MDX all emit nested `section.ursa-section[data-level="1|2"]` (one per h1, one per h2 inside it) and slug ids on every heading, de-duplicated `-2`, `-3`. `sectionify.js` is gone, and the JSON's `bodyHtml` has the same structure as the page. Wikitext sections now always render (the `noSection`/`noTOC` arguments are gone); its anchor links use the same slugs.
+- **Document header and footer.** Breadcrumbs (now `nav.ursa-breadcrumbs > ol`), top-injected menus and menus anchored above the title go in `header.ursa-doc-header`; bottom-injected menus in `footer.ursa-doc-footer`. They are page furniture: the JSON's `bodyHtml` is the document's sections only.
+- **One navigation component.** The side menu (columns), mobile menu (a nested tree), top menu and named menus share `.ursa-nav` › `.ursa-nav-list` › `.ursa-nav-item` › `.ursa-nav-link`, differing by `data-layout`. Named menus mark the current link with `aria-current="page"`, its ancestors with `data-trail`, and the folder you are in with `data-path`. The menu data is `script#ursa-menu-data`.
+- **Generated content.** `dl.ursa-frontmatter`, `aside.ursa-aside`, `a.ursa-image-link`, `a[data-ursa-broken]` for missing documents, `nav.ursa-autoindex` with nested lists, `.ursa-table-scroll` around every table, and for wikitext `figure[data-align] > img + figcaption`, `.ursa-indent[data-level]`, `.ursa-big[data-level]`, `a.ursa-wikilink[data-article]` and `aside.ursa-sidebar`.
+- **New stylesheet.** `default.css` and `lightbox.css` are replaced by `ursa-base.css` (layer order, tokens, reset), `ursa-content.css` (portable document styles) and `ursa-chrome.css` (the frame and components). Everything is in `@layer ursa.*`, so an unlayered site rule always wins; colours are `--ursa-*` tokens on `.ursa` with `light-dark()` pairs. Put content rules in `@scope (.ursa-doc) to (.ursa-unstyled)`.
+- **Document font.** `.ursa-doc` sets `font-family: var(--ursa-font-body)` in `ursa-content.css`, so document text no longer inherits `--ursa-font-chrome` from the page frame on `body.ursa`. Only visible when a site sets the two tokens differently.
+- **Embedding.** Every build, `--json-only` included, writes `public/ursa-content.css` (base + content) for applications that render a document's `bodyHtml` inside `<article class="ursa ursa-doc">`.
+- **Template scripts.** The TOC is one script (`toc.js`, an `IntersectionObserver` instead of sentinel elements, `aria-current` on the active entry). Sticky headings set `data-ursa-stuck` and write the trail into the h1's `data-ursa-trail` instead of rewriting its text. The lightbox is a `<dialog>` opened with `showModal()`. Search is one renderer for the topbar and the panel.
+- **Live reload status** is `output.ursa-status[data-state="updating|updated"]`.
+- **Build warnings** for each site stylesheet or script that still uses removed names, for `--ursa-*` tokens declared on `:root`/`html`, and one summary line for documents whose raw HTML uses Ursa's old class names. Warnings only; nothing is rewritten.
+- `template2` (a placeholder) is removed; the character-sheet template uses `body.ursa`, `article.ursa-doc` and the new stylesheets.
+
 # 0.100.1
 2026-09-29
 

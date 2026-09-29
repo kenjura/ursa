@@ -78,7 +78,7 @@ describe("anchors", () => {
   });
 
   it("finds where leading menus end", () => {
-    const nav = '<nav class="ursa-menu ursa-menu-horizontal" data-menu-id="a"><ul></ul></nav>';
+    const nav = '<nav class="ursa-nav ursa-menu" data-layout="bar" data-menu-id="a"><ul></ul></nav>';
     expect(leadingMenusEnd(`${nav}\n<p>x</p>`)).toBe(nav.length);
     expect(leadingMenusEnd(`\n${nav}${menuNotFoundComment("b")}<h1>T</h1>`)).toBe(1 + nav.length + menuNotFoundComment("b").length);
     expect(leadingMenusEnd("<h1>T</h1>")).toBe(0);
@@ -98,24 +98,24 @@ describe("renderInlineMenuHtml", () => {
 
   it("renders a horizontal nav by default, escaping labels", () => {
     const html = renderInlineMenuHtml(data, { id: "classes" });
-    expect(html).toMatch(/^<nav class="ursa-menu ursa-menu-horizontal" data-menu-id="classes"/);
+    expect(html).toMatch(/^<nav class="ursa-nav ursa-menu" data-layout="bar" data-menu-id="classes"/);
     expect(html).toContain("Fighter &amp; Co");
-    expect(html).toContain('<ul class="ursa-menu-level" data-depth="1">');
-    expect(html).toContain('<li class="ursa-menu-item ursa-menu-has-children"><span>More</span>');
+    expect(html).toContain('<span class="ursa-nav-link">More</span><ul class="ursa-nav-list">');
+    expect(html).toContain('<li class="ursa-nav-item" data-branch><span class="ursa-nav-link">More</span>');
   });
 
   it("marks the current page and its ancestors", () => {
     const html = renderInlineMenuHtml(data, { id: "classes", appearance: "vertical", currentUrl: "/character/classes/witch.html" });
-    expect(html).toContain("ursa-menu-vertical");
-    expect(html).toContain('<li class="ursa-menu-item ursa-menu-current"><a href="/character/classes/witch.html" aria-current="page">Witch</a>');
-    expect(html).toContain('<li class="ursa-menu-item ursa-menu-has-children ursa-menu-active"><span>More</span>');
-    expect(html).not.toContain('ursa-menu-current"><a href="/character/classes/arcanist.html"');
+    expect(html).toContain('data-layout="tree"');
+    expect(html).toContain('<li class="ursa-nav-item"><a class="ursa-nav-link" href="/character/classes/witch.html" aria-current="page">Witch</a>');
+    expect(html).toContain('<li class="ursa-nav-item" data-branch data-trail><span class="ursa-nav-link">More</span>');
+    expect(html).not.toContain('href="/character/classes/arcanist.html" aria-current');
   });
 
   it("treats index.html, a trailing slash and no extension as the same page", () => {
     const items = [{ label: "Classes", href: "/character/classes/index.html", children: [] }];
     for (const url of ["/character/classes/", "/character/classes", "/character/classes/index.html"]) {
-      expect(renderInlineMenuHtml(items, { id: "x", currentUrl: url })).toContain("ursa-menu-current");
+      expect(renderInlineMenuHtml(items, { id: "x", currentUrl: url })).toContain('aria-current="page"');
     }
   });
 
@@ -128,19 +128,19 @@ describe("renderInlineMenuHtml", () => {
       { label: "Classes", href: "/character/classes/index.html", children: [] },
     ];
     const html = renderInlineMenuHtml(items, { id: "character", currentUrl: "/character/ancestry/dragon.html" });
-    expect(html).toContain('<li class="ursa-menu-item ursa-menu-path"><a href="/character/ancestry/index.html">Ancestry</a>');
-    expect(html).toContain('<li class="ursa-menu-item ursa-menu-path"><a href="/character/ancestry.html">Ancestry page</a>');
+    expect(html).toContain('<li class="ursa-nav-item" data-path><a class="ursa-nav-link" href="/character/ancestry/index.html">Ancestry</a>');
+    expect(html).toContain('<li class="ursa-nav-item" data-path><a class="ursa-nav-link" href="/character/ancestry.html">Ancestry page</a>');
     // the docroot covers every page, a name prefix is not a folder, a sibling folder is not on the path
-    expect(html).toContain('<li class="ursa-menu-item"><a href="/index.html">Home</a>');
-    expect(html).toContain('<li class="ursa-menu-item"><a href="/character/anc/index.html">Anc</a>');
-    expect(html).toContain('<li class="ursa-menu-item"><a href="/character/classes/index.html">Classes</a>');
-    expect(html).not.toContain("ursa-menu-current");
-    // on the folder's own page it is current, not on the path; above a current item it is active
-    expect(renderInlineMenuHtml(items, { id: "character", currentUrl: "/character/ancestry/" })).not.toContain("ursa-menu-path");
+    expect(html).toContain('<li class="ursa-nav-item"><a class="ursa-nav-link" href="/index.html">Home</a>');
+    expect(html).toContain('<li class="ursa-nav-item"><a class="ursa-nav-link" href="/character/anc/index.html">Anc</a>');
+    expect(html).toContain('<li class="ursa-nav-item"><a class="ursa-nav-link" href="/character/classes/index.html">Classes</a>');
+    expect(html).not.toContain("aria-current");
+    // on the folder's own page it is current, not on the path; above a current item it is on the trail
+    expect(renderInlineMenuHtml(items, { id: "character", currentUrl: "/character/ancestry/" })).not.toContain("data-path");
     const nested = [{ label: "Classes", href: "/character/classes/index.html", children: [{ label: "Witch", href: "/character/classes/witch.html", children: [] }] }];
     const active = renderInlineMenuHtml(nested, { id: "c", currentUrl: "/character/classes/witch.html" });
-    expect(active).toContain("ursa-menu-active");
-    expect(active).not.toContain("ursa-menu-path");
+    expect(active).toContain("data-trail");
+    expect(active).not.toContain("data-path");
   });
 });
 
@@ -244,10 +244,10 @@ describe("menu bodies with prose", () => {
       { id: "feats", currentUrl: "/character/feats/class/" }
     );
     expect(html).toBe(
-      '<nav class="ursa-menu ursa-menu-horizontal" data-menu-id="feats" aria-label="feats">' +
-      '<div class="ursa-menu-text"><p>Feat Categories:</p></div>' +
-      '<ul class="ursa-menu-level" data-depth="0"><li class="ursa-menu-item ursa-menu-current"><a href="/character/feats/class/index.html" aria-current="page">Class</a></li></ul>' +
-      '<div class="ursa-menu-text"><p>Blargo</p></div></nav>'
+      '<nav class="ursa-nav ursa-menu" data-layout="bar" data-menu-id="feats" aria-label="feats">' +
+      '<div class="ursa-nav-text"><p>Feat Categories:</p></div>' +
+      '<ul class="ursa-nav-list"><li class="ursa-nav-item"><a class="ursa-nav-link" href="/character/feats/class/index.html" aria-current="page">Class</a></li></ul>' +
+      '<div class="ursa-nav-text"><p>Blargo</p></div></nav>'
     );
   });
 });

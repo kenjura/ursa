@@ -1,11 +1,12 @@
 /**
  * Image lightbox.
  *
- * Adds a zoom and a download button to every article image on hover, and a
- * full-screen viewer behind the zoom button.
+ * Wraps every document image in span.ursa-image-frame with a view and a
+ * download action shown on hover, and puts a full-screen viewer — a modal
+ * <dialog class="ursa-lightbox"> — behind the view action.
  *
- * Article images are served as downscaled WebP previews (see
- * helper/imageProcessor.js), wrapped in <a class="image-link" href="original">.
+ * Document images are served as downscaled WebP previews (see
+ * helper/imageProcessor.js), wrapped in <a class="ursa-image-link" href="original">.
  * The viewer therefore loads the anchor's href, not the img's own src — the
  * preview is only used as an instant placeholder while the original arrives.
  */
@@ -15,16 +16,16 @@
   const ZOOM_STEP = 1.5;
   const IMAGE_HREF = /\.(jpe?g|png|gif|webp|svg|avif|bmp|ico)(?:[?#]|$)/i;
 
-  const ICON_ZOOM =
-    '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">' +
-    '<circle cx="10.5" cy="10.5" r="6.5" /><path d="M15.5 15.5 L21 21" />' +
-    '<path d="M7.5 10.5h6M10.5 7.5v6" /></svg>';
+  const ICON_VIEW =
+    '<svg class="ursa-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">' +
+    '<path d="M4 8v-2a2 2 0 0 1 2 -2h2" /><path d="M4 16v2a2 2 0 0 0 2 2h2" />' +
+    '<path d="M16 4h2a2 2 0 0 1 2 2v2" /><path d="M16 20h2a2 2 0 0 0 2 -2v-2" /></svg>';
   const ICON_DOWNLOAD =
-    '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">' +
+    '<svg class="ursa-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">' +
     '<path d="M12 3.5v11" /><path d="M7.5 10.5 12 15l4.5-4.5" />' +
     '<path d="M4.5 18.5h15" /></svg>';
   const ICON_CLOSE =
-    '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">' +
+    '<svg class="ursa-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">' +
     '<path d="M5.5 5.5l13 13M18.5 5.5l-13 13" /></svg>';
 
   let viewer = null; // built on first use
@@ -50,11 +51,11 @@
     }
   }
 
-  /** The full-resolution URL for an article image. */
+  /** The full-resolution URL for a document image. */
   function fullSizeUrl(img) {
     const link = img.closest('a');
     const href = link && link.getAttribute('href');
-    if (link && href && (link.classList.contains('image-link') || IMAGE_HREF.test(href))) {
+    if (link && href && (link.classList.contains('ursa-image-link') || IMAGE_HREF.test(href))) {
       return link.href;
     }
     return img.currentSrc || img.src;
@@ -65,35 +66,38 @@
     else img.addEventListener('load', fn, { once: true });
   }
 
-  // --- hover controls -------------------------------------------------------
+  // --- image actions --------------------------------------------------------
 
-  function buildControls(img, url) {
+  function buildActions(img, url) {
     const bar = document.createElement('span');
-    bar.className = 'ursa-image-controls';
+    bar.className = 'ursa-image-actions';
 
-    const zoom = document.createElement('button');
-    zoom.type = 'button';
-    zoom.className = 'ursa-image-btn';
-    zoom.title = 'View full size';
-    zoom.setAttribute('aria-label', 'View full size');
-    zoom.innerHTML = ICON_ZOOM;
-    zoom.addEventListener('click', (e) => {
+    const view = document.createElement('button');
+    view.type = 'button';
+    view.className = 'ursa-image-action';
+    view.dataset.action = 'view';
+    view.title = 'View full size';
+    view.setAttribute('aria-label', 'View full size');
+    view.innerHTML = ICON_VIEW;
+    view.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
-      open(img, url);
+      open(img, url, view);
     });
 
+    // A link rather than a button: download is what an <a download> does.
     const download = document.createElement('a');
-    download.className = 'ursa-image-btn';
+    download.className = 'ursa-image-action';
+    download.dataset.action = 'download';
     download.href = url;
     download.download = fileNameFor(url);
     download.title = 'Download image';
     download.setAttribute('aria-label', 'Download image');
     download.innerHTML = ICON_DOWNLOAD;
-    // Stop the click reaching an enclosing <a class="image-link">.
+    // Stop the click reaching an enclosing <a class="ursa-image-link">.
     download.addEventListener('click', (e) => e.stopPropagation());
 
-    bar.appendChild(zoom);
+    bar.appendChild(view);
     bar.appendChild(download);
     return bar;
   }
@@ -101,7 +105,7 @@
   function decorate(img) {
     if (img.dataset.ursaLightbox) return;
     if (img.closest('[data-no-lightbox]')) return;
-    // Ursa's CSS does not reach inside .ursa-unstyled, so controls injected
+    // Ursa's CSS does not reach inside .ursa-unstyled, so actions injected
     // there would render unstyled.  Leave those images alone entirely.
     if (img.closest('.ursa-unstyled')) return;
 
@@ -118,14 +122,14 @@
       img.dataset.ursaLightbox = 'on';
 
       // Wrap the anchor rather than the image when there is one, so the
-      // controls sit outside it and their clicks are not swallowed by the link.
-      const link = img.closest('a.image-link');
+      // actions sit outside it and their clicks are not swallowed by the link.
+      const link = img.closest('a.ursa-image-link');
       const wrapped = link && link.parentNode ? link : img;
       const frame = document.createElement('span');
       frame.className = 'ursa-image-frame';
       wrapped.parentNode.insertBefore(frame, wrapped);
       frame.appendChild(wrapped);
-      frame.appendChild(buildControls(img, url));
+      frame.appendChild(buildActions(img, url));
     });
   }
 
@@ -134,27 +138,28 @@
   function ensureViewer() {
     if (viewer) return viewer;
 
-    const el = document.createElement('div');
+    // showModal() puts it in the top layer with a ::backdrop, makes the page
+    // behind it inert (so focus stays inside), and turns Escape into a
+    // `cancel` event; close() hands focus back to whatever opened it.
+    const el = document.createElement('dialog');
     el.className = 'ursa-lightbox';
-    el.setAttribute('role', 'dialog');
-    el.setAttribute('aria-modal', 'true');
     el.setAttribute('aria-label', 'Image viewer');
-    el.hidden = true;
     el.innerHTML =
-      '<div class="ursa-lightbox-backdrop"></div>' +
       '<div class="ursa-lightbox-stage" tabindex="-1">' +
         '<img class="ursa-lightbox-image" alt="">' +
       '</div>' +
       '<div class="ursa-lightbox-loading" hidden><span class="ursa-spinner"></span></div>' +
       '<div class="ursa-lightbox-toolbar">' +
         '<span class="ursa-lightbox-zoom" hidden>' +
-          '<button type="button" class="ursa-lightbox-btn" data-zoom="out" title="Zoom out" aria-label="Zoom out">&minus;</button>' +
-          '<span class="ursa-lightbox-level">100%</span>' +
-          '<button type="button" class="ursa-lightbox-btn" data-zoom="in" title="Zoom in" aria-label="Zoom in">+</button>' +
+          '<button type="button" class="ursa-lightbox-button" data-action="zoom-out" title="Zoom out" aria-label="Zoom out">&minus;</button>' +
+          '<output class="ursa-lightbox-level">100%</output>' +
+          '<button type="button" class="ursa-lightbox-button" data-action="zoom-in" title="Zoom in" aria-label="Zoom in">+</button>' +
         '</span>' +
-        '<a class="ursa-lightbox-btn ursa-lightbox-download" download title="Download image" aria-label="Download image">' + ICON_DOWNLOAD + '</a>' +
+        '<a class="ursa-lightbox-button" data-action="download" download title="Download image" aria-label="Download image">' + ICON_DOWNLOAD + '</a>' +
       '</div>' +
-      '<button type="button" class="ursa-lightbox-close" title="Close (Esc)" aria-label="Close">' + ICON_CLOSE + '</button>';
+      '<button type="button" class="ursa-lightbox-button" data-action="close" title="Close (Esc)" aria-label="Close">' + ICON_CLOSE + '</button>';
+    // A direct child of the root, which is what the stylesheet's scroll lock
+    // (.ursa:has(> .ursa-lightbox[open])) looks for.
     document.body.appendChild(el);
 
     viewer = {
@@ -164,9 +169,9 @@
       loading: el.querySelector('.ursa-lightbox-loading'),
       zoomGroup: el.querySelector('.ursa-lightbox-zoom'),
       level: el.querySelector('.ursa-lightbox-level'),
-      zoomIn: el.querySelector('[data-zoom="in"]'),
-      zoomOut: el.querySelector('[data-zoom="out"]'),
-      download: el.querySelector('.ursa-lightbox-download'),
+      zoomIn: el.querySelector('[data-action="zoom-in"]'),
+      zoomOut: el.querySelector('[data-action="zoom-out"]'),
+      download: el.querySelector('[data-action="download"]'),
       natural: { w: 0, h: 0 },
       scale: 1,
       fitScale: 1,
@@ -178,11 +183,12 @@
       dragged: false,
     };
 
-    el.querySelector('.ursa-lightbox-backdrop').addEventListener('click', close);
-    el.querySelector('.ursa-lightbox-close').addEventListener('click', close);
-    // Letterbox area around the image closes too; a drag that ends there does not.
-    viewer.stage.addEventListener('click', (e) => {
-      if (e.target === viewer.stage && !viewer.dragged) close();
+    el.querySelector('[data-action="close"]').addEventListener('click', close);
+    // The dialog fills the viewport, so its own ::backdrop is never clicked;
+    // the letterbox area around the image is the backdrop in effect, and
+    // closes. A drag that ends there does not.
+    el.addEventListener('click', (e) => {
+      if ((e.target === viewer.stage || e.target === el) && !viewer.dragged) close();
     });
     viewer.zoomIn.addEventListener('click', () => zoomBy(ZOOM_STEP));
     viewer.zoomOut.addEventListener('click', () => zoomBy(1 / ZOOM_STEP));
@@ -190,10 +196,14 @@
       if (!viewer.zoomable) return;
       zoomTo(viewer.atFit ? 1 : viewer.fitScale);
     });
+    el.addEventListener('keydown', onKeydown);
+    // Escape: let the browser close the dialog, and tidy up on `close`, which
+    // fires however it was closed.
+    el.addEventListener('close', onClosed);
 
     enablePanning(viewer.stage);
     window.addEventListener('resize', () => {
-      if (!el.hidden && viewer.ready) relayout();
+      if (el.open && viewer.ready) relayout();
     });
 
     return viewer;
@@ -213,7 +223,7 @@
       panning = true;
       start = { x: e.clientX, y: e.clientY, left: stage.scrollLeft, top: stage.scrollTop };
       stage.setPointerCapture(e.pointerId);
-      stage.classList.add('is-panning');
+      stage.dataset.panning = '';
     });
 
     stage.addEventListener('pointermove', (e) => {
@@ -228,7 +238,7 @@
     const end = (e) => {
       if (!panning) return;
       panning = false;
-      stage.classList.remove('is-panning');
+      delete stage.dataset.panning;
       try { stage.releasePointerCapture(e.pointerId); } catch {}
     };
     stage.addEventListener('pointerup', end);
@@ -237,7 +247,7 @@
 
   /**
    * Run a layout pass now and again on the next frame. A dialog that has just
-   * been unhidden can still report a flex-unresolved stage width in the same
+   * been opened can still report a flex-unresolved stage width in the same
    * task, which would size the image to nothing.
    */
   function layoutTwice(fn) {
@@ -274,7 +284,7 @@
     viewer.level.textContent = Math.round(viewer.scale * 100) + '%';
     viewer.zoomIn.disabled = viewer.scale >= 1 - 0.001;
     viewer.zoomOut.disabled = viewer.scale <= viewer.fitScale + 0.001;
-    viewer.stage.classList.toggle('is-pannable', viewer.scale > viewer.fitScale + 0.001);
+    viewer.stage.toggleAttribute('data-pannable', viewer.scale > viewer.fitScale + 0.001);
   }
 
   /** Zoom, keeping whatever is at the centre of the stage at the centre. */
@@ -315,11 +325,11 @@
     viewer.atFit = Math.abs(target - Math.min(1, viewer.fitScale)) < 0.001;
   }
 
-  function open(img, url) {
+  function open(img, url, opener) {
     const v = ensureViewer();
     const token = ++v.token;
 
-    v.lastFocus = document.activeElement;
+    v.lastFocus = opener || document.activeElement;
     v.img.alt = img.alt || '';
     v.download.href = url;
     v.download.download = fileNameFor(url);
@@ -329,13 +339,11 @@
     v.stage.scrollTop = 0;
     v.stage.scrollLeft = 0;
 
-    // Reveal first: the stage cannot be measured while the dialog is hidden.
-    v.img.classList.add('is-placeholder');
+    // Open first: the stage cannot be measured while the dialog is closed.
+    v.img.toggleAttribute('data-placeholder', true);
     v.img.removeAttribute('style');
     v.loading.hidden = false;
-    v.el.hidden = false;
-    document.body.classList.add('ursa-lightbox-open');
-    document.addEventListener('keydown', onKeydown);
+    if (!v.el.open) v.el.showModal();
     v.stage.focus({ preventScroll: true });
 
     // Show the already-loaded preview stretched to fill the stage, so there is
@@ -354,7 +362,7 @@
     const full = new Image();
     full.onload = () => {
       if (token !== v.token) return; // a later image won the race
-      v.img.classList.remove('is-placeholder');
+      v.img.removeAttribute('data-placeholder');
       v.loading.hidden = true;
       v.img.src = url;
       v.natural = { w: full.naturalWidth, h: full.naturalHeight };
@@ -373,56 +381,35 @@
   }
 
   function close() {
-    if (!viewer || viewer.el.hidden) return;
-    viewer.token++; // abandon any in-flight load
-    viewer.el.hidden = true;
-    viewer.img.removeAttribute('src');
-    viewer.loading.hidden = true;
-    document.body.classList.remove('ursa-lightbox-open');
-    document.removeEventListener('keydown', onKeydown);
-    if (viewer.lastFocus && viewer.lastFocus.focus) viewer.lastFocus.focus();
+    if (viewer && viewer.el.open) viewer.el.close();
   }
 
-  function onKeydown(e) {
-    if (e.key === 'Escape') {
-      e.preventDefault();
-      close();
-    } else if (e.key === '+' || e.key === '=') {
-      zoomBy(ZOOM_STEP);
-    } else if (e.key === '-' || e.key === '_') {
-      zoomBy(1 / ZOOM_STEP);
-    } else if (e.key === 'Tab') {
-      trapFocus(e);
+  function onClosed() {
+    viewer.token++; // abandon any in-flight load
+    viewer.img.removeAttribute('src');
+    viewer.loading.hidden = true;
+    delete viewer.stage.dataset.panning;
+    // The browser restores focus on close too, but to whatever was focused
+    // when showModal() ran; the opener is the right place even if that was not.
+    if (viewer.lastFocus && viewer.lastFocus.isConnected && viewer.lastFocus.focus) {
+      viewer.lastFocus.focus();
     }
   }
 
-  /** Keep Tab inside the dialog while it is open. */
-  function trapFocus(e) {
-    const focusable = Array.from(viewer.el.querySelectorAll('button, a[href]'))
-      .filter((el) => !el.disabled && el.getClientRects().length > 0);
-    if (focusable.length === 0) return;
-    const first = focusable[0];
-    const last = focusable[focusable.length - 1];
-    const active = document.activeElement;
-    // Anywhere but a control of the dialog — the stage, or the page behind it.
-    if (focusable.indexOf(active) === -1) {
-      e.preventDefault();
-      (e.shiftKey ? last : first).focus();
-    } else if (e.shiftKey && active === first) {
-      e.preventDefault();
-      last.focus();
-    } else if (!e.shiftKey && active === last) {
-      e.preventDefault();
-      first.focus();
+  function onKeydown(e) {
+    if (e.key === '+' || e.key === '=') {
+      zoomBy(ZOOM_STEP);
+    } else if (e.key === '-' || e.key === '_') {
+      zoomBy(1 / ZOOM_STEP);
     }
   }
 
   // --- init -----------------------------------------------------------------
 
   function init() {
-    const article = document.querySelector('article#main-content');
-    if (!article) return;
-    article.querySelectorAll('img').forEach(decorate);
+    const doc = document.querySelector('.ursa-doc');
+    if (!doc) return;
+    doc.querySelectorAll('img').forEach(decorate);
     // Build the dialog up front so the first open measures a laid-out stage.
     ensureViewer();
   }

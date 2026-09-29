@@ -99,8 +99,8 @@ import Counter from '_components/Counter.jsx';
 ## Sub
 `);
     // Headings are siblings of the island, not children of it
-    expect(html).toMatch(/<h1>Heading<\/h1>\s*<ursa-island/);
-    expect(html).toMatch(/<\/ursa-island>\s*<h2>Sub<\/h2>/);
+    expect(html).toMatch(/<h1 id="heading">Heading<\/h1>\s*<ursa-island/);
+    expect(html).toMatch(/<\/ursa-island>\s*<section class="ursa-section" data-level="2"><h2 id="sub">Sub<\/h2>/);
   });
 
   test('client bundle contains the island runtime', async () => {
@@ -136,7 +136,7 @@ describe('renderMDX preload stripping', () => {
 ![pic](../img/pic.jpg)
 `);
     expect(html).not.toContain('rel="preload"');
-    expect(html.trimStart().startsWith('<h1>')).toBe(true);
+    expect(html.trimStart().startsWith('<section class="ursa-section" data-level="1"><h1 id=')).toBe(true);
   });
 });
 

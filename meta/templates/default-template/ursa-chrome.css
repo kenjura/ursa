@@ -1,0 +1,1225 @@
+/* =============================================================================
+   ursa-chrome.css — the page frame, and Ursa's components.
+
+   Page-only. An embedder rendering a document's HTML into its own page does
+   not load this file (see ursa-content.css).
+
+   Scopes:
+     @scope (body.ursa) to (.ursa-doc > *)
+         The frame: topbar, site nav, panels, search, main column, site footer.
+         Rooted at <body>, so it only exists on a full Ursa page; stops at the
+         document's children, so no frame rule reaches document content.
+     @scope (.ursa-nav)          one navigation component, three layouts
+     @scope (.ursa-breadcrumbs)  breadcrumbs (rendered inside the document)
+     @scope (.ursa-main .ursa-doc) to (…)
+                                 page-only document behaviour: sticky headings
+     @scope (.ursa) to (.ursa-unstyled)
+                                 image actions and the lightbox
+
+   Customising: every component reads public `--ursa-<component>-<prop>`
+   tokens into private `--_<prop>` variables, so most restyling is a token
+   override. Selectors here are single classes plus attributes, and all of it
+   is in @layer ursa.chrome, so a site selector of any specificity wins.
+   ============================================================================= */
+
+@layer ursa.chrome {
+
+/* =============================================================================
+   FRAME
+   ============================================================================= */
+@scope (body.ursa) to (.ursa-doc > *) {
+
+  :scope {
+    margin: 0;
+    padding: 0;
+    font-family: var(--ursa-font-chrome);
+  }
+
+  @media (max-width: 800px) {
+    :scope {
+      font-size: 18px;
+      -webkit-text-size-adjust: 100%;
+      text-size-adjust: 100%;
+    }
+  }
+
+  .ursa-skip-link {
+    position: fixed;
+    inset-block-start: var(--ursa-space-s);
+    inset-inline-start: var(--ursa-space-s);
+    z-index: calc(var(--ursa-z-panel) + 1);
+    padding: var(--ursa-space-s) var(--ursa-space-m);
+    background: var(--ursa-bg);
+    color: var(--ursa-fg);
+    translate: 0 -200%;
+    &:focus { translate: none; }
+  }
+
+  /* --- buttons ------------------------------------------------------------
+     One icon button for the whole frame: menu toggle, toolbar, panel close,
+     search clear. `--_size` is the square it occupies. */
+  .ursa-button {
+    --_size: var(--ursa-topbar-height);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    inline-size: var(--_size);
+    block-size: var(--_size);
+    padding: 0;
+    border: none;
+    border-radius: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    line-height: 1;
+    cursor: pointer;
+    opacity: 0.7;
+    transition: opacity var(--ursa-transition), background-color var(--ursa-transition);
+
+    &:hover { opacity: 1; background-color: var(--ursa-hover); }
+    &:focus-visible { opacity: 1; outline: 2px solid var(--ursa-accent); outline-offset: -2px; }
+
+    /* A toolbar button whose panel is open */
+    &[aria-controls][aria-expanded="true"]:not(.ursa-sitenav-toggle) {
+      opacity: 1;
+      background-color: var(--ursa-panel-bg, var(--ursa-surface));
+    }
+  }
+
+  /* Three icons in one button; menu.js names the visible one in data-icon.
+     The attribute is in the server markup, so the right icon shows pre-JS. */
+  .ursa-sitenav-toggle {
+    > .ursa-icon { display: none; }
+    &[data-icon="menu"]  > .ursa-icon[data-icon="menu"],
+    &[data-icon="close"] > .ursa-icon[data-icon="close"],
+    &[data-icon="home"]  > .ursa-icon[data-icon="home"] { display: block; }
+  }
+
+  /* --- topbar ------------------------------------------------------------- */
+  .ursa-topbar {
+    --_bg: var(--ursa-topbar-bg, var(--ursa-surface));
+    --_fg: var(--ursa-topbar-fg, var(--ursa-fg));
+
+    position: fixed;
+    inset: 0 0 auto 0;
+    z-index: var(--ursa-z-topbar);
+    box-sizing: border-box;
+    block-size: var(--ursa-topbar-height);
+    padding: 0 8px;
+    display: grid;
+    grid-template-columns: 1fr var(--ursa-doc-width) 1fr;
+    align-items: center;
+    background: var(--_bg);
+    color: var(--_fg);
+  }
+
+  .ursa-topbar-start {
+    display: flex;
+    align-items: center;
+    justify-self: start;
+  }
+
+  .ursa-topbar-center {
+    position: relative;
+    justify-self: center;
+    inline-size: calc(var(--ursa-doc-width) + 38px);
+  }
+
+  .ursa-topbar-end {
+    display: flex;
+    align-items: center;
+    justify-self: end;
+  }
+
+  .ursa-toolbar {
+    display: flex;
+    align-items: center;
+  }
+
+  /* Live-reload indicator (serve mode) */
+  .ursa-status {
+    --ursa-spinner-color: rgb(128 128 128);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    inline-size: var(--ursa-topbar-height);
+    block-size: var(--ursa-topbar-height);
+    opacity: 0.7;
+
+    &[data-state="updated"] { --ursa-spinner-color: rgb(76 175 80); }
+  }
+
+  /* --- search -------------------------------------------------------------
+     One component in two placements: inline in the topbar (results drop
+     down over the page) and inside the search panel (results in the flow). */
+  .ursa-search {
+    --_input-height: calc(var(--ursa-topbar-height) - 16px);
+    --_input-bg: rgb(0 0 0 / 0.25);
+    --_input-border: transparent;
+    --_result-padding: 12px 16px;
+    --_divider: var(--ursa-surface);
+
+    position: relative;
+    inline-size: 100%;
+
+    &[data-placement="panel"] {
+      --_input-height: 40px;
+      --_input-bg: rgb(0 0 0 / 0.15);
+      --_input-border: var(--ursa-border);
+      --_result-padding: 10px 12px;
+      --_divider: var(--ursa-border);
+      box-sizing: border-box;
+      padding: var(--ursa-space-s);
+    }
+  }
+
+  .ursa-search-input {
+    box-sizing: border-box;
+    inline-size: 100%;
+    block-size: var(--_input-height);
+    padding: 0 2.5rem 0 1rem;
+    border: 1px solid var(--_input-border);
+    border-radius: 5px;
+    background: var(--_input-bg);
+    color: inherit;
+    font: inherit;
+    appearance: none;
+
+    &::-webkit-search-cancel-button { appearance: none; }
+    &:focus-visible {
+      outline: none;
+      border-color: var(--ursa-accent);
+      box-shadow: 0 0 0 2px var(--ursa-highlight);
+    }
+  }
+
+  .ursa-search-clear {
+    --_size: auto;
+    position: absolute;
+    inset-inline-end: 8px;
+    inset-block-start: 50%;
+    translate: 0 -50%;
+    padding: 4px 8px;
+    font-size: 1.25rem;
+    opacity: 0.6;
+    background: none;
+    &:hover { background: none; }
+  }
+  .ursa-search[data-placement="panel"] .ursa-search-clear {
+    inset-inline-end: calc(8px + var(--ursa-space-s));
+  }
+
+  .ursa-search-results {
+    position: fixed;
+    inset-block-start: calc(var(--ursa-topbar-height) + 4px);
+    inset-inline-start: 50%;
+    translate: -50% 0;
+    z-index: var(--ursa-z-dropdown);
+    inline-size: min(var(--ursa-doc-width), 100vw - 100px);
+    max-block-size: 400px;
+    overflow-y: auto;
+    background: var(--ursa-bg);
+    border: 1px solid var(--ursa-surface);
+    border-radius: 5px;
+    box-shadow: var(--ursa-shadow);
+
+    .ursa-search[data-placement="panel"] & {
+      position: static;
+      translate: none;
+      inline-size: auto;
+      max-block-size: calc(100vh - var(--ursa-topbar-height) - 80px);
+      margin-block-start: var(--ursa-space-s);
+      background: none;
+      border: none;
+      border-radius: 0;
+      box-shadow: none;
+    }
+  }
+
+  .ursa-search-group + .ursa-search-group {
+    border-block-start: 1px solid var(--_divider);
+  }
+
+  .ursa-search-group-title {
+    margin: 0;
+    padding: 8px 16px;
+    font-size: 0.75em;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--ursa-muted);
+    background: color-mix(in oklab, var(--ursa-surface) 50%, transparent);
+    border-block-end: 1px solid var(--_divider);
+  }
+
+  .ursa-search-result {
+    padding: var(--_result-padding);
+    border-block-end: 1px solid var(--_divider);
+    cursor: pointer;
+    transition: background-color var(--ursa-transition);
+
+    &:last-child { border-block-end: none; }
+    &:hover, &[aria-selected="true"] { background-color: var(--ursa-hover); }
+  }
+
+  .ursa-search-result-title {
+    display: block;
+    margin-block-end: 2px;
+    font-weight: 600;
+  }
+
+  .ursa-search-result-path {
+    display: block;
+    font-size: 0.85em;
+    color: var(--ursa-muted);
+  }
+
+  .ursa-search-more {
+    display: block;
+    inline-size: 100%;
+    padding: 8px 16px;
+    border: none;
+    background: transparent;
+    color: var(--ursa-link);
+    font: inherit;
+    font-size: 0.85em;
+    text-align: center;
+    cursor: pointer;
+    &:hover { background-color: var(--ursa-hover); text-decoration: underline; }
+  }
+
+  /* --- panels -------------------------------------------------------------
+     One <aside class="ursa-panel"> per widget. `data-widget` names it,
+     `data-side` says which edge it hangs from. */
+  .ursa-panel {
+    --_bg: var(--ursa-panel-bg, var(--ursa-surface));
+    --_border: var(--ursa-panel-border, var(--ursa-border));
+
+    position: fixed;
+    inset-block-start: var(--ursa-topbar-height);
+    inset-inline-end: 0;
+    z-index: var(--ursa-z-panel);
+    box-sizing: border-box;
+    inline-size: min(var(--ursa-panel-width, 420px), 100vw);
+    max-block-size: calc(100vh - var(--ursa-topbar-height));
+    overflow-y: auto;
+    background: var(--_bg);
+    border-inline-start: 1px solid var(--_border);
+    border-block-end: 1px solid var(--_border);
+    box-shadow: -2px 4px 12px rgb(0 0 0 / 0.2);
+
+    &[data-side="start"] {
+      inset-inline: 0 auto;
+      border-inline-start: none;
+      border-inline-end: 1px solid var(--_border);
+      box-shadow: 2px 4px 12px rgb(0 0 0 / 0.2);
+    }
+  }
+
+  .ursa-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--ursa-space-s) 0.75rem;
+    border-block-end: 1px solid var(--_border);
+  }
+
+  .ursa-panel-title {
+    margin: 0;
+    font-size: 0.85rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    opacity: 0.7;
+  }
+
+  .ursa-panel-close {
+    --_size: auto;
+    padding: 4px 8px;
+    border-radius: 3px;
+    font-size: 1rem;
+    opacity: 0.5;
+  }
+
+  /* Loading / empty / no-results, in any panel or the search dropdown */
+  .ursa-panel-message {
+    margin: 0;
+    padding: 1.5rem 1rem;
+    text-align: center;
+    color: var(--ursa-muted);
+    font-style: italic;
+    font-size: 0.85rem;
+  }
+
+  /* Recent activity, suggested content: a list of links with a trailing note */
+  .ursa-linklist {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+
+    > li {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 0.75rem;
+      padding: var(--ursa-space-s) 0.75rem;
+      border-block-end: 1px solid var(--_border);
+      transition: background-color var(--ursa-transition);
+      &:last-child { border-block-end: none; }
+      &:hover { background-color: var(--ursa-hover); }
+    }
+
+    a {
+      flex: 1;
+      min-inline-size: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: inherit;
+      text-decoration: none;
+      font-size: 0.9rem;
+      &:hover { text-decoration: underline; }
+    }
+  }
+
+  .ursa-linklist-meta {
+    flex-shrink: 0;
+    white-space: nowrap;
+    font-size: 0.75rem;
+    color: var(--ursa-muted);
+  }
+
+  .ursa-profile {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 2rem 1rem;
+    text-align: center;
+    opacity: 0.7;
+
+    p { margin: var(--ursa-space-s) 0; font-size: 0.9rem; }
+  }
+  .ursa-profile-avatar { font-size: 3rem; margin-block-end: 1rem; }
+  .ursa-profile-signin {
+    margin-block-start: var(--ursa-space-s);
+    padding: 8px 24px;
+    border: 1px solid var(--_border);
+    border-radius: var(--ursa-radius);
+    background: var(--ursa-surface);
+    color: inherit;
+    font: inherit;
+    &:disabled { cursor: not-allowed; opacity: 0.5; }
+  }
+  .ursa-profile-note { font-size: 0.75rem; opacity: 0.5; font-style: italic; }
+
+  /* --- table of contents ---------------------------------------------------
+     Every other panel is a drawer. The TOC is open more or less permanently,
+     so it stands in the margin beside the document instead: translucent,
+     hairline-bordered, never wide enough to reach the text. `50%` on a fixed
+     element excludes the scrollbar, which is what the document is centred in. */
+  .ursa-panel[data-widget="toc"] {
+    --_gutter: var(--ursa-toc-gutter, 1rem);
+    --_max: var(--ursa-toc-max-width, 20rem);
+
+    inset-block-start: calc(var(--ursa-topbar-height) + var(--_gutter));
+    inset-inline-end: var(--_gutter);
+    inline-size: min(var(--_max), calc(50% - var(--ursa-doc-width) / 2 - var(--_gutter) * 2));
+    max-block-size: calc(100vh - var(--ursa-topbar-height) - var(--_gutter) * 2);
+    background: color-mix(in srgb, var(--_bg) 48%, transparent);
+    backdrop-filter: blur(5px);
+    border: 1px solid var(--_border);
+    border-radius: 8px;
+    box-shadow: none;
+  }
+
+  .ursa-toc {
+    padding: var(--ursa-space-s) 0;
+
+    ol {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+    }
+    li {
+      margin-block-end: 0.15rem;
+    }
+    a {
+      display: block;
+      padding: 0.3rem 1rem;
+      border-inline-start: 2px solid transparent;
+      color: inherit;
+      text-decoration: none;
+      font-size: 0.9rem;
+      opacity: 0.75;
+      transition: all 0.2s ease;
+
+      &:hover {
+        opacity: 1;
+        border-inline-start-color: currentColor;
+        background-color: var(--ursa-hover);
+      }
+      &[aria-current="true"] {
+        opacity: 1;
+        border-inline-start-color: var(--ursa-accent);
+        background-color: var(--ursa-highlight);
+      }
+    }
+    li[data-level="1"] > a { font-weight: 600; }
+    li[data-level="2"] > a { padding-inline-start: 1.5rem; font-size: 0.85rem; }
+    li[data-level="3"] > a { padding-inline-start: 2rem;   font-size: 0.8rem; }
+  }
+
+  /* Below this width there is no margin to stand in, so the TOC lies on its
+     side along the bottom of the viewport: one line, scrolled by script and
+     by hand, faded at both ends. Media queries cannot read custom properties:
+     1280px is the default --ursa-doc-width plus a usable panel either side. */
+  @media (max-width: 1280px) {
+    .ursa-panel[data-widget="toc"] {
+      --_fade: 1.5rem;
+      inset: auto 0 0 0;
+      inline-size: auto;
+      max-block-size: none;
+      overflow: hidden;
+      border: none;
+      border-block-start: 1px solid var(--_border);
+      border-radius: 0;
+
+      .ursa-panel-header { display: none; }
+
+      .ursa-toc {
+        padding: 0;
+        overflow-x: auto;
+        overflow-y: hidden;
+        scrollbar-width: none;
+        mask-image: linear-gradient(to right,
+          transparent 0, #000 var(--_fade),
+          #000 calc(100% - var(--_fade)), transparent 100%);
+      }
+      .ursa-toc ol {
+        display: flex;
+        flex-wrap: nowrap;
+        inline-size: max-content;
+        padding-inline: var(--_fade);
+      }
+      .ursa-toc li { margin-block-end: 0; }
+      .ursa-toc li > a {
+        white-space: nowrap;
+        padding: 0.4rem 0.7rem;
+        border-inline-start: none;
+        border-block-end: 2px solid transparent;
+        &:hover { border-block-end-color: currentColor; }
+        &[aria-current="true"] { border-block-end-color: var(--ursa-accent); }
+      }
+    }
+  }
+
+  /* --- site navigation: placement -----------------------------------------
+     Layout of the menu itself is the .ursa-nav component below; this is only
+     where the frame puts it. The root's data-ursa-sitenav is "open" or
+     "closed" once the user has toggled it; absent means the viewport default
+     (open on desktop, closed on mobile). */
+  .ursa-sitenav {
+    position: fixed;
+    inset-block-start: var(--ursa-topbar-height);
+    inset-inline-start: 0;
+    inline-size: var(--ursa-sitenav-width);
+    max-block-size: calc(100vh - var(--ursa-topbar-height));
+    overflow: hidden;
+    font-size: 0.85rem;
+    transition: translate 0.2s ease;
+  }
+  :scope[data-ursa-sitenav="closed"] .ursa-sitenav {
+    translate: -100% 0;
+  }
+
+  .ursa-topnav {
+    display: none;
+    inline-size: 100%;
+  }
+
+  :scope[data-ursa-menu-position="top"] {
+    .ursa-topnav { display: flex; align-items: center; }
+    .ursa-topbar-center > .ursa-search { display: none; }
+    .ursa-sitenav { display: none; }
+  }
+
+  /* --- main column --------------------------------------------------------- */
+  .ursa-main {
+    display: block;
+    padding-block-start: calc(var(--ursa-topbar-height) + 16px);
+  }
+
+  .ursa-doc {
+    inline-size: min(var(--ursa-doc-width), 100% - 2 * var(--ursa-gutter));
+    margin-inline: auto;
+  }
+
+  /* --- site footer --------------------------------------------------------- */
+  .ursa-sitefooter {
+    inline-size: min(var(--ursa-doc-width), 100% - 2 * var(--ursa-gutter));
+    margin: 3rem auto 2rem;
+    padding-block-start: 2rem;
+    border-block-start: 1px solid var(--ursa-border);
+    text-align: center;
+
+    p { margin: 0 0 var(--ursa-space-s); }
+    small { font-size: 0.8rem; opacity: 0.6; }
+    a { color: inherit; }
+  }
+  .ursa-sitefooter-content {
+    margin-block-end: 1.5rem;
+    font-size: 0.95rem;
+    opacity: 0.85;
+  }
+
+  /* --- narrow viewports ---------------------------------------------------- */
+  @media (max-width: 800px) {
+    .ursa-topbar { display: flex; }
+    .ursa-topbar-center { flex: 1; inline-size: auto; margin: 0 8px; }
+
+    :scope[data-ursa-menu-position="top"] {
+      .ursa-topnav { display: none; }
+      .ursa-topbar-center > .ursa-search { display: block; }
+    }
+
+    /* Toolbar and panels give way to the inline search and the menu — except
+       the TOC, whose strip form was built for exactly this width. */
+    .ursa-toolbar .ursa-button:not([data-widget="toc"]) { display: none; }
+    .ursa-panel:not([data-widget="toc"]) { display: none; }
+
+    .ursa-sitenav,
+    :scope[data-ursa-sitenav="closed"] .ursa-sitenav {
+      display: none;
+      z-index: var(--ursa-z-sitenav);
+      inset-inline: 0;
+      inline-size: auto;
+      block-size: calc(100vh - var(--ursa-topbar-height));
+      max-block-size: none;
+      overflow-y: auto;
+      background: var(--ursa-bg);
+      translate: none;
+    }
+    :scope[data-ursa-sitenav="open"] .ursa-sitenav { display: block; }
+  }
+}
+
+
+/* =============================================================================
+   NAVIGATION — one component, three layouts.
+
+     <nav class="ursa-nav …" data-layout="bar | tree | columns">
+       <ul class="ursa-nav-list">
+         <li class="ursa-nav-item" [data-branch] [data-trail] [data-index] [data-home]>
+           <a class="ursa-nav-link" href="…" [aria-current="page"]>Label</a>
+             (or <span class="ursa-nav-link"> for an entry with no page)
+           <ul class="ursa-nav-list">…</ul>          (bar, tree)
+
+   Used by the site nav (columns on desktop, tree on mobile), the top nav
+   (bar) and named in-document menus (bar or tree, from `appearance:`).
+   ============================================================================= */
+@scope (.ursa-nav) {
+
+  :scope {
+    font-family: var(--ursa-font-chrome);
+  }
+
+  .ursa-nav-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .ursa-nav-item {
+    margin: 0;
+    padding: 0;
+  }
+
+  .ursa-nav-link {
+    display: block;
+    color: inherit;
+    text-decoration: none;
+    white-space: nowrap;
+
+    /* Same marker as ursa-content.css uses for document links */
+    &[data-ursa-broken] {
+      filter: brightness(0.5);
+      cursor: not-allowed;
+      text-decoration: line-through;
+    }
+  }
+
+  /* Prose from a menu file: a label before the list, a note after it */
+  .ursa-nav-text {
+    margin: 0;
+    p { margin: 0; }
+  }
+
+  .ursa-nav-message {
+    padding: 1rem;
+    text-align: center;
+    opacity: 0.6;
+  }
+
+  /* --- bar: a strip; children in a hover dropdown, grandchildren fly out ---- */
+  :scope[data-layout="bar"] {
+    --_item-padding: var(--ursa-nav-item-padding, 0.3rem 0.75rem);
+    --_item-radius: var(--ursa-radius);
+
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.25rem 0.75rem;
+
+    > .ursa-nav-list {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.25rem;
+    }
+
+    .ursa-nav-item { position: relative; }
+
+    > .ursa-nav-list > .ursa-nav-item > .ursa-nav-link {
+      padding: var(--_item-padding);
+      border-radius: var(--_item-radius);
+      transition: background-color var(--ursa-transition);
+    }
+
+    > .ursa-nav-list > .ursa-nav-item[data-branch] > .ursa-nav-link::after {
+      content: "▼" / "";
+      font-size: 0.4em;
+      margin-inline-start: 6px;
+      opacity: 0.6;
+      vertical-align: middle;
+    }
+
+    /* dropdown (second level) */
+    .ursa-nav-item > .ursa-nav-list {
+      display: none;
+      position: absolute;
+      inset-block-start: 100%;
+      inset-inline-start: 0;
+      z-index: var(--ursa-z-dropdown);
+      min-inline-size: 12rem;
+      background: var(--ursa-surface);
+      border: 1px solid var(--ursa-border);
+      border-radius: var(--ursa-radius);
+      box-shadow: var(--ursa-shadow);
+    }
+    .ursa-nav-item:is(:hover, :focus-within) > .ursa-nav-list {
+      display: block;
+    }
+
+    .ursa-nav-item .ursa-nav-item > .ursa-nav-link {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.5rem 1rem;
+    }
+    .ursa-nav-item .ursa-nav-item[data-branch] > .ursa-nav-link::after {
+      content: "▶" / "";
+      font-size: 0.7em;
+      margin-inline-start: 8px;
+      opacity: 0.6;
+    }
+
+    /* flyout (third level and deeper) */
+    .ursa-nav-item .ursa-nav-item > .ursa-nav-list {
+      inset-block-start: 0;
+      inset-inline-start: 100%;
+    }
+
+    a.ursa-nav-link:hover {
+      background-color: var(--ursa-hover);
+    }
+    .ursa-nav-item .ursa-nav-item > [aria-current="page"] {
+      font-weight: 600;
+    }
+  }
+
+  /* In-document bar menus mark the current page, or the item above it, as a pill */
+  :scope.ursa-menu[data-layout="bar"] > .ursa-nav-list > .ursa-nav-item:is([data-trail], :has(> [aria-current="page"])) > .ursa-nav-link {
+    font-weight: 600;
+    background-color: var(--ursa-surface);
+    box-shadow: inset 0 0 0 1px var(--ursa-border);
+  }
+
+  /* …and an item whose folder holds the current page ("you are in here") faintly,
+     at normal weight: a tint and a half-strength underline */
+  :scope.ursa-menu[data-layout="bar"] > .ursa-nav-list > .ursa-nav-item[data-path] > .ursa-nav-link {
+    background-color: color-mix(in srgb, currentColor 6%, transparent);
+    box-shadow: inset 0 -2px 0 color-mix(in srgb, currentColor 45%, transparent);
+  }
+  :scope.ursa-menu[data-layout="tree"] [data-path] > .ursa-nav-link {
+    border-inline-start-color: color-mix(in srgb, currentColor 45%, transparent);
+  }
+
+  /* The top nav's strip items fill the topbar's height; its dropdowns can be
+     long, so they scroll, and because a scrolling box clips its flyouts, menu.js
+     positions those with fixed coordinates (inline top/left). */
+  :scope.ursa-topnav {
+    --ursa-nav-item-padding: 0 16px;
+
+    > .ursa-nav-list { gap: 0; flex-wrap: nowrap; }
+    > .ursa-nav-list > .ursa-nav-item > .ursa-nav-link {
+      line-height: var(--ursa-topbar-height);
+      border-radius: 0;
+    }
+    > .ursa-nav-list > .ursa-nav-item > .ursa-nav-list {
+      min-inline-size: 200px;
+      max-block-size: calc(100vh - var(--ursa-topbar-height) - 20px);
+      overflow-y: auto;
+    }
+    .ursa-nav-item .ursa-nav-item > .ursa-nav-list {
+      position: fixed;
+      min-inline-size: 200px;
+      max-block-size: calc(100vh - var(--ursa-topbar-height) - 40px);
+      overflow-y: auto;
+    }
+  }
+
+  /* --- tree: stacked, nested levels indented -------------------------------- */
+  :scope[data-layout="tree"] {
+    .ursa-nav-link,
+    .ursa-nav-text {
+      padding: 0.25rem 0.7rem;
+      white-space: normal;
+    }
+    .ursa-nav-link {
+      border-inline-start: 2px solid transparent;
+    }
+    a.ursa-nav-link:hover {
+      background-color: var(--ursa-hover);
+    }
+    [aria-current="page"] {
+      font-weight: 600;
+      border-inline-start-color: currentColor;
+    }
+    [data-trail] > .ursa-nav-link {
+      font-weight: 600;
+    }
+    .ursa-nav-list .ursa-nav-list {
+      margin-inline-start: 0.7rem;
+      border-inline-start: 1px solid var(--ursa-border);
+    }
+  }
+
+  /* The mobile site nav is a tree with touch-sized rows */
+  :scope.ursa-sitenav[data-layout="tree"] {
+    .ursa-nav-item { border-block-end: 1px solid var(--ursa-border); }
+    .ursa-nav-item:last-child { border-block-end: none; }
+    .ursa-nav-link {
+      padding: 14px 20px;
+      border-inline-start: none;
+      font-size: 1rem;
+    }
+    span.ursa-nav-link { opacity: 0.5; }
+    .ursa-nav-list .ursa-nav-list {
+      margin-inline-start: 0;
+      padding-inline-start: 20px;
+      border-inline-start: none;
+      border-block-start: 1px solid var(--ursa-border);
+      font-size: 0.93em;
+    }
+    [aria-current="page"] { background-color: var(--ursa-highlight); }
+    [data-home] > .ursa-nav-link {
+      font-weight: 600;
+      border-block-end: 2px solid var(--ursa-selected);
+    }
+  }
+
+  /* --- columns: Miller columns, one per level, scrolled sideways ------------ */
+  :scope[data-layout="columns"] {
+    --_column-width: var(--ursa-sitenav-column-width, 130px);
+
+    .ursa-nav-viewport {
+      position: relative;
+      inline-size: 100%;
+      block-size: calc(100vh - var(--ursa-topbar-height) - 40px);
+      overflow: hidden;
+    }
+
+    .ursa-nav-track {
+      display: flex;
+      block-size: 100%;
+      min-block-size: 0;
+      transition: transform 0.25s ease-out;
+    }
+
+    .ursa-nav-list {
+      flex: none;
+      inline-size: var(--_column-width);
+      block-size: 100%;
+      min-block-size: 0;
+      box-sizing: border-box;
+      padding: 4px 0;
+      overflow: hidden auto;
+      border-inline-end: 1px solid var(--ursa-border);
+      scrollbar-width: thin;
+      scrollbar-color: var(--ursa-selected) transparent;
+      &:last-child { border-inline-end: none; }
+    }
+
+    /* The item is the row */
+    .ursa-nav-item {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      margin: 1px 4px;
+      padding: 6px 8px;
+      border-radius: var(--ursa-radius);
+      cursor: pointer;
+      transition: background-color var(--ursa-transition);
+      &:hover { background-color: var(--ursa-hover); }
+    }
+
+    .ursa-nav-link {
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      line-height: 1.3;
+      font-size: 0.8rem;
+      text-transform: capitalize;
+      opacity: 0.85;
+    }
+    .ursa-nav-item:hover > .ursa-nav-link { opacity: 1; }
+
+    [data-branch]::after {
+      content: "›" / "";
+      flex: none;
+      font-size: 12px;
+      opacity: 0.4;
+    }
+    [data-branch]:hover::after { opacity: 0.8; }
+
+    [data-trail] {
+      background-color: var(--ursa-selected);
+      > .ursa-nav-link { font-weight: 500; opacity: 1; }
+    }
+
+    .ursa-nav-item:has(> [aria-current="page"]) {
+      background-color: var(--ursa-highlight);
+      > .ursa-nav-link { font-weight: 600; opacity: 1; }
+    }
+
+    [data-index] {
+      margin-block-end: 4px;
+      padding-block-end: 8px;
+      border-block-end: 1px solid var(--ursa-border);
+      > .ursa-nav-link { font-weight: 500; opacity: 0.95; }
+    }
+
+    .ursa-nav-scroll {
+      position: absolute;
+      inset-block-start: 50%;
+      translate: 0 -50%;
+      z-index: 10;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      inline-size: 24px;
+      block-size: 48px;
+      border: none;
+      border-radius: var(--ursa-radius);
+      background: rgb(0 0 0 / 0.4);
+      color: inherit;
+      font-size: 18px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      &:hover:not(:disabled) { background: rgb(0 0 0 / 0.6); }
+      &:disabled { cursor: default; opacity: 0.3; }
+      &[data-direction="back"]    { inset-inline-start: 2px; }
+      &[data-direction="forward"] { inset-inline-end: 2px; }
+    }
+
+    .ursa-nav-jump {
+      position: absolute;
+      inset-block-end: 8px;
+      inset-inline-start: 50%;
+      translate: -50% 0;
+      z-index: 10;
+      padding: 4px 12px;
+      border: 1px solid color-mix(in oklab, var(--ursa-accent) 50%, transparent);
+      border-radius: 12px;
+      background: color-mix(in oklab, var(--ursa-accent) 30%, transparent);
+      color: inherit;
+      font: inherit;
+      font-size: 0.75rem;
+      white-space: nowrap;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      &:hover { background: color-mix(in oklab, var(--ursa-accent) 50%, transparent); }
+    }
+  }
+}
+
+
+/* =============================================================================
+   BREADCRUMBS
+   ============================================================================= */
+@scope (.ursa-breadcrumbs) {
+  :scope {
+    margin-block-end: var(--ursa-space-xs);
+    font-family: var(--ursa-font-chrome);
+    font-size: 0.8rem;
+    color: var(--ursa-fg);
+    opacity: 0.55;
+  }
+
+  ol {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  /* The separator is decoration: the empty alt text keeps it out of the
+     accessibility tree. */
+  li + li::before {
+    content: var(--ursa-breadcrumb-separator, "/") / "";
+    margin: 0 0.4em;
+    opacity: 0.4;
+    font-size: 0.85em;
+  }
+
+  a {
+    color: inherit;
+    text-decoration: none;
+    transition: opacity var(--ursa-transition);
+    &:hover { text-decoration: underline; }
+  }
+
+  [aria-current="page"] {
+    font-weight: 500;
+  }
+}
+
+
+/* =============================================================================
+   STICKY HEADINGS — page only (an embed has no topbar to stick under).
+
+   Each heading sticks inside its own <section>, so it lets go when its
+   section ends. When an h2/h3 is stuck it hides, and sticky.js writes its
+   text into the stuck h1's data-ursa-trail, shown after the h1's own text —
+   the heading's DOM is never rewritten.
+   ============================================================================= */
+@scope (.ursa-main .ursa-doc) to (.ursa-unstyled, .ursa-nav, .ursa-breadcrumbs) {
+  :is(h1, h2, h3) {
+    position: sticky;
+    z-index: var(--ursa-z-sticky);
+    margin: 0;
+
+    &[data-ursa-stuck] { background: var(--ursa-sticky-bg, var(--ursa-surface)); }
+  }
+
+  h1 {
+    inset-block-start: var(--ursa-sticky-top);
+    block-size: var(--ursa-sticky-h1);
+    line-height: var(--ursa-sticky-h1);
+    white-space: nowrap;
+  }
+  h2 {
+    inset-block-start: calc(var(--ursa-sticky-top) + var(--ursa-sticky-h1));
+    block-size: var(--ursa-sticky-h2);
+    line-height: var(--ursa-sticky-h2);
+  }
+  h3 {
+    inset-block-start: calc(var(--ursa-sticky-top) + var(--ursa-sticky-h1) + var(--ursa-sticky-h2));
+    block-size: var(--ursa-sticky-h3);
+    line-height: var(--ursa-sticky-h3);
+  }
+
+  /* visibility, not display: collapsing a stuck heading would un-stick it */
+  :is(h2, h3)[data-ursa-stuck] { visibility: hidden; }
+
+  h1[data-ursa-stuck][data-ursa-trail]::after {
+    content: " › " attr(data-ursa-trail);
+  }
+}
+
+
+/* =============================================================================
+   IMAGE ACTIONS AND LIGHTBOX
+   The actions are injected around document images; the lightbox is a modal
+   <dialog> appended to <body>. Images inside .ursa-unstyled are left alone
+   (lightbox.js skips them too), as is any image under [data-no-lightbox].
+   ============================================================================= */
+@scope (.ursa) to (.ursa-unstyled) {
+
+  .ursa-image-frame {
+    position: relative;
+    display: inline-block;
+    max-inline-size: 100%;
+    line-height: 0;
+  }
+
+  .ursa-image-actions {
+    position: absolute;
+    inset-block-start: 8px;
+    inset-inline-end: 8px;
+    display: flex;
+    gap: 6px;
+    line-height: 0;
+    opacity: 0;
+    transition: opacity var(--ursa-transition);
+
+    .ursa-image-frame:is(:hover, :focus-within) & { opacity: 1; }
+    @media (hover: none) { opacity: 0.65; }
+  }
+
+  /* Round translucent buttons on imagery: the actions, and the lightbox's
+     toolbar and close button. They sit on photographs, not on the theme, so
+     they are white-on-black in either scheme. */
+  :is(.ursa-image-action, .ursa-lightbox-button) {
+    --_size: 30px;
+    --_icon: 17px;
+    --_bg: rgb(0 0 0 / 0.55);
+    --_bg-hover: rgb(0 0 0 / 0.8);
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    inline-size: var(--_size);
+    block-size: var(--_size);
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background: var(--_bg);
+    color: white;
+    font-family: var(--ursa-font-chrome);
+    font-size: 1.2rem;
+    line-height: 1;
+    cursor: pointer;
+    backdrop-filter: blur(2px);
+    transition: background-color var(--ursa-transition), opacity var(--ursa-transition);
+
+    &:is(:hover, :focus-visible) { background: var(--_bg-hover); }
+    &:disabled { opacity: 0.35; cursor: default; background: var(--_bg); }
+
+    .ursa-icon { --ursa-icon-size: var(--_icon); }
+  }
+
+  /* --- the viewer --- */
+  :scope:has(> .ursa-lightbox[open]) {
+    overflow: hidden;
+  }
+
+  .ursa-lightbox {
+    box-sizing: border-box;
+    inline-size: 100%;
+    block-size: 100%;
+    max-inline-size: none;
+    max-block-size: none;
+    margin: 0;
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: white;
+    overflow: hidden;
+
+    &[open] { display: flex; }
+    &::backdrop { background: rgb(0 0 0 / 0.85); }
+  }
+
+  .ursa-lightbox-stage {
+    position: relative;
+    flex: 1;
+    display: flex;
+    box-sizing: border-box;
+    padding: 32px;
+    overflow: auto;
+    outline: none;
+    overscroll-behavior: contain;
+
+    &[data-pannable] { cursor: grab; }
+    &[data-panning]  { cursor: grabbing; }
+  }
+
+  /* margin:auto centres the image while it fits and collapses to 0 once it
+     is larger, so the overflow stays scrollable in both directions. */
+  .ursa-lightbox-image {
+    display: block;
+    margin: auto;
+    user-select: none;
+    -webkit-user-drag: none;
+    &[data-placeholder] { filter: blur(1px); }
+  }
+
+  .ursa-lightbox-loading {
+    position: absolute;
+    inset: 50% auto auto 50%;
+    translate: -50% -50%;
+    display: flex;
+    padding: 10px;
+    border-radius: 50%;
+    background: rgb(0 0 0 / 0.55);
+    pointer-events: none;
+    --ursa-spinner-color: white;
+    --ursa-spinner-size: 18px;
+  }
+
+  .ursa-lightbox-toolbar {
+    position: absolute;
+    inset-inline-start: 50%;
+    inset-block-end: 20px;
+    translate: -50% 0;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px;
+    border-radius: 999px;
+    background: rgb(0 0 0 / 0.6);
+    backdrop-filter: blur(2px);
+
+    .ursa-lightbox-button {
+      --_size: 34px;
+      --_icon: 18px;
+      --_bg: transparent;
+      --_bg-hover: rgb(255 255 255 / 0.18);
+      backdrop-filter: none;
+    }
+  }
+
+  .ursa-lightbox-zoom {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .ursa-lightbox-level {
+    min-inline-size: 3.5em;
+    text-align: center;
+    font-family: var(--ursa-font-chrome);
+    font-size: 0.8rem;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .ursa-lightbox-button[data-action="close"] {
+    --_size: 44px;
+    --_icon: 22px;
+    --_bg: rgb(0 0 0 / 0.6);
+    --_bg-hover: rgb(255 255 255 / 0.22);
+    position: absolute;
+    inset-block-start: 16px;
+    inset-inline-end: 16px;
+  }
+}
+
+/* The spinner is used by the frame (live reload) and the lightbox. */
+@scope (.ursa) {
+  .ursa-spinner {
+    --_color: var(--ursa-spinner-color, rgb(128 128 128));
+    --_size: var(--ursa-spinner-size, 14px);
+    inline-size: var(--_size);
+    block-size: var(--_size);
+    box-sizing: border-box;
+    border: 2px solid color-mix(in srgb, var(--_color) 30%, transparent);
+    border-block-start-color: color-mix(in srgb, var(--_color) 85%, transparent);
+    border-radius: 50%;
+    animation: ursa-spin 0.8s linear infinite;
+  }
+}
+
+} /* @layer ursa.chrome */

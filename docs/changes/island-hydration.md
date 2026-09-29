@@ -2,6 +2,9 @@
 
 **Status:** implemented in 0.96.0
 **Written:** 2026-09-16 (file/line references are as of v0.95.0)
+**Updated:** semantic markup and CSS v2 removed `sectionify.js` — sections are rendered by
+the server, so the client DOM no longer differs from the rendered HTML — and merged
+`toc-generator.js` into `toc.js`. The Problem section describes the 0.95 behaviour.
 
 ## Problem
 
@@ -63,19 +66,23 @@ including function props like `filter={fn}`, which is why the whole module runs 
 client rather than serialized props being replayed. Instead of rendering `C`, the client
 `island` finds `ursa-island[data-island="N"]` in the live document and calls
 `hydrateRoot(target, <C {...props}/>)` on it in an effect. Each island is its own React
-root, hydrated against exactly the markup the server produced for it, wherever `sectionify`
-moved it. The surrounding article is never touched by React.
+root, hydrated against exactly the markup the server produced for it, wherever it sits in the
+document. The surrounding article is never touched by React. (This was also what made
+hydration independent of `sectionify.js` rewriting the article first; with sections now
+rendered by the server there is nothing left to be independent of, but nothing relies on
+script order either.)
 
 **Runtime.** `react-runtime.js` now also exposes `createRoot`. `buildReactRuntime` used to
 skip the build whenever the file existed; it now checks for a version marker so an old
 runtime in `output/public/` is rebuilt.
 
 **Late content.** Hydration itself changes nothing, but an island that fetches and then renders
-headings adds them after `sticky.js` and `toc-generator.js` have taken their one look at the
+headings adds them after `sticky.js` and `toc.js` have taken their one look at the
 article — so its H2s never roll up into the stuck H1 (they stack instead) and the TOC omits
 them. `content-hooks.js` adds `window.ursa.contentChanged(root)`, which dispatches
 `ursa:content-changed` on `document`; both scripts re-collect headings on it (the TOC rebuilds
-in place, keeping existing ids). Components call it from an effect once their content is in the
+in place). Heading ids are rendered by the server, so a heading an island renders on the client
+needs its own `id` to appear in the TOC. Components call it from an effect once their content is in the
 DOM. Coalesced with `setTimeout(0)` rather than `requestAnimationFrame`, which does not fire in
 a hidden tab.
 

@@ -23,7 +23,7 @@ export function generateBreadcrumbs(dir, base, fileMeta, sourceRoot = null) {
   // No breadcrumbs for root-level pages (need at least 1 segment beyond root)
   if (allSegments.length < 1) return '';
 
-  const parts = [`<a class="breadcrumb-link" href="/">Home</a>`];
+  const items = [`<li><a href="/">Home</a></li>`];
   let href = '/';
 
   for (let i = 0; i < allSegments.length; i++) {
@@ -45,13 +45,11 @@ export function generateBreadcrumbs(dir, base, fileMeta, sourceRoot = null) {
       label = toDisplayName(seg);
     }
 
-    if (isLast) {
-      parts.push(`<span class="breadcrumb-current" aria-current="page">${label}</span>`);
-    } else {
-      href += seg + '/';
-      parts.push(`<a class="breadcrumb-link" href="${href}">${label}</a>`);
-    }
+    href += isFolderSegment ? seg + '/' : seg + '.html';
+    const current = isLast ? ' aria-current="page"' : '';
+    items.push(`<li><a href="${href}"${current}>${label}</a></li>`);
   }
 
-  return `<nav class="breadcrumbs" aria-label="Breadcrumbs">${parts.join('<span class="breadcrumb-sep" aria-hidden="true">/</span>')}</nav>\n`;
+  // Separators are CSS (li + li::before), so the list reads as a list.
+  return `<nav class="ursa-breadcrumbs" aria-label="Breadcrumbs"><ol>${items.join('')}</ol></nav>\n`;
 }

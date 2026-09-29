@@ -259,18 +259,18 @@ export function collectInternalHrefs(html, currentDocPath = '/') {
 }
 
 /**
- * Process HTML to resolve internal links and add class="inactive" to broken links.
+ * Process HTML to resolve internal links and add data-ursa-broken to broken links.
  * This both:
  * 1. Resolves relative links to absolute paths
  * 2. Resolves extensionless links to .html (e.g., /foo/bar -> /foo/bar.html)
- * 3. Marks broken links with the "inactive" class
+ * 3. Marks broken links with the data-ursa-broken attribute
  * 
  * @param {string} html - The HTML content
  * @param {Map<string, string>|((normalized: string) => string|null)} validPaths - Map of
  *   normalized paths to canonical resolved paths, or a resolver over normalized hrefs
  * @param {string} currentDocPath - The current document's URL path (e.g., "/character/index.html")
  * @param {boolean} includeDebug - Whether to include debug info in link text
- * @returns {string} Processed HTML with resolved links and inactive class on broken links
+ * @returns {string} Processed HTML with resolved links and data-ursa-broken on broken links
  */
 export function markInactiveLinks(html, validPaths, currentDocPath = '/', includeDebug = false) {
   // Match anchor tags with href attribute
@@ -285,35 +285,13 @@ export function markInactiveLinks(html, validPaths, currentDocPath = '/', includ
     // Resolve the href (passing current doc path for relative link resolution)
     const { resolvedHref, inactive, debug } = resolveHref(href, validPaths, currentDocPath);
     
-    // Build the class attribute
-    let newBefore = before;
-    let newAfter = after;
-    
-    if (inactive) {
-      // Check if class already exists in before or after
-      const classInBefore = before.match(/class=["']([^"']*)["']/i);
-      const classInAfter = after.match(/class=["']([^"']*)["']/i);
-      
-      if (classInBefore) {
-        const existingClass = classInBefore[1];
-        if (!existingClass.includes('inactive')) {
-          newBefore = before.replace(classInBefore[0], `class="${existingClass} inactive"`);
-        }
-      } else if (classInAfter) {
-        const existingClass = classInAfter[1];
-        if (!existingClass.includes('inactive')) {
-          newAfter = after.replace(classInAfter[0], `class="${existingClass} inactive"`);
-        }
-      } else {
-        // Add class attribute
-        newBefore = `class="inactive" ${before}`;
-      }
-    }
-    
+    // Broken links get data-ursa-broken; the author's own class is left alone.
+    const brokenAttr = inactive && !/\bdata-ursa-broken\b/.test(before + after) ? ' data-ursa-broken' : '';
+
     // Add debug text if requested (only for plain text content)
     const debugText = includeDebug && !content.includes('<') ? ` [DEBUG: ${debug}]` : '';
     
-    return `<a ${newBefore}href="${resolvedHref}"${newAfter}>${content}${debugText}</a>`;
+    return `<a ${before}href="${resolvedHref}"${after}${brokenAttr}>${content}${debugText}</a>`;
   });
 }
 
