@@ -1,3 +1,13 @@
+# 0.104.0
+2026-10-01
+
+Signing in, for sites served by ursa-server ([docs/LIBRARY.md](docs/LIBRARY.md#signing-in-the-account-widget)).
+
+- **The account widget is hidden by default.** The "Authentication coming soon" placeholder is gone: a static site shows no account button at all.
+- **`account.js`** (default template) turns the widget on when the page carries a `script#ursa-server` JSON block naming the server's sign-in URLs. The panel then shows who is signed in, with sign in, sign out and profile links. Editors and admins also get an **edit link** (pencil) in the topbar and in the panel, pointing at the server's editor for the current page.
+- **`createDevServer`** takes `headHtml` (markup added to every page's `<head>`) and `authorizeUpgrade(req)` (refuse hot reload WebSockets, e.g. from visitors who aren't signed in).
+- **`@kenjura/ursa/build`** also exports `outputPathFor`.
+
 # 0.103.0
 2026-09-30
 

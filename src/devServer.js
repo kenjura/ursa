@@ -152,9 +152,13 @@ function getHotReloadScript(wsPath) {
  * @param {string} [opts.host] - Interface to bind (default: all)
  * @param {(app: import("express").Express) => void} [opts.mount] - Add routes
  *   ahead of the site's own (an editor, an API); called before listening
+ * @param {string} [opts.headHtml] - Markup added to the end of every served
+ *   page's <head> (e.g. the `script#ursa-server` block account.js reads)
+ * @param {(req: import("http").IncomingMessage) => boolean | Promise<boolean>} [opts.authorizeUpgrade]
+ *   - Decide whether a hot reload WebSocket may connect (default: all may)
  * @param {(msg: string) => void} [opts.log]
  */
-export function createDevServer({ outputDir, port = 8080, host, mount = null, log = (m) => console.log(m) }) {
+export function createDevServer({ outputDir, port = 8080, host, mount = null, headHtml = "", authorizeUpgrade = null, log = (m) => console.log(m) }) {
   /** WebSocket client → the URL path it reports viewing. */
   const clientUrls = new Map();
 
@@ -214,6 +218,7 @@ export function createDevServer({ outputDir, port = 8080, host, mount = null, lo
     if (!filePath.startsWith(outputDir + "/") || !existsSync(filePath)) return next();
     try {
       let html = await readFile(filePath, "utf8");
+      if (headHtml) html = html.includes("</head>") ? html.replace("</head>", headHtml + "</head>") : headHtml + html;
       const hotReloadScript = getHotReloadScript(HOT_RELOAD_PATH);
       html = html.includes("</body>") ? html.replace("</body>", hotReloadScript + "</body>") : html + hotReloadScript;
       res.setHeader("Content-Type", "text/html; charset=utf-8");
@@ -241,7 +246,17 @@ export function createDevServer({ outputDir, port = 8080, host, mount = null, lo
 
   // ---- WebSocket --------------------------------------------------------------
 
-  const wss = new WebSocketServer({ server: httpServer, path: HOT_RELOAD_PATH });
+  const wss = new WebSocketServer({
+    server: httpServer,
+    path: HOT_RELOAD_PATH,
+    verifyClient: authorizeUpgrade
+      ? (info, done) => {
+          Promise.resolve()
+            .then(() => authorizeUpgrade(info.req))
+            .then((ok) => done(Boolean(ok), ok ? undefined : 401), () => done(false, 401));
+        }
+      : undefined,
+  });
   wss.on("connection", (ws) => {
     const pingInterval = setInterval(() => {
       if (ws.readyState === 1) ws.ping();

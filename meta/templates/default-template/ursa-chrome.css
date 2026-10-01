@@ -78,6 +78,8 @@
 
     &:hover { opacity: 1; background-color: var(--ursa-hover); }
     &:focus-visible { opacity: 1; outline: 2px solid var(--ursa-accent); outline-offset: -2px; }
+    /* The edit link is an <a> styled as a toolbar button */
+    &:is(a) { text-decoration: none; }
 
     /* A toolbar button whose panel is open */
     &[aria-controls][aria-expanded="true"]:not(.ursa-sitenav-toggle) {
@@ -399,18 +401,45 @@
 
     p { margin: var(--ursa-space-s) 0; font-size: 0.9rem; }
   }
-  .ursa-profile-avatar { font-size: 3rem; margin-block-end: 1rem; }
-  .ursa-profile-signin {
+  .ursa-profile-avatar {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    inline-size: 3.5rem;
+    block-size: 3.5rem;
+    margin-block-end: var(--ursa-space-s);
+    border-radius: 50%;
+    background: var(--ursa-hover);
+    font-size: 1.75rem;
+  }
+  .ursa-profile[data-state="signed-in"] { opacity: 1; }
+  .ursa-profile-name { font-weight: 600; }
+  .ursa-profile-email { color: var(--ursa-muted); }
+  .ursa-profile-role {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--ursa-muted);
+  }
+  /* Sign in (signed out), and the list of account actions (signed in) */
+  .ursa-profile-action,
+  .ursa-profile-actions a {
+    display: block;
     margin-block-start: var(--ursa-space-s);
     padding: 8px 24px;
     border: 1px solid var(--_border);
     border-radius: var(--ursa-radius);
     background: var(--ursa-surface);
     color: inherit;
-    font: inherit;
-    &:disabled { cursor: not-allowed; opacity: 0.5; }
+    text-decoration: none;
+    &:hover { background: var(--ursa-hover); }
   }
-  .ursa-profile-note { font-size: 0.75rem; opacity: 0.5; font-style: italic; }
+  .ursa-profile-actions {
+    align-self: stretch;
+    margin: var(--ursa-space-s) 0 0;
+    padding: 0;
+    list-style: none;
+  }
 
   /* --- table of contents ---------------------------------------------------
      Every other panel is a drawer. The TOC is open more or less permanently,

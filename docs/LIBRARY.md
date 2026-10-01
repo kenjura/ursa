@@ -69,10 +69,45 @@ the same port.
 | `outputDir` | Directory to serve (absolute). |
 | `port`, `host` | Where to listen. `port: 0` picks a free port (read it back from `.port`). |
 | `mount(app)` | Add Express routes ahead of the site's own. |
+| `headHtml` | Markup appended to every served page's `<head>`, e.g. the `script#ursa-server` block below. |
+| `authorizeUpgrade(req)` | Return (or resolve) `false` to refuse a hot reload WebSocket, e.g. one without a signed-in session. Default: all connect. |
 
 Returns `{ listen(), runPass(build, passOpts), notifyUpdateStart(), notifyNoAffect(), viewedOutputs(), app, httpServer, port, close() }`.
 `runPass` runs `build.runPass` with the pages connected browsers are viewing
 built first, and tells each browser when to reload.
+
+## `outputPathFor(sourceRel)`
+
+The output path a document renders to (`rules/combat.md` → `rules/combat.html`),
+before index promotion. With `resolveUrlToOutput(url, exists)` it maps between
+source files, output files and URLs.
+
+## Signing in: the account widget
+
+The default template has an account button and an edit link in the topbar,
+both hidden. `account.js` shows them only when the page contains:
+
+```html
+<script type="application/json" id="ursa-server">
+  {"auth": "/auth", "edit": "/edit/", "profile": "/auth/profile"}
+</script>
+```
+
+which a server that signs people in adds (ursa-server does, through
+`createDevServer({ headHtml })`). Static sites never contain it, so they show
+neither and make no requests.
+
+With it, the account panel asks `GET <auth>/me` for
+`{ signedIn, name, email, roles }`:
+
+- signed out: a link to `<auth>/login?returnTo=<this page>`;
+- signed in: name, email, highest role, a link to `profile` (if given) and
+  `<auth>/logout`;
+- with the `editor` or `admin` role: "Edit this page" in the panel, and the
+  pencil in the topbar, both to `<edit>?page=<this page's path>`.
+
+A block with `edit` but no `auth` (an editor without sign-in, for local use)
+shows only the pencil.
 
 ## `createIgnoreFilter({ source, output, cacheDir })`
 

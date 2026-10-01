@@ -94,9 +94,17 @@
                         <path d="M3 10a7 7 0 1 0 14 0a7 7 0 1 0 -14 0" /><path d="M21 21l-6 -6" />
                     </svg>
                 </button>
+                <!-- Account: shown only when a server that signs people in (ursa-server)
+                     serves the page; account.js decides. A static site never shows them. -->
+                <a class="ursa-button ursa-edit-link" href="#" aria-label="Edit this page" title="Edit this page" hidden>
+                    <svg class="ursa-icon" viewBox="0 0 24 24" aria-hidden="true"><!-- tabler: pencil -->
+                        <path d="M4 20h4l10.5 -10.5a2.828 2.828 0 1 0 -4 -4l-10.5 10.5v4" />
+                        <path d="M13.5 6.5l4 4" />
+                    </svg>
+                </a>
                 <button class="ursa-button" type="button" data-widget="profile"
                         aria-controls="ursa-panel-profile" aria-expanded="false"
-                        aria-label="Profile" title="Profile">
+                        aria-label="Account" title="Account" hidden>
                     <svg class="ursa-icon" viewBox="0 0 24 24" aria-hidden="true"><!-- tabler: user-circle -->
                         <path d="M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0" />
                         <path d="M9 10a3 3 0 1 0 6 0a3 3 0 1 0 -6 0" />
@@ -137,14 +145,11 @@
 
     <aside class="ursa-panel" id="ursa-panel-profile" data-widget="profile" data-side="end" aria-labelledby="ursa-panel-profile-title" hidden>
         <header class="ursa-panel-header">
-            <h2 class="ursa-panel-title" id="ursa-panel-profile-title">Profile</h2>
+            <h2 class="ursa-panel-title" id="ursa-panel-profile-title">Account</h2>
             <button class="ursa-button ursa-panel-close" type="button" aria-label="Close">✕</button>
         </header>
-        <div class="ursa-profile">
-            <span class="ursa-profile-avatar" aria-hidden="true">👤</span>
-            <p>Sign in to access your profile</p>
-            <button class="ursa-profile-signin" type="button" disabled>Sign in</button>
-            <p class="ursa-profile-note">Authentication coming soon</p>
+        <div class="ursa-profile" data-state="loading">
+            <!-- account.js -->
         </div>
     </aside>
 
@@ -172,6 +177,7 @@
     <script src="/public/toc.js"></script>
     <script src="/public/menu.js"></script>
     <script src="/public/search.js"></script>
+    <script src="/public/account.js"></script>
     <script src="/public/widgets.js"></script>
     <script src="/public/sticky.js"></script>
     <script src="/public/lightbox.js"></script>

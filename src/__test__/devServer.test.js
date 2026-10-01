@@ -55,3 +55,43 @@ it("tracks the page each browser reports viewing, over the same port", async () 
   expect(dev.viewedOutputs()).toEqual(["docs/a.html"]);
   ws.close();
 });
+
+describe("headHtml and authorizeUpgrade", () => {
+  let dir, guarded;
+  beforeEach(async () => {
+    dir = await mkdtemp(join(tmpdir(), "ursa-dev2-"));
+    await writeFile(join(dir, "index.html"), "<html><head><title>t</title></head><body>home</body></html>");
+    guarded = createDevServer({
+      outputDir: dir,
+      port: 0,
+      host: "127.0.0.1",
+      log: () => {},
+      headHtml: '<script type="application/json" id="ursa-server">{"auth":"/auth"}</script>',
+      authorizeUpgrade: (req) => (req.headers.cookie ?? "").includes("ok=1"),
+    });
+    await guarded.listen();
+  });
+  afterEach(async () => {
+    await guarded.close();
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("adds headHtml inside <head>", async () => {
+    const html = await (await fetch(`http://127.0.0.1:${guarded.port}/`)).text();
+    expect(html).toMatch(/<script type="application\/json" id="ursa-server">\{"auth":"\/auth"\}<\/script><\/head>/);
+  });
+
+  it("refuses WebSockets the hook rejects, accepts the rest", async () => {
+    const url = `ws://127.0.0.1:${guarded.port}${HOT_RELOAD_PATH}`;
+    const refused = await new Promise((r) => {
+      const ws = new WebSocket(url);
+      ws.on("open", () => r("open"));
+      ws.on("unexpected-response", (req, res) => r(res.statusCode));
+      ws.on("error", () => r("error"));
+    });
+    expect(refused).toBe(401);
+    const ok = new WebSocket(url, { headers: { Cookie: "ok=1" } });
+    await new Promise((r) => ok.on("open", r));
+    ok.close();
+  });
+});
