@@ -334,6 +334,11 @@ Starts a development server with live reloading:
 - Watches for file changes in source and meta directories
 - Automatically regenerates when changes are detected
 
+#### `@kenjura/ursa/build`
+The incremental build and the dev server, for programs that drive builds
+themselves: `createBuild`, `createDevServer`, `createIgnoreFilter`. See
+[docs/LIBRARY.md](docs/LIBRARY.md).
+
 ## Project Structure
 
 Your project should have the following structure:

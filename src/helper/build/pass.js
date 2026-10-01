@@ -16,7 +16,7 @@
 
 import { basename, dirname, join, relative } from "path";
 import { rm, unlink, readdir, rmdir } from "fs/promises";
-import { existsSync } from "fs";
+import { existsSync, statSync } from "fs";
 import { emptyDir } from "fs-extra";
 
 import { BuildGraph, loadGraph, saveGraph, isLeafId } from "./graph.js";
@@ -56,6 +56,12 @@ const NULL_FINGERPRINT = hashBytes("null");
  * @param {boolean} [opts.directoryJson] - Write `_directory.json` in every folder (default true)
  * @param {number} [opts.directoryDepth] - How many levels of `directory` objects each
  *   `_directory.json` nests (default Infinity: the whole subtree)
+ * @param {string|null} [opts.cacheDir] - Keep the build cache (graph, cache stamp,
+ *   template bases, build id) here instead of `<source>/.ursa` and `<source>/.ursa.json`,
+ *   so building never writes into the docroot's own folders
+ * @param {(rel: string) => void} [opts.onOutputWrite] - Called with each output path
+ *   (relative to `output`) whose bytes were written. Unchanged bytes are not written.
+ * @param {(rel: string) => void} [opts.onOutputDelete] - Called with each output path deleted
  * @param {(msg: string) => void} [opts.log]
  */
 export async function createBuild({
@@ -70,23 +76,27 @@ export async function createBuild({
   concurrency = DEFAULT_CONCURRENCY,
   directoryJson = true,
   directoryDepth = Infinity,
+  cacheDir = null,
+  onOutputWrite = null,
+  onOutputDelete = null,
   log = (m) => console.log(m),
 }) {
   source = source.replace(/\/+$/, "");
   meta = meta.replace(/\/+$/, "");
   output = output.replace(/\/+$/, "");
+  if (cacheDir) cacheDir = cacheDir.replace(/\/+$/, "");
+  const ursaDir = cacheDir ?? getUrsaDir(source);
 
   if (clean) {
-    const ursaDir = getUrsaDir(source);
     log(`Clean build: deleting cache folder ${ursaDir}`);
-    await rm(ursaDir, { recursive: true, force: true });
+    await clearCacheDir(ursaDir, !cacheDir);
     log(`Clean build: clearing output directory ${output}`);
     await emptyDir(output);
   }
 
   // A cache written by another ursa is discarded: the code that turned source
   // into output changed, and the graph cannot see that through its leaves.
-  const stamp = await enforceCacheVersion(source);
+  const stamp = await enforceCacheVersion(source, undefined, cacheDir);
   if (stamp.reset) {
     log(`Cache discarded: written by ursa ${stamp.previous ?? "(unstamped)"}, now running ${stamp.version}`);
   }
@@ -96,12 +106,16 @@ export async function createBuild({
   let deferOrphans = false;
   let orphanQueue = [];
   let deletedCount = 0;
+  let writtenPaths = [];
+  let deletedPaths = [];
   const deleteOutputs = async (rels) => {
     for (const rel of rels) {
       const path = join(output, rel);
       try {
         await unlink(path);
         deletedCount++;
+        deletedPaths.push(rel);
+        onOutputDelete?.(rel);
         log(`  🗑  ${rel}`);
       } catch {
         // already gone
@@ -119,7 +133,7 @@ export async function createBuild({
 
   let warm = false;
   if (!clean) {
-    warm = await loadGraph(source, graph);
+    warm = await loadGraph(source, graph, cacheDir);
     if (warm) {
       const s = graph.getStats();
       log(`Build graph loaded: ${s.derivedNodes} nodes, ${s.leaves} leaves, ${s.edges} edges, ${s.owned} outputs`);
@@ -131,7 +145,7 @@ export async function createBuild({
   graph.setConst("directory-depth", String(directoryDepth ?? Infinity));
 
   const session = {
-    buildId: getAndIncrementBuildId(source),
+    buildId: getAndIncrementBuildId(source, cacheDir ? join(cacheDir, "ursa.json") : undefined),
     now: new Date(),
     gitHash: readGitHash(source),
   };
@@ -150,7 +164,11 @@ export async function createBuild({
       warned.add(key);
       console.warn(msg);
     },
-    onWrite: () => { writtenCount++; },
+    onWrite: (rel) => {
+      writtenCount++;
+      writtenPaths.push(rel);
+      onOutputWrite?.(rel);
+    },
     noteLegacyHtml: (rel) => { legacyHtmlDocs.add(rel); },
     sourceTimestamps: () => (timestampIndex ??= buildSourceTimestampIndex(source, { log })),
   };
@@ -178,6 +196,8 @@ export async function createBuild({
     timestampIndex = null;
     writtenCount = 0;
     deletedCount = 0;
+    writtenPaths = [];
+    deletedPaths = [];
     orphanQueue = [];
     deferOrphans = false;
     graph.beginPass();
@@ -243,7 +263,7 @@ export async function createBuild({
     t = Date.now();
     deferOrphans = false;
     await flushOrphans();
-    await saveGraph(source, graph);
+    await saveGraph(source, graph, cacheDir);
     time("finish", t);
 
     const computed = new Set(graph._computedThisPass);
@@ -259,6 +279,8 @@ export async function createBuild({
       failures,
       written: writtenCount,
       deleted: deletedCount,
+      writtenPaths: [...new Set(writtenPaths)],
+      deletedPaths: [...new Set(deletedPaths)],
       timings,
       elapsed: Date.now() - t0,
       viewedNodes,
@@ -287,12 +309,12 @@ export async function createBuild({
     const articles = allFiles.filter((f) => ARTICLE_EXT_RE.test(f) && !isHiddenOrSystemPath(f, source));
     let summary;
     if (firstPass) {
-      summary = await reconcileAll(articles, allFiles, source);
+      summary = await reconcileAll(articles, allFiles, source, cacheDir);
     } else {
       summary = { initialized: 0, updated: 0, conflicts: 0, unchanged: 0, errors: 0, affectedPaths: new Set(), messages: [] };
       for (const tpl of new Set(changedTemplates)) {
         if (!existsSync(tpl) || !ARTICLE_EXT_RE.test(tpl)) continue;
-        const s = await reconcileByTemplate(tpl, articles, source);
+        const s = await reconcileByTemplate(tpl, articles, source, cacheDir);
         for (const k of ["initialized", "updated", "conflicts", "unchanged", "errors"]) summary[k] += s[k];
         for (const p of s.affectedPaths) summary.affectedPaths.add(p);
         summary.messages.push(...s.messages);
@@ -491,10 +513,34 @@ export async function createBuild({
     }
   }
 
+  /**
+   * Mark changed paths (absolute, in the docroot or meta) for the next pass.
+   * The truth about each path is established by the pass, not by the caller
+   * (docs/SERVE.md §3.2): a directory, or a path that is gone and so might
+   * have been one, has its whole subtree re-checked.
+   * @param {string[]} paths
+   */
+  function invalidate(paths) {
+    const subtrees = [];
+    for (const p of paths) {
+      let isDir = false;
+      try {
+        isDir = statSync(p).isDirectory();
+      } catch {
+        isDir = true; // missing: rescan whatever the graph knew beneath it
+      }
+      if (isDir) subtrees.push(p);
+      else graph.invalidatePath(p);
+    }
+    graph.invalidateSubtrees(subtrees);
+  }
+
   return {
     graph,
     env,
     site,
+    cacheDir: ursaDir,
+    invalidate,
     runPass,
     nodeForOutput: (outRel) => nodeForOutput(outRel, graph.values.get(nodeId("documentSet")) ?? { dirSet: new Set() }),
     /** Node ids owning a page or a soft-closure JSON that a page consumes. */
@@ -503,6 +549,18 @@ export async function createBuild({
       await terminateParserPool();
     },
   };
+}
+
+/**
+ * Delete a cache folder for a clean build. A docroot's own `.ursa` is ursa's
+ * to delete; an explicit `cacheDir` only if ursa stamped it (or it is empty),
+ * so a mistyped path never removes someone's files.
+ */
+async function clearCacheDir(dir, ownedByUrsa) {
+  if (!ownedByUrsa && existsSync(dir) && !existsSync(join(dir, "cache-stamp.json")) && (await readdir(dir)).length > 0) {
+    throw new Error(`cacheDir ${dir} is not empty and is not an ursa cache; refusing to clear it`);
+  }
+  await rm(dir, { recursive: true, force: true });
 }
 
 /** Remove now-empty directories from `dir` up to (not including) `stop`. */

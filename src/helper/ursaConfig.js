@@ -17,8 +17,7 @@ function getConfigPath(sourceDir) {
  * @param {string} sourceDir - The source directory path
  * @returns {object} The config object (empty object if file doesn't exist)
  */
-export function loadUrsaConfig(sourceDir) {
-  const configPath = getConfigPath(sourceDir);
+export function loadUrsaConfig(sourceDir, configPath = getConfigPath(sourceDir)) {
   try {
     if (existsSync(configPath)) {
       const content = readFileSync(configPath, 'utf8');
@@ -35,8 +34,7 @@ export function loadUrsaConfig(sourceDir) {
  * @param {string} sourceDir - The source directory path
  * @param {object} config - The config object to save
  */
-export function saveUrsaConfig(sourceDir, config) {
-  const configPath = getConfigPath(sourceDir);
+export function saveUrsaConfig(sourceDir, config, configPath = getConfigPath(sourceDir)) {
   try {
     const content = JSON.stringify(config, null, 2);
     writeFileSync(configPath, content, 'utf8');
@@ -48,10 +46,11 @@ export function saveUrsaConfig(sourceDir, config) {
 /**
  * Get the current build ID and increment it for the next build
  * @param {string} sourceDir - The source directory path
+ * @param {string} [configPath] - Where the state file lives, when not `<sourceDir>/.ursa.json`
  * @returns {number} The current build ID (starting from 1)
  */
-export function getAndIncrementBuildId(sourceDir) {
-  const config = loadUrsaConfig(sourceDir);
+export function getAndIncrementBuildId(sourceDir, configPath = getConfigPath(sourceDir)) {
+  const config = loadUrsaConfig(sourceDir, configPath);
   const currentBuildId = config.buildId || 0;
   const newBuildId = currentBuildId + 1;
   
@@ -59,7 +58,7 @@ export function getAndIncrementBuildId(sourceDir) {
   // Dropped in 0.96.0: last-edited times now come from git/mtime, not the
   // build. Remove the stale map so it stops taking up the file.
   delete config.contentTimestamps;
-  saveUrsaConfig(sourceDir, config);
+  saveUrsaConfig(sourceDir, config, configPath);
   
   return newBuildId;
 }

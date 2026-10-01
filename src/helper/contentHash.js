@@ -1,4 +1,4 @@
-import { readFile, writeFile, mkdir, rm } from 'fs/promises';
+import { readFile, writeFile, mkdir, rm, readdir } from 'fs/promises';
 import { existsSync } from 'fs';
 import { dirname, join } from 'path';
 import { getUrsaVersion } from './ursaVersion.js';
@@ -25,13 +25,21 @@ export function getUrsaDir(sourceDir) {
  *
  * On a first build there is nothing to discard, and `reset` is false.
  *
+ * A cache folder given explicitly (`cacheDir`) is only discarded if it carries
+ * a stamp — i.e. ursa wrote it. A non-empty, unstamped `cacheDir` is someone
+ * else's folder, and is refused rather than deleted.
+ *
  * @param {string} sourceDir - Source directory root
  * @param {string} [version] - Version to stamp with; defaults to ursa's own
+ * @param {string|null} [cacheDir] - Cache folder to use instead of `<sourceDir>/.ursa`
  * @returns {Promise<{reset: boolean, previous: string|null, version: string}>}
  */
-export async function enforceCacheVersion(sourceDir, version = getUrsaVersion()) {
-  const ursaDir = getUrsaDir(sourceDir);
+export async function enforceCacheVersion(sourceDir, version = getUrsaVersion(), cacheDir = null) {
+  const ursaDir = cacheDir ?? getUrsaDir(sourceDir);
   const stampPath = join(ursaDir, CACHE_STAMP_FILE);
+  if (cacheDir && !existsSync(stampPath) && existsSync(ursaDir) && (await readdir(ursaDir)).length > 0) {
+    throw new Error(`cacheDir ${cacheDir} is not empty and is not an ursa cache; refusing to clear it`);
+  }
 
   let previous = null;
   try {

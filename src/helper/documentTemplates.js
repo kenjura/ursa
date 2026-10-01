@@ -44,19 +44,21 @@ export function isInsideTemplatesFolder(filePath) {
 }
 
 /**
- * Return the on-disk directory that stores template-base snapshots.
+ * Return the on-disk directory that stores template-base snapshots: under
+ * `cacheDir` when the build keeps its cache outside the docroot, else
+ * `<docroot>/.ursa`.
  */
-function templateBasesDir(sourceRoot) {
-  return join(sourceRoot.replace(/\/$/, ''), '.ursa', 'template-bases');
+function templateBasesDir(sourceRoot, cacheDir = null) {
+  return join(cacheDir ?? join(sourceRoot.replace(/\/$/, ''), '.ursa'), 'template-bases');
 }
 
 /**
  * Deterministic filename for a document's stored base snapshot.
  * We encode slashes so everything lives in one flat directory.
  */
-function baseSnapshotPath(sourceRoot, documentRelPath) {
+function baseSnapshotPath(sourceRoot, documentRelPath, cacheDir = null) {
   const safeName = documentRelPath.replace(/[/\\]/g, '__');
-  return join(templateBasesDir(sourceRoot), safeName);
+  return join(templateBasesDir(sourceRoot, cacheDir), safeName);
 }
 
 // ---------------------------------------------------------------------------
@@ -181,8 +183,8 @@ export async function findTemplatedDocuments(articlePaths, sourceRoot, rawBodyCa
  * Load the stored base snapshot for a document.
  * Returns `null` if no snapshot exists yet.
  */
-export async function loadBaseSnapshot(sourceRoot, documentRelPath) {
-  const p = baseSnapshotPath(sourceRoot, documentRelPath);
+export async function loadBaseSnapshot(sourceRoot, documentRelPath, cacheDir = null) {
+  const p = baseSnapshotPath(sourceRoot, documentRelPath, cacheDir);
   if (!existsSync(p)) return null;
   return readFile(p, 'utf8');
 }
@@ -190,8 +192,8 @@ export async function loadBaseSnapshot(sourceRoot, documentRelPath) {
 /**
  * Persist the base snapshot for a document.
  */
-export async function saveBaseSnapshot(sourceRoot, documentRelPath, body) {
-  const p = baseSnapshotPath(sourceRoot, documentRelPath);
+export async function saveBaseSnapshot(sourceRoot, documentRelPath, body, cacheDir = null) {
+  const p = baseSnapshotPath(sourceRoot, documentRelPath, cacheDir);
   await mkdir(dirname(p), { recursive: true });
   await writeFile(p, body, 'utf8');
 }
@@ -241,10 +243,11 @@ export function threeWayMerge(base, ours, theirs) {
  * @param {string} docAbsPath      – absolute path to the document
  * @param {string} templateAbsPath – absolute path to the template .md
  * @param {string} sourceRoot      – docroot (with or without trailing /)
+ * @param {string|null} [cacheDir] – build cache folder (default `<docroot>/.ursa`)
  * @returns {Promise<{ action: string, conflict: boolean, message: string }>}
  *   action: 'none' | 'updated' | 'initialized' | 'conflict' | 'error'
  */
-export async function reconcileDocument(docAbsPath, templateAbsPath, sourceRoot) {
+export async function reconcileDocument(docAbsPath, templateAbsPath, sourceRoot, cacheDir = null) {
   const normalizedRoot = sourceRoot.replace(/\/$/, '');
   const docRelPath = relative(normalizedRoot, docAbsPath);
 
@@ -259,12 +262,12 @@ export async function reconcileDocument(docAbsPath, templateAbsPath, sourceRoot)
     const docFmBlock = extractFrontmatterBlock(docContent);
 
     // Load stored base snapshot
-    const storedBase = await loadBaseSnapshot(normalizedRoot, docRelPath);
+    const storedBase = await loadBaseSnapshot(normalizedRoot, docRelPath, cacheDir);
 
     if (storedBase === null) {
       // First encounter — save current template body as the base.
       // No merge needed; the document is already an instance.
-      await saveBaseSnapshot(normalizedRoot, docRelPath, templateBody);
+      await saveBaseSnapshot(normalizedRoot, docRelPath, templateBody, cacheDir);
       return { action: 'initialized', conflict: false, message: `Initialized base snapshot for ${docRelPath}` };
     }
 
@@ -281,7 +284,7 @@ export async function reconcileDocument(docAbsPath, templateAbsPath, sourceRoot)
 
     // Update the base snapshot to the new template body
     // (even on conflict — the user will resolve, and next run should be clean)
-    await saveBaseSnapshot(normalizedRoot, docRelPath, templateBody);
+    await saveBaseSnapshot(normalizedRoot, docRelPath, templateBody, cacheDir);
 
     if (conflict) {
       return { action: 'conflict', conflict: true, message: `Conflict in ${docRelPath} — manual resolution required` };
@@ -301,7 +304,7 @@ export async function reconcileDocument(docAbsPath, templateAbsPath, sourceRoot)
  * `affectedPaths` is the set of absolute document paths that were written to
  * disk (so the caller knows which files to regenerate).
  */
-export async function reconcileAll(articlePaths, allFiles, sourceRoot) {
+export async function reconcileAll(articlePaths, allFiles, sourceRoot, cacheDir = null) {
   const normalizedRoot = sourceRoot.replace(/\/$/, '');
 
   // 1. Discover templates and templated documents
@@ -333,7 +336,7 @@ export async function reconcileAll(articlePaths, allFiles, sourceRoot) {
       continue;
     }
 
-    const result = await reconcileDocument(docAbsPath, templateAbsPath, normalizedRoot);
+    const result = await reconcileDocument(docAbsPath, templateAbsPath, normalizedRoot, cacheDir);
     summary.messages.push(result.message);
 
     switch (result.action) {
@@ -367,9 +370,10 @@ export async function reconcileAll(articlePaths, allFiles, sourceRoot) {
  * @param {string} changedTemplateAbsPath – the template that was saved
  * @param {string[]} articlePaths         – all known article paths
  * @param {string} sourceRoot             – docroot
+ * @param {string|null} [cacheDir]       – build cache folder (default `<docroot>/.ursa`)
  * @returns same shape as reconcileAll's summary
  */
-export async function reconcileByTemplate(changedTemplateAbsPath, articlePaths, sourceRoot) {
+export async function reconcileByTemplate(changedTemplateAbsPath, articlePaths, sourceRoot, cacheDir = null) {
   const normalizedRoot = sourceRoot.replace(/\/$/, '');
   const templateRelPath = relative(normalizedRoot, changedTemplateAbsPath);
 
@@ -391,7 +395,7 @@ export async function reconcileByTemplate(changedTemplateAbsPath, articlePaths, 
       const meta = extractMetadata(content);
       if (meta?.['template-source'] !== templateRelPath) continue;
 
-      const result = await reconcileDocument(docPath, changedTemplateAbsPath, normalizedRoot);
+      const result = await reconcileDocument(docPath, changedTemplateAbsPath, normalizedRoot, cacheDir);
       summary.messages.push(result.message);
 
       switch (result.action) {
@@ -425,9 +429,10 @@ export async function reconcileByTemplate(changedTemplateAbsPath, articlePaths, 
  * @param {string} templateAbsPath – absolute path to the template .md file
  * @param {string} destAbsPath     – absolute path for the new document
  * @param {string} sourceRoot      – docroot
+ * @param {string|null} [cacheDir] – build cache folder (default `<docroot>/.ursa`)
  * @returns {{ templateRelPath: string, destRelPath: string }}
  */
-export async function instantiateTemplate(templateAbsPath, destAbsPath, sourceRoot) {
+export async function instantiateTemplate(templateAbsPath, destAbsPath, sourceRoot, cacheDir = null) {
   const normalizedRoot = sourceRoot.replace(/\/$/, '');
   const templateRelPath = relative(normalizedRoot, templateAbsPath);
   const destRelPath = relative(normalizedRoot, destAbsPath);
@@ -448,7 +453,7 @@ export async function instantiateTemplate(templateAbsPath, destAbsPath, sourceRo
   await writeFile(destAbsPath, instanceContent, 'utf8');
 
   // Save the base snapshot so future reconciliation works
-  await saveBaseSnapshot(normalizedRoot, destRelPath, templateBody);
+  await saveBaseSnapshot(normalizedRoot, destRelPath, templateBody, cacheDir);
 
   return { templateRelPath, destRelPath };
 }

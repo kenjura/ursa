@@ -945,19 +945,24 @@ export class BuildGraph {
   }
 }
 
-/** Path to the persisted graph for a source directory. */
-export function getGraphPath(sourceDir) {
-  return join(getUrsaDir(sourceDir), GRAPH_FILE);
+/**
+ * Path to the persisted graph for a source directory (or for an explicit
+ * cache folder, when the build keeps its cache outside the docroot).
+ */
+export function getGraphPath(sourceDir, cacheDir = null) {
+  return join(cacheDir ?? getUrsaDir(sourceDir), GRAPH_FILE);
 }
 
 /**
- * Load a persisted graph from .ursa/graph.json into the given BuildGraph.
+ * Load a persisted graph from .ursa/graph.json (or `<cacheDir>/graph.json`)
+ * into the given BuildGraph.
  * @returns {Promise<boolean>} Whether a valid graph was loaded
  */
-export async function loadGraph(sourceDir, graph) {
+export async function loadGraph(sourceDir, graph, cacheDir = null) {
+  const path = getGraphPath(sourceDir, cacheDir);
   try {
-    if (!existsSync(getGraphPath(sourceDir))) return false;
-    const data = JSON.parse(await readFile(getGraphPath(sourceDir), "utf8"));
+    if (!existsSync(path)) return false;
+    const data = JSON.parse(await readFile(path, "utf8"));
     return graph.load(data);
   } catch (e) {
     console.warn(`Could not load build graph: ${e.message}`);
@@ -965,11 +970,12 @@ export async function loadGraph(sourceDir, graph) {
   }
 }
 
-/** Persist a graph to .ursa/graph.json. */
-export async function saveGraph(sourceDir, graph) {
+/** Persist a graph to .ursa/graph.json (or `<cacheDir>/graph.json`). */
+export async function saveGraph(sourceDir, graph, cacheDir = null) {
+  const path = getGraphPath(sourceDir, cacheDir);
   try {
-    await mkdir(getUrsaDir(sourceDir), { recursive: true });
-    await writeFile(getGraphPath(sourceDir), JSON.stringify(graph.serialize()));
+    await mkdir(dirname(path), { recursive: true });
+    await writeFile(path, JSON.stringify(graph.serialize()));
     return true;
   } catch (e) {
     console.warn(`Could not save build graph: ${e.message}`);

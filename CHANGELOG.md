@@ -1,3 +1,15 @@
+# 0.103.0
+2026-09-30
+
+The build and the dev server as a library, for programs that drive builds themselves ([docs/LIBRARY.md](docs/LIBRARY.md)).
+
+- **`@kenjura/ursa/build`** exports `createBuild`, `createDevServer`, `createIgnoreFilter`, `resolveUrlToOutput` and `getUrsaVersion`. `package.json` now has an `exports` map; every existing path stays importable.
+- **Which outputs changed.** `createBuild` takes `onOutputWrite(rel)` and `onOutputDelete(rel)`, and a pass's summary carries `writtenPaths` and `deletedPaths`. A deploy step can push exactly the files a pass changed.
+- **`cacheDir`.** `createBuild({ cacheDir })` keeps the graph, cache stamp, document-template bases and build id outside the docroot, so a build never writes into the source's own folders (only document-template reconciliation still writes documents there). A non-empty folder ursa did not write is refused rather than cleared.
+- **`build.invalidate(paths)`** marks changed paths for the next pass, rescanning directories and vanished paths, as `ursa serve`'s watcher does.
+- **`createDevServer`** is `ursa serve`'s HTTP and live-reload server on its own, with a `mount(app)` hook for extra routes.
+- **`ursa serve`: hot reload shares the HTTP port.** The WebSocket moved from port+1 to `/__ursa/ws` on the page's own host and port, using `wss:` on HTTPS pages, so `serve` works behind a reverse proxy and needs only one port open.
+
 # 0.102.0
 2026-09-29
 
