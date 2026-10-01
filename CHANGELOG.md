@@ -1,3 +1,28 @@
+# 0.102.0
+2026-09-29
+
+Folder metadata, `_directory.json`, and build config files.
+
+**Folder metadata** ([docs/FOLDER_METADATA.md](docs/FOLDER_METADATA.md)).
+
+- A folder's metadata can live in `metadata.yml`, `metadata.json` or `config.json`. When a folder has more than one they are merged key by key, `metadata.yml` over `metadata.json` over `config.json`. Everything that read `config.json` — `hidden`, `label`, `icon`, `lang`, `openMenuItems`, `inject-menu` — reads the merged metadata. `config.json` still works but is **deprecated**, with one warning per run. None of the three is a document: `metadata.yml` is not rendered as a page, and none is listed in menus, auto-indexes, folder listings or `_directory.json` entries.
+- Keys Ursa does not know are kept and passed through to `_directory.json`.
+- **`thumbnail`**: an image that represents the folder, relative to the folder, or to the docroot with a leading `/`. An image named `thumb` or `thumbnail` (`.jpg`, `.jpeg`, `.gif`, `.png`, `.webp`, `.svg`) in the folder works the same way. If a folder has both, the metadata wins and the build (and `serve`) warns. A `thumbnail` that points at a missing file is also warned about.
+
+**`_directory.json`.** Every folder in the output, the root included, gets a `_directory.json`. It holds the folder's metadata and one entry per file and subfolder directly in it: `path` (relative), `absolutePath` (from the docroot), `url` (for documents and folders), and `metadata`. A folder entry's `metadata` is that folder's own, and its `directory` holds the folder's own `_directory.json` content, nested. Every entry and folder has `metadata._build.sourceUpdated` (last git commit, or mtime) and `metadata._build.rendered` (when its output was last written); a folder's are the latest of everything beneath it. Editing a document rewrites the `_directory.json` of its folder and each folder above it, and nothing else. `directory-depth` limits nesting, and `directory-json: false` turns the files off (and deletes them).
+
+**Build config files** ([docs/BUILD_CONFIG.md](docs/BUILD_CONFIG.md)).
+
+- `ursa build prod.yml` and `ursa serve dev.json` take a `.yml`, `.yaml` or `.json` file in place of the source directory. It can set every CLI option (`source`, `meta`, `output`, `whitelist`, `exclude`, `clean`, `explain`, `promote-changelog`, `json-only`, `port`, `strict-port`) plus `directory-json`, `directory-depth` and `concurrency`.
+- Relative paths resolve against the config file. Flags typed on the command line override the file. Unknown keys are warned about.
+- `build` is a new alias of `generate`. `--directory-depth` and `--no-directory-json` are also flags.
+
+**Also:**
+
+- [docs/FILE_METADATA.md](docs/FILE_METADATA.md) lists the frontmatter keys documents and menu files can set.
+- The build graph gains `ctx.fingerprint(id)`: depend on a node without demanding its value. After a restart, a clean node is then not recomputed just to be read. `_directory.json` uses it to follow page renders without re-rendering pages on a warm start.
+- Recent activity and `_directory.json` share one git-history lookup per pass.
+
 # 0.101.0
 2026-09-29
 

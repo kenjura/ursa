@@ -1,7 +1,7 @@
 // Auto-index generation helpers for build
 import { readdir } from "./tracedFs.js";
 import { basename, extname, join } from "path";
-import { getFolderConfig, isFolderSelfHidden } from "../folderConfig.js";
+import { getFolderConfig, isFolderSelfHidden, isFolderMetadataFile } from "../folderConfig.js";
 import { isMenuFile } from "../customMenu.js";
 import {
   toDisplayName,
@@ -40,7 +40,7 @@ async function directoryHasDocuments(dir, extensions, sourceDir = dir) {
         const childSource = sourceDir ? join(sourceDir, child.name) : null;
         if (await directoryHasDocuments(fullPath, extensions, childSource)) return true;
       } else {
-        if (isMenuFile(child.name)) continue;
+        if (isMenuFile(child.name) || isFolderMetadataFile(child.name)) continue;
         const ext = extname(child.name).toLowerCase();
         if (extensions.includes(ext)) return true;
       }
@@ -110,6 +110,8 @@ export async function generateAutoIndexHtmlFromSource(sourceDir, depth = 1, curr
         if (child.name.match(/^index\.(md|mdx|txt|yml|html)$/i)) return false;
         // Skip menu files (menu.md, menu-<name>.md): navigation, not content
         if (isMenuFile(child.name)) return false;
+        // Skip folder metadata (metadata.yml is a .yml, but not a document)
+        if (isFolderMetadataFile(child.name)) return false;
         // Skip img folders (contain images, not content)
         if (child.isDirectory() && child.name === 'img') return false;
         // Skip folders config.json marks hidden — they produce no output

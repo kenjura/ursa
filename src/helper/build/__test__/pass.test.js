@@ -14,6 +14,7 @@ import { tmpdir } from "os";
 import { createBuild } from "../pass.js";
 import { hashBytes } from "../tracedFs.js";
 import { deflateSync } from "zlib";
+import { jest } from "@jest/globals";
 
 let tempDir;
 let source;
@@ -65,10 +66,17 @@ afterEach(async () => {
   await rm(tempDir, { recursive: true, force: true });
 });
 
+/**
+ * The scenarios below are about pages. `_directory.json` is an aggregate that
+ * every edit reaches (its folder's and each ancestor's), so it is off unless a
+ * test is about it — see "_directory.json" at the end.
+ */
+const PAGES_ONLY = { directoryJson: false };
+
 /** A build over the fixture; `runPass` returns the summary with `wrote` (rels). */
 async function build(opts = {}) {
   const wrote = [];
-  const b = await createBuild({ source, meta, output, log: () => {}, ...opts });
+  const b = await createBuild({ source, meta, output, log: () => {}, ...PAGES_ONLY, ...opts });
   b.env.onWrite = (rel) => wrote.push(rel);
   return {
     b,
@@ -105,6 +113,10 @@ async function snapshot(dir) {
             .replace(/ data-ursa-build="\d+"/, "");
           buf = Buffer.from(text);
         }
+        if (entry.name === "_directory.json") {
+          // Timestamps are mtimes outside git, and a copied tree has new ones
+          buf = Buffer.from(buf.toString("utf8").replace(/"(sourceUpdated|rendered)":"[^"]*"/g, '"$1":"T"'));
+        }
         out.set(relative(dir, p), hashBytes(buf));
       }
     }
@@ -114,13 +126,13 @@ async function snapshot(dir) {
 }
 
 /** The output converges on a clean build of the same source (§1, invariant 1). */
-async function expectConverged() {
+async function expectConverged(opts = {}) {
   // Same basename: the root page's title is derived from the docroot's name
   const cleanOut = join(tempDir, "clean", "out");
   const cleanSrc = join(tempDir, "clean", "src");
   // Copy the source (without .ursa) so the clean build has its own graph
   await copyTree(source, cleanSrc, (rel) => !rel.startsWith(".ursa"));
-  const b = await createBuild({ source: cleanSrc, meta, output: cleanOut, clean: true, log: () => {} });
+  const b = await createBuild({ source: cleanSrc, meta, output: cleanOut, clean: true, log: () => {}, ...PAGES_ONLY, ...opts });
   await b.runPass();
   await b.close();
   const a = await snapshot(output);
@@ -721,6 +733,136 @@ describe("determinism", () => {
     const built = await coldBuild();
     await built.close();
     await expectConverged();
+  });
+});
+
+describe("_directory.json", () => {
+  const DIRS = { directoryJson: true };
+  const readJson = async (rel) => JSON.parse(await read(rel));
+  const entry = (dir, name) => dir.entries.find((e) => e.name === name);
+
+  async function coldDirBuild(opts = {}) {
+    const built = await build({ clean: true, ...DIRS, ...opts });
+    await built.pass();
+    return built;
+  }
+
+  it("is written in every folder, nesting each subfolder's own listing", async () => {
+    await write("character/metadata.yml", "title: Characters\ncustom: [1, 2]\n");
+    const built = await coldDirBuild();
+    const root = await readJson("_directory.json");
+    expect(root.path).toBe("/");
+    const character = entry(root, "character");
+    expect(character).toMatchObject({
+      type: "folder",
+      path: "character",
+      absolutePath: "/character",
+      url: "/character/index.html",
+      metadata: { title: "Characters", custom: [1, 2] },
+    });
+    expect(character.directory).toEqual(await readJson("character/_directory.json"));
+    const powers = entry(character.directory, "powers");
+    expect(entry(powers.directory, "blast.md")).toMatchObject({
+      type: "file",
+      path: "blast.md",
+      absolutePath: "/character/powers/blast.md",
+      url: "/character/powers/blast.html",
+    });
+    const build = entry(powers.directory, "blast.md").metadata._build;
+    expect(Date.parse(build.sourceUpdated)).toBeGreaterThan(0);
+    expect(Date.parse(build.rendered)).toBeGreaterThan(0);
+    // A folder is as recent as the latest thing beneath it
+    expect(powers.metadata._build.sourceUpdated >= build.sourceUpdated).toBe(true);
+    // metadata.yml is the folder's metadata: not a page, not an entry
+    expect(existsSync(join(output, "character/metadata.html"))).toBe(false);
+    expect(entry(character.directory, "metadata.yml")).toBeUndefined();
+    await built.close();
+    await expectConverged(DIRS);
+  });
+
+  it("an article edit rewrites the _directory.json of its folder and each ancestor, nothing else", async () => {
+    const built = await coldDirBuild();
+    await new Promise((res) => setTimeout(res, 10));
+    await write("character/powers/blast.md", "# Blast\n\nBigger boom.\n");
+    const r = await built.pass();
+    expect(r.wrote.filter((w) => w.endsWith("_directory.json"))).toEqual([
+      "_directory.json",
+      "character/_directory.json",
+      "character/powers/_directory.json",
+    ]);
+    await built.close();
+    await expectConverged(DIRS);
+  });
+
+  it("after a restart, an edit does not re-render the edited folder's other pages", async () => {
+    await coldDirBuild().then((b) => b.close());
+    await write("character/powers/blast.md", "# Blast\n\nBigger boom.\n");
+    const warm = await build(DIRS);
+    const r = await warm.pass();
+    expect(r.computed.has("pageHtml:character/powers/blast.md")).toBe(true);
+    expect(r.computed.has("pageHtml:character/powers/absorb.md")).toBe(false);
+    expect(r.computed.has("directoryJson:")).toBe(true);
+    await warm.close();
+  });
+
+  it("finds a thumb image, and prefers the metadata's thumbnail with a warning", async () => {
+    const warnings = jest.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      await write("rules/thumb.png", pngOf(4, 4));
+      const built = await coldDirBuild();
+      expect(entry(await readJson("_directory.json"), "rules").metadata.thumbnail).toBe("/rules/thumb.png");
+
+      await write("rules/metadata.json", JSON.stringify({ thumbnail: "/img/cover.png" }));
+      await write("img/cover.png", pngOf(4, 4));
+      await built.pass();
+      expect(entry(await readJson("_directory.json"), "rules").metadata.thumbnail).toBe("/img/cover.png");
+      expect(warnings.mock.calls.flat().join("\n")).toMatch(/rules\/metadata\.json sets thumbnail .* thumb\.png/);
+      await built.close();
+      await expectConverged(DIRS);
+    } finally {
+      warnings.mockRestore();
+    }
+  });
+
+  it("metadata.yml outranks metadata.json, which outranks config.json", async () => {
+    await write("rules/config.json", JSON.stringify({ a: "config", b: "config", c: "config" }));
+    await write("rules/metadata.json", JSON.stringify({ a: "json", b: "json" }));
+    await write("rules/metadata.yml", "a: yml\n");
+    const warnings = jest.spyOn(console, "warn").mockImplementation(() => {});
+    const built = await coldDirBuild();
+    warnings.mockRestore();
+    expect(entry(await readJson("_directory.json"), "rules").metadata).toMatchObject({ a: "yml", b: "json", c: "config" });
+    await built.close();
+  });
+
+  it("directory-depth limits nesting; changing it rewrites the files", async () => {
+    let built = await coldDirBuild({ directoryDepth: 1 });
+    const character = entry(await readJson("_directory.json"), "character");
+    expect(character.directory).toBeDefined();
+    expect(entry(character.directory, "powers").directory).toBeUndefined();
+    await built.close();
+
+    built = await build({ ...DIRS, directoryDepth: 0 });
+    const r = await built.pass();
+    expect(r.wrote).toContain("_directory.json");
+    expect(entry(await readJson("_directory.json"), "character").directory).toBeUndefined();
+    await built.close();
+  });
+
+  it("renaming a folder removes its _directory.json; turning the feature off removes them all", async () => {
+    const built = await coldDirBuild();
+    await rename(join(source, "character/powers"), join(source, "character/abilities"));
+    await built.pass();
+    expect(existsSync(join(output, "character/powers/_directory.json"))).toBe(false);
+    expect(existsSync(join(output, "character/abilities/_directory.json"))).toBe(true);
+    await built.close();
+    await expectConverged(DIRS);
+
+    const off = await build({ directoryJson: false });
+    await off.pass();
+    expect(existsSync(join(output, "_directory.json"))).toBe(false);
+    expect(existsSync(join(output, "character/abilities/_directory.json"))).toBe(false);
+    await off.close();
   });
 });
 

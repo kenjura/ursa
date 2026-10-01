@@ -1,7 +1,7 @@
 import { isHiddenOrSystemPath } from "./hiddenPaths.js";
 import { extname, basename, join, dirname } from "path";
 import { existsSync, readFileSync, readdirSync, isIgnoredDirEntry } from "./build/tracedFs.js";
-import { getFolderConfig, isFolderHidden, getRootConfig } from "./folderConfig.js";
+import { getFolderConfig, isFolderHidden, getRootConfig, FOLDER_METADATA_FILES } from "./folderConfig.js";
 import { isMenuFile, menuDataScript, renderNavListHtml } from "./customMenu.js";
 import {
   INDEX_EXTENSIONS,
@@ -192,7 +192,7 @@ function buildMenuData(tree, source, validPaths, parentPath = '', includeDebug =
   const DOC_EXTENSIONS = ['.md', '.mdx', '.txt', '.html'];
   
   // Files to hide from menu by default
-  const hiddenFiles = ['config.json', 'style.css', 'footer.md'];
+  const hiddenFiles = [...FOLDER_METADATA_FILES, 'style.css', 'footer.md'];
   
   for (const item of tree.children || []) {
     const ext = extname(item.path);

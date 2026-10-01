@@ -39,6 +39,10 @@ ursa serve content --whitelist=my-whitelist.txt
 # Using default meta and output directories (meta/ and output/)
 ursa content
 ursa serve content
+
+# Using a build config file instead of flags (see docs/BUILD_CONFIG.md)
+ursa build prod.yml
+ursa serve dev.json --port 3000
 ```
 
 If not installed, you can run:
@@ -48,8 +52,11 @@ node bin/ursa (same args)
 
 ### CLI Commands
 
-#### `ursa [generate] <source>`
-Generate a static site once and exit.
+#### `ursa [generate|build] <source>`
+Generate a static site once and exit. `build` is an alias of `generate`.
+
+`<source>` may be a build config file (`.yml`, `.yaml` or `.json`) holding
+the options below and more; see [docs/BUILD_CONFIG.md](docs/BUILD_CONFIG.md).
 
 #### `ursa serve <source>`
 Start a development server that:
@@ -57,7 +64,7 @@ Start a development server that:
 - Watches the source and meta directories for changes — every file, no
   extension allow-list — and keeps the output continuously equal to what a
   build from the current source would produce: adds, deletes, renames, folder
-  renames, inherited `style.css`/`script.js`/`menu.md`/`config.json` files
+  renames, inherited `style.css`/`script.js`/`menu.md` and folder metadata files
   appearing or disappearing, images and linked documents that come alive,
   template and shared-asset edits
 - Rebuilds only the outputs whose inputs actually changed (see
@@ -71,7 +78,7 @@ about the output; `docs/SERVE.md` is the specification.
 
 ### CLI Options
 
-- `<source>` - Source directory containing markdown/wikitext files (required)
+- `<source>` - Source directory containing markdown/wikitext files, or a build config file (required)
 - `--meta, -m` - Meta directory containing templates and styles (default: "meta")
 - `--output, -o` - Output directory for generated site (default: "output")
 - `--port, -p` - Port for development server (default: 8080, serve command only)
@@ -80,6 +87,8 @@ about the output; `docs/SERVE.md` is the specification.
 - `--clean` - Delete the `.ursa` cache folder and clear output directory, forcing full regeneration
 - `--json-only, -j` - Emit only the `.json` data files (generate command only)
 - `--explain` - Log, for every output that was rebuilt, the input that changed
+- `--directory-depth` - Levels of nested `directory` objects in each `_directory.json` (default: unlimited)
+- `--no-directory-json` - Do not write `_directory.json` files
 
 ### Incremental builds
 
@@ -202,12 +211,11 @@ test/fixtures
 ### Ignoring a Folder
 
 To keep a folder out of the build permanently — working notes, prompt
-scratchpads, raw source material — put a `config.json` in it:
+scratchpads, raw source material — give it folder metadata saying so, in a
+`metadata.yml` (or `metadata.json`, or the deprecated `config.json`):
 
-```json
-{
-  "hidden": true
-}
+```yaml
+hidden: true
 ```
 
 The folder and everything beneath it then take no part in the build:
@@ -224,19 +232,31 @@ though they were not there.
 
 This differs from `--exclude` in scope and in lifetime: `--exclude` is a flag on
 one invocation, useful for a one-off or a per-environment build, while
-`config.json` travels with the content and applies to every build and every
+folder metadata travels with the content and applies to every build and every
 person who checks the repo out.
 
-`config.json` accepts a few other keys, all of which apply to the folder it
-sits in:
+### Folder metadata and `_directory.json`
+
+Folder metadata accepts a few other keys, all of which apply to the folder it
+sits in, and any keys of your own:
 
 | Key | Type | Meaning |
 | --- | --- | --- |
 | `hidden` | boolean | Ignore this folder and its subtree entirely (above) |
-| `label` | string | Name to show for this folder in menus and indices |
+| `thumbnail` | string | An image representing the folder (relative to it, or `/`-rooted). A `thumb.jpg`/`thumbnail.png`/… in the folder does the same |
+| `label` | string | Name to show for this folder in menus and indices (deprecated: prefer `menu-label` in its index document) |
 | `icon` | string | URL of an icon to show beside it in the menu |
-| `openMenuItems` | string[] | Root `config.json` only: folders to expand by default |
+| `lang` | string | Root only: the pages' `<html lang>` |
+| `openMenuItems` | string[] | Root only: folders to expand by default |
 | `inject-menu` | object or object[] | Put a named menu on every document in this folder and below; see [Injected menus](#injected-menus) |
+
+Every folder in the output gets a `_directory.json` listing its files and
+subfolders, each subfolder with its metadata and its own listing nested, and
+each entry with when its source was last edited and when its output was last
+written — enough for a page to build a gallery of sections at runtime.
+[docs/FOLDER_METADATA.md](docs/FOLDER_METADATA.md) describes both in full;
+[docs/FILE_METADATA.md](docs/FILE_METADATA.md) lists the frontmatter keys
+documents can set.
 
 ### Large Workloads
 
@@ -524,7 +544,7 @@ without editing the page.
 ### Injected menus
 
 To put a named menu on every document in a folder and its subfolders without
-anchoring it in each one, name it in the folder's `config.json`:
+anchoring it in each one, name it in the folder's metadata (shown as JSON; `metadata.yml` works the same):
 
 ```json
 { "inject-menu": { "id": "classes", "position": "top" } }
@@ -539,7 +559,7 @@ anchoring it in each one, name it in the folder's `config.json`:
   document footer (`footer.ursa-doc-footer`) after the last content. Neither is
   part of the JSON's `bodyHtml`. A document that
   already anchors the same id is left alone — it is not given the menu twice.
-- Menus **accumulate** down the tree. A deeper folder's `config.json` with
+- Menus **accumulate** down the tree. A deeper folder's metadata with
   its own `inject-menu` adds its menus after the ones its ancestors inject:
   at each position the least specific folder's menu comes first and the most
   specific last. A folder without the key changes nothing, and the same id
@@ -551,7 +571,7 @@ anchoring it in each one, name it in the folder's `config.json`:
   the replacement as usual.
 - A menu that cannot be resolved from a document's folder gets the same quiet
   treatment as an anchor: an HTML comment and a warning naming the document.
-- Editing a `config.json` re-renders exactly the documents beneath it.
+- Editing a folder's metadata re-renders exactly the documents beneath it.
 
 ## Auto-Index Generation
 

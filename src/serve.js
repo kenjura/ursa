@@ -199,6 +199,9 @@ export async function serve({
   _exclude = null,
   _explain = false,
   strictPort = false,
+  _directoryJson = true,
+  _directoryDepth = Infinity,
+  _concurrency = undefined,
 } = {}) {
   const sourceDir = resolve(_source);
   const metaDir = resolve(_meta);
@@ -223,6 +226,9 @@ export async function serve({
     exclude: _exclude,
     clean: _clean,
     explain: _explain,
+    directoryJson: _directoryJson,
+    directoryDepth: _directoryDepth,
+    concurrency: _concurrency,
   });
 
   // ---- Batching and the single writer ------------------------------------

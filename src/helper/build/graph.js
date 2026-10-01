@@ -716,6 +716,19 @@ export class BuildGraph {
         depMap.set(otherId, graph.fingerprints.get(otherId));
         return graph.values.get(otherId);
       },
+      /**
+       * Bring another node up to date and depend on it, without needing its
+       * value. Unlike `get`, a node that is clean after a restart is not
+       * recomputed just to produce a value nobody reads — which matters for
+       * aggregates that only need to know *that* a page was re-rendered.
+       * @returns {Promise<string|undefined>} the node's current fingerprint
+       */
+      async fingerprint(otherId) {
+        await graph._verify(otherId, chain);
+        const fp = graph.fingerprints.get(otherId);
+        depMap.set(otherId, fp);
+        return fp;
+      },
       /** Declare an output file this node wrote and therefore owns. */
       own(path) {
         owns.push(path);

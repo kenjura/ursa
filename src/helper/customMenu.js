@@ -3,6 +3,7 @@
 import { existsSync, readFileSync, readdirSync, statSync } from "./build/tracedFs.js";
 import { join, dirname, relative, resolve, basename, extname } from "path";
 import { extractMetadata } from "./metadataExtractor.js";
+import { isFolderMetadataFile } from "./folderConfig.js";
 
 // Menu file names to look for (in order of priority)
 const MENU_FILE_NAMES = ['menu.md', 'menu.txt', '_menu.md', '_menu.txt'];
@@ -209,7 +210,7 @@ function folderHasDocuments(dirPath) {
         if (entry.name === 'img') continue;
         if (folderHasDocuments(fullPath)) return true;
       } else {
-        if (isMenuFile(entry.name)) continue;
+        if (isMenuFile(entry.name) || isFolderMetadataFile(entry.name)) continue;
         const ext = extname(entry.name);
         if (SOURCE_EXTENSIONS.includes(ext)) return true;
       }
@@ -333,8 +334,8 @@ export function autoGenerateMenuFromFolder(folderPath, sourceRoot, depth = 10, i
       if (entry.name.startsWith('.') || entry.name.startsWith('_')) continue;
       // Skip menu files themselves (the folder menu and any named menus)
       if (isMenuFile(entry.name)) continue;
-      // Skip config files
-      if (entry.name === 'config.json') continue;
+      // Skip folder metadata (config.json, metadata.json, metadata.yml)
+      if (isFolderMetadataFile(entry.name)) continue;
       // Skip img folders
       if (entry.name === 'img' && entry.isDirectory()) continue;
       

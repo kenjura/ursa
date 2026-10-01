@@ -7,23 +7,68 @@ import { resolve, dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import { stagePromotedChangelog, registerCleanupOnExit } from '../src/helper/promoteChangelog.js';
 import { instantiateTemplate } from '../src/helper/documentTemplates.js';
+import {
+  BUILD_CONFIG_KEYS,
+  isBuildConfigPath,
+  loadBuildConfig,
+  mergeBuildOptions,
+} from '../src/helper/buildConfig.js';
 
 // Get the directory where ursa is installed
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const PACKAGE_META = join(__dirname, '..', 'meta');
 
+/**
+ * Options for `generate`/`serve` from the positional argument (a docroot or a
+ * build config file) and the flags. Flags typed on the command line override
+ * the config file, which overrides the defaults. See docs/BUILD_CONFIG.md.
+ */
+function resolveCommandOptions(argv, command) {
+  let fileOptions = {};
+  let cliSource = argv.source;
+  if (isBuildConfigPath(argv.source)) {
+    console.log(`Using build config: ${resolve(argv.source)}`);
+    fileOptions = loadBuildConfig(argv.source, { command });
+    cliSource = undefined;
+  }
+  const cli = { source: cliSource };
+  for (const key of Object.keys(BUILD_CONFIG_KEYS)) {
+    if (key !== 'source' && argv[key] !== undefined) cli[key] = argv[key];
+  }
+  const options = mergeBuildOptions(fileOptions, cli);
+  if (!options.source) {
+    throw new Error(`No source directory: pass one, or set "source" in the build config`);
+  }
+  options.meta = options.meta || PACKAGE_META;
+  return options;
+}
+
+const sourcePositional = (yargs) =>
+  yargs.positional('source', {
+    describe: 'Source directory containing markdown/wikitext files, or a build config file (.json/.yml)',
+    type: 'string',
+    demandOption: true
+  });
+
+/** Options shared by generate and serve that have no command-line flag of their own. */
+const buildOnlyOptions = (yargs) =>
+  yargs
+    .option('directory-depth', {
+      describe: 'Levels of nested directory objects in each _directory.json (default: unlimited)',
+      type: 'string'
+    })
+    .option('directory-json', {
+      describe: 'Write _directory.json in every folder (use --no-directory-json to disable)',
+      type: 'boolean'
+    });
+
 yargs(hideBin(process.argv))
   .command(
-    ['generate <source>', '$0 <source>'],
-    'Generate a static site from source files',
+    ['generate <source>', 'build <source>', '$0 <source>'],
+    'Generate a static site from source files (alias: build)',
     (yargs) => {
-      return yargs
-        .positional('source', {
-          describe: 'Source directory containing markdown/wikitext files',
-          type: 'string',
-          demandOption: true
-        })
+      return buildOnlyOptions(sourcePositional(yargs))
         .option('meta', {
           alias: 'm',
           describe: 'Meta directory containing templates and styles (defaults to ursa package meta)',
@@ -31,8 +76,7 @@ yargs(hideBin(process.argv))
         })
         .option('output', {
           alias: 'o', 
-          default: 'output',
-          describe: 'Output directory for generated site',
+          describe: 'Output directory for generated site (default: output)',
           type: 'string'
         })
         .option('whitelist', {
@@ -48,8 +92,7 @@ yargs(hideBin(process.argv))
         .option('clean', {
           alias: 'c',
           describe: 'Ignore cached hashes and regenerate all files',
-          type: 'boolean',
-          default: false
+          type: 'boolean'
         })
         .option('promote-changelog', {
           describe: 'Path to a markdown file to render at the output root (sibling of index.html)',
@@ -58,25 +101,26 @@ yargs(hideBin(process.argv))
         .option('json-only', {
           alias: 'j',
           describe: 'Emit only the .json data files — no HTML, XML, images, static assets, search indices or menu data',
-          type: 'boolean',
-          default: false
+          type: 'boolean'
         })
         .option('explain', {
           describe: 'Log, for every output that was rebuilt, the input that changed',
-          type: 'boolean',
-          default: false
+          type: 'boolean'
         });
     },
     async (argv) => {
-      const source = resolve(argv.source);
-      const meta = argv.meta ? resolve(argv.meta) : PACKAGE_META;
-      const output = resolve(argv.output);
-      const whitelist = argv.whitelist ? resolve(argv.whitelist) : null;
-      const exclude = argv.exclude || null;
-      const clean = argv.clean;
-      const promoteChangelog = argv['promote-changelog'] || null;
-      const jsonOnly = argv['json-only'];
-      const explain = argv.explain;
+      let options;
+      try {
+        options = resolveCommandOptions(argv, 'generate');
+      } catch (error) {
+        console.error(error.message);
+        process.exit(1);
+      }
+      const { source, meta, output, clean, explain } = options;
+      const whitelist = options.whitelist || null;
+      const exclude = options.exclude || null;
+      const promoteChangelog = options['promote-changelog'] || null;
+      const jsonOnly = options['json-only'];
 
       console.log(`Generating site from ${source} to ${output} using meta from ${meta}`);
       if (whitelist) {
@@ -103,7 +147,10 @@ yargs(hideBin(process.argv))
           _exclude: exclude,
           _clean: clean,
           _jsonOnly: jsonOnly,
-          _explain: explain
+          _explain: explain,
+          _directoryJson: options['directory-json'],
+          _directoryDepth: options['directory-depth'],
+          _concurrency: options.concurrency
         });
         console.log('Site generation completed successfully!');
       } catch (error) {
@@ -118,12 +165,7 @@ yargs(hideBin(process.argv))
     'serve <source>',
     'Generate site and serve with live reloading',
     (yargs) => {
-      return yargs
-        .positional('source', {
-          describe: 'Source directory containing markdown/wikitext files',
-          type: 'string',
-          demandOption: true
-        })
+      return buildOnlyOptions(sourcePositional(yargs))
         .option('meta', {
           alias: 'm',
           describe: 'Meta directory containing templates and styles (defaults to ursa package meta)',
@@ -131,20 +173,17 @@ yargs(hideBin(process.argv))
         })
         .option('output', {
           alias: 'o', 
-          default: 'output',
-          describe: 'Output directory for generated site',
+          describe: 'Output directory for generated site (default: output)',
           type: 'string'
         })
         .option('port', {
           alias: 'p',
-          default: 8080,
-          describe: 'Port to serve on',
+          describe: 'Port to serve on (default: 8080)',
           type: 'number'
         })
         .option('strict-port', {
           describe: 'Fail if the port is taken instead of falling back to another',
-          type: 'boolean',
-          default: false
+          type: 'boolean'
         })
         .option('whitelist', {
           alias: 'w',
@@ -159,8 +198,7 @@ yargs(hideBin(process.argv))
         .option('clean', {
           alias: 'c',
           describe: 'Ignore cached hashes and regenerate all files',
-          type: 'boolean',
-          default: false
+          type: 'boolean'
         })
         .option('promote-changelog', {
           describe: 'Path to a markdown file to render at the output root (sibling of index.html)',
@@ -168,19 +206,21 @@ yargs(hideBin(process.argv))
         })
         .option('explain', {
           describe: 'Log, for every output that was rebuilt, the input that changed',
-          type: 'boolean',
-          default: false
+          type: 'boolean'
         });
     },
     async (argv) => {
-      const source = resolve(argv.source);
-      const meta = argv.meta ? resolve(argv.meta) : PACKAGE_META;
-      const output = resolve(argv.output);
-      const port = argv.port;
-      const whitelist = argv.whitelist ? resolve(argv.whitelist) : null;
-      const exclude = argv.exclude || null;
-      const clean = argv.clean;
-      const promoteChangelog = argv['promote-changelog'] || null;
+      let options;
+      try {
+        options = resolveCommandOptions(argv, 'serve');
+      } catch (error) {
+        console.error(error.message);
+        process.exit(1);
+      }
+      const { source, meta, output, port, clean } = options;
+      const whitelist = options.whitelist || null;
+      const exclude = options.exclude || null;
+      const promoteChangelog = options['promote-changelog'] || null;
       
       console.log(`Starting development server...`);
       console.log(`Source: ${source}`);
@@ -206,8 +246,11 @@ yargs(hideBin(process.argv))
           _whitelist: whitelist,
           _exclude: exclude,
           _clean: clean,
-          _explain: argv.explain,
-          strictPort: argv['strict-port']
+          _explain: options.explain,
+          strictPort: options['strict-port'],
+          _directoryJson: options['directory-json'],
+          _directoryDepth: options['directory-depth'],
+          _concurrency: options.concurrency
         });
       } catch (error) {
         console.error('Error starting development server:', error.message);

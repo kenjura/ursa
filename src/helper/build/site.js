@@ -14,7 +14,7 @@
  */
 
 import { basename, dirname, extname, join, posix, relative } from "path";
-import { mkdir, readFile as fsReadFile, writeFile } from "fs/promises";
+import { mkdir, readFile as fsReadFile, stat as fsStat, writeFile } from "fs/promises";
 import { existsSync } from "fs";
 import * as esbuild from "esbuild";
 import o2x from "object-to-xml";
@@ -40,7 +40,14 @@ import { generateAutoIndexHtmlFromSource } from "./autoIndex.js";
 import { getUrsaVersion } from "../ursaVersion.js";
 import { createWhitelistFilter } from "../whitelistFilter.js";
 import { isHiddenOrSystemPath } from "../hiddenPaths.js";
-import { getFolderConfig, isFolderHidden, isFolderSelfHidden } from "../folderConfig.js";
+import {
+  getFolderConfig,
+  isFolderHidden,
+  isFolderSelfHidden,
+  isFolderMetadataFile,
+  readFolderMetadata,
+  resolveFolderThumbnail,
+} from "../folderConfig.js";
 import { getFolderLabel } from "../menuLabels.js";
 import { IMAGE_EXTENSIONS, isMedia } from "../staticAssets.js";
 import { extractMetadata, isMetadataOnly, getAutoIndexConfig } from "../metadataExtractor.js";
@@ -110,12 +117,14 @@ export function parseNodeId(id) {
 /** Node kinds whose key is a document path in the document set. */
 export const DOC_KINDS = ["bodyHtml", "pageHtml", "docData", "docWords"];
 /** Node kinds whose key is a directory in the document set ("" is the root). */
-export const DIR_KINDS = ["dirIndexJson", "dirListingHtml", "autoIndexPage", "dirSet"];
+export const DIR_KINDS = [
+  "dirIndexJson", "dirListingHtml", "autoIndexPage", "dirSet", "directoryData", "directoryJson",
+];
 /** Node kinds kept only while something depends on them. */
 export const INTERNAL_KINDS = [
   "linkResolution", "outputOwner", "customMenuFor", "cssBundle", "jsBundle",
   "metaAsset", "metaBundle", "imageInfo", "docMeta",
-  "menuFileMeta", "namedMenuFor", "namedMenu", "injectMenusFor",
+  "menuFileMeta", "namedMenuFor", "namedMenu", "injectMenusFor", "folderMeta",
 ];
 /** Site-wide singletons. */
 export const SITE_KINDS = [
@@ -135,6 +144,8 @@ export const SITE_KINDS = [
  * @param {string|null} env.exclude - Exclude option (paths or a file)
  * @param {boolean} env.jsonOnly - Emit only .json data files
  * @param {{buildId: number, now: Date, gitHash: string|null}} env.session - Per-session build metadata (§7)
+ * @param {() => Promise<{get: (file: string) => Promise<number>}>} [env.sourceTimestamps] - Last-edited
+ *   times of source files (git, else mtime), built at most once per pass
  * @param {(msg: string) => void} env.log
  * @param {(key: string, msg: string) => void} env.warn - De-duplicated per pass
  * @returns {{resolve: (id: string) => ({fn: Function, fingerprint?: Function}|null)}}
@@ -203,6 +214,71 @@ export function createSite(env) {
   function indexOutputFor(dirRel) {
     return dirRel ? `${dirRel}/index.html` : "index.html";
   }
+
+  /** Source last-edited times: from the pass when it provides them, else one index per site. */
+  let ownTimestamps = null;
+  function sourceTimestamps() {
+    if (env.sourceTimestamps) return env.sourceTimestamps();
+    ownTimestamps ??= buildSourceTimestampIndex(source, { log: (m) => log(m) });
+    return ownTimestamps;
+  }
+
+  /**
+   * Record one source file in the folder listing as an input, and find the
+   * output it is rendered or copied to.
+   *
+   * The file's content is depended on as cheaply as its kind allows: an image
+   * or media file through the node that already hashes it, rather than by
+   * reading megabytes again. When an output is produced, the node that writes
+   * it is depended on by fingerprint (`ctx.fingerprint`), so a re-render moves
+   * the listing's timestamp without the listing forcing a render of its own.
+   *
+   * @returns {Promise<{url: string|null, outRel: string|null}>} the page URL
+   *   (documents only) and the output file whose mtime is the render time
+   */
+  async function listedOutput(ctx, rel) {
+    const jsonOnly = ctx.constant("json-only") === "true";
+    const name = basename(rel);
+    if (isArticle(rel) && !isMenuFile(name) && !isFolderMetadataFile(name)) {
+      await ctx.read(abs(rel), null);
+      const outRel = outputPathFor(rel);
+      if ((await ctx.get(nodeId("outputOwner", outRel))) !== rel) return { url: null, outRel: null };
+      await ctx.fingerprint(nodeId(jsonOnly ? "docData" : "pageHtml", rel));
+      return { url: "/" + outRel, outRel: jsonOnly ? outRel.replace(/\.html$/, ".json") : outRel };
+    }
+    if (isHandwrittenHtml(rel)) {
+      if (jsonOnly) {
+        await ctx.read(abs(rel), null);
+        return { url: null, outRel: null };
+      }
+      await ctx.fingerprint(nodeId("htmlPassthrough", rel));
+      return { url: "/" + rel, outRel: rel };
+    }
+    if (IMAGE_EXTENSIONS.test(rel)) {
+      await ctx.fingerprint(nodeId("imageInfo", rel));
+      if (jsonOnly) return { url: null, outRel: null };
+      await ctx.fingerprint(nodeId("imageCopy", rel));
+      return { url: null, outRel: rel };
+    }
+    if (isMedia(rel) && !jsonOnly) {
+      await ctx.fingerprint(nodeId("staticAsset", rel));
+      return { url: null, outRel: rel };
+    }
+    await ctx.read(abs(rel), null);
+    return { url: null, outRel: null };
+  }
+
+  /** Modification time of an output file in ms, or 0 when it was not written. */
+  async function outputMtime(outRel) {
+    if (!outRel) return 0;
+    try {
+      return (await fsStat(outAbs(outRel))).mtimeMs;
+    } catch {
+      return 0;
+    }
+  }
+
+  const isoOrNull = (ms) => (ms > 0 ? new Date(ms).toISOString() : null);
 
   /**
    * Pre-load frontmatter for the given documents into the active recorder so
@@ -584,8 +660,11 @@ export function createSite(env) {
       files.sort();
       dirs.sort();
 
-      // Menu files (menu.md, menu-<name>.md) configure navigation; they are not pages
-      const articles = files.filter((f) => isArticle(f) && !isMenuFile(basename(f)));
+      // Menu files (menu.md, menu-<name>.md) configure navigation and folder
+      // metadata (metadata.yml, …) describes the folder; neither is a page
+      const articles = files.filter(
+        (f) => isArticle(f) && !isMenuFile(basename(f)) && !isFolderMetadataFile(basename(f))
+      );
       const html = files.filter((f) => isHandwrittenHtml(f));
       const images = files.filter((f) => IMAGE_EXTENSIONS.test(f));
       const media = files.filter((f) => isMedia(f));
@@ -958,7 +1037,7 @@ export function createSite(env) {
         if (!config || !("inject-menu" in config)) return null;
         const parsed = parseInjectMenu(config["inject-menu"]);
         for (const problem of parsed.problems) {
-          warn(`inject-menu:${d}:${problem}`, `⚠️  ${d ? d + "/" : ""}config.json inject-menu: ${problem}`);
+          warn(`inject-menu:${d}:${problem}`, `⚠️  ${d ? d + "/" : ""}folder metadata inject-menu: ${problem}`);
         }
         return parsed;
       });
@@ -1357,7 +1436,7 @@ export function createSite(env) {
       if (owner) return { ownedBy: owner };
       const below = await ctx.get(nodeId("dirSet", dirRel));
       const items = below.files
-        .filter((f) => !isMenuFile(basename(f)))
+        .filter((f) => !isMenuFile(basename(f)) && !isFolderMetadataFile(basename(f)))
         .map((f) => {
           const ext = extname(f);
           const href = "/" + (ext ? f.slice(0, -ext.length) : f) + ".html";
@@ -1408,6 +1487,120 @@ export function createSite(env) {
       return { hash };
     },
 
+    // ----- Folder metadata and _directory.json ----------------------------
+
+    /**
+     * A folder's metadata (metadata.yml > metadata.json > config.json, merged)
+     * with `thumbnail` resolved to a docroot-absolute URL. A `thumb.<image>`
+     * in the folder is the thumbnail unless the metadata names one; when both
+     * exist the metadata wins and the build warns. See docs/FOLDER_METADATA.md.
+     */
+    folderMeta: (dirRel) => async (ctx) => {
+      const dirAbs = abs(dirRel);
+      const where = dirRel ? `${dirRel}/` : "(docroot) ";
+      const { metadata, sources } = readFolderMetadata(dirAbs);
+      const fileNames = (await ctx.listDir(dirAbs)).filter((e) => e.kind === "file").map((e) => e.name);
+      const { thumbnail, conflict } = resolveFolderThumbnail({ dirRel, metadata, fileNames });
+      if (conflict) {
+        warn(
+          `thumbnail:${dirRel}`,
+          `⚠️  ${where}${sources[0]} sets thumbnail "${conflict.explicit}" but the folder also holds ` +
+            `${conflict.image}; using the metadata value`
+        );
+      }
+      if (thumbnail?.startsWith("/") && !thumbnail.startsWith("//") && !ctx.exists(join(source, thumbnail))) {
+        warn(`thumbnail-missing:${dirRel}`, `⚠️  ${where}thumbnail ${thumbnail} does not exist`);
+      }
+      const value = { ...(metadata ?? {}) };
+      if (thumbnail) value.thumbnail = thumbnail;
+      else delete value.thumbnail;
+      return value;
+    },
+
+    /**
+     * One folder's `_directory.json` content without nested `directory`
+     * objects: the folder's metadata and an entry for each file and folder
+     * directly in it. Folder timestamps are the latest of everything beneath.
+     */
+    directoryData: (dirRel) => async (ctx) => {
+      const below = await ctx.get(nodeId("dirSet", dirRel));
+      const prefix = dirRel ? dirRel + "/" : "";
+      const isChild = (p) => p.startsWith(prefix) && !p.slice(prefix.length).includes("/");
+      const timestamps = await sourceTimestamps();
+      let latestSource = 0;
+      let latestRender = 0;
+
+      const folders = [];
+      for (const d of below.dirs.filter(isChild)) {
+        const child = await ctx.get(nodeId("directoryData", d));
+        const build = child.metadata._build;
+        latestSource = Math.max(latestSource, Date.parse(build.sourceUpdated ?? "") || 0);
+        latestRender = Math.max(latestRender, Date.parse(build.rendered ?? "") || 0);
+        const name = basename(d);
+        folders.push({
+          name,
+          type: "folder",
+          path: name,
+          absolutePath: "/" + d,
+          url: "/" + indexOutputFor(d),
+          metadata: child.metadata,
+        });
+      }
+
+      const files = [];
+      for (const f of below.files.filter(isChild)) {
+        const name = basename(f);
+        const { url, outRel } = await listedOutput(ctx, f);
+        const updated = await timestamps.get(abs(f));
+        const rendered = await outputMtime(outRel);
+        latestSource = Math.max(latestSource, updated);
+        latestRender = Math.max(latestRender, rendered);
+        // The metadata files are the folder's own metadata, not entries
+        if (isFolderMetadataFile(name)) continue;
+        const entry = { name, type: "file", path: name, absolutePath: "/" + f };
+        if (url) entry.url = url;
+        entry.metadata = { _build: { sourceUpdated: isoOrNull(updated), rendered: isoOrNull(rendered) } };
+        files.push(entry);
+      }
+
+      const metadata = {
+        ...(await ctx.get(nodeId("folderMeta", dirRel))),
+        _build: { sourceUpdated: isoOrNull(latestSource), rendered: isoOrNull(latestRender) },
+      };
+      return {
+        name: dirRel ? basename(dirRel) : "",
+        path: "/" + dirRel,
+        metadata,
+        entries: [...folders, ...files],
+      };
+    },
+
+    /**
+     * `<dir>/_directory.json`: the folder's `directoryData`, with each folder
+     * entry carrying the same object for that folder under `directory`, down
+     * to the configured `directory-depth`.
+     */
+    directoryJson: (dirRel) => async (ctx) => {
+      if (ctx.constant("directory-json") === "false") return null;
+      const depthSetting = ctx.constant("directory-depth");
+      const maxDepth = depthSetting && depthSetting !== "Infinity" ? Number(depthSetting) : Infinity;
+      const assemble = async (rel, depth) => {
+        const data = await ctx.get(nodeId("directoryData", rel));
+        const entries = [];
+        for (const entry of data.entries) {
+          if (entry.type === "folder" && depth > 0) {
+            entries.push({ ...entry, directory: await assemble(entry.absolutePath.slice(1), depth - 1) });
+          } else {
+            entries.push(entry);
+          }
+        }
+        return { ...data, entries };
+      };
+      const tree = await assemble(dirRel, maxDepth);
+      const hash = await writeOutput(ctx, dirRel ? `${dirRel}/_directory.json` : "_directory.json", JSON.stringify(tree));
+      return { hash };
+    },
+
     // ----- Aggregates ------------------------------------------------------
 
     searchIndex: () => async (ctx) => {
@@ -1446,7 +1639,7 @@ export function createSite(env) {
         await ctx.read(abs(d), null);
         docs.push(d);
       }
-      const timestamps = await buildSourceTimestampIndex(source, { log: (m) => log(m) });
+      const timestamps = await sourceTimestamps();
       const entries = [];
       for (const d of docs) {
         entries.push({ title: titleOf(d), url: "/" + outputPathFor(d), mtime: await timestamps.get(abs(d)) });

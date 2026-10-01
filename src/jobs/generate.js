@@ -39,6 +39,9 @@ export async function generate({
   _deferSearchIndex = false, // Legacy: indices are always scheduled after pages
   _jsonOnly = false, // When true, emit only the .json data files (see JSON-ONLY MODE below)
   _explain = false, // Log why each recomputed node recomputed
+  _directoryJson = true, // Write _directory.json in every folder
+  _directoryDepth = Infinity, // Levels of nested directory objects in each _directory.json
+  _concurrency = undefined, // Nodes built at once (default: URSA_BATCH_SIZE or 50)
 } = {}) {
   const profiler = getProfiler(true);
   const source = resolve(_source);
@@ -56,6 +59,9 @@ export async function generate({
     clean: _clean,
     jsonOnly: _jsonOnly,
     explain: _explain,
+    directoryJson: _directoryJson,
+    directoryDepth: _directoryDepth,
+    concurrency: _concurrency,
   });
   profiler.endPhase("Prepare");
 

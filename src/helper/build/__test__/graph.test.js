@@ -783,3 +783,59 @@ describe("families and roots", () => {
     expect(graph.reasons.get("AA")).toBe("A");
   });
 });
+
+// ---------------------------------------------------------------------------
+// ctx.fingerprint: depend on a node without demanding its value
+// ---------------------------------------------------------------------------
+describe("ctx.fingerprint", () => {
+  function defineNodes(graph, counters) {
+    graph.node("page:a", async (ctx) => {
+      counters.a++;
+      return (await ctx.read(p("a.txt"))).toUpperCase();
+    });
+    graph.node("page:b", async (ctx) => {
+      counters.b++;
+      return (await ctx.read(p("b.txt"))).toUpperCase();
+    });
+    graph.node("listing", async (ctx) => {
+      counters.listing++;
+      await ctx.fingerprint("page:a");
+      await ctx.fingerprint("page:b");
+      return counters.listing;
+    });
+  }
+
+  it("recomputes the dependent when the node's value changes", async () => {
+    await writeFile(p("a.txt"), "a1");
+    await writeFile(p("b.txt"), "b1");
+    const graph = new BuildGraph();
+    const counters = { a: 0, b: 0, listing: 0 };
+    defineNodes(graph, counters);
+    await graph.build(["listing"]);
+    expect(counters).toEqual({ a: 1, b: 1, listing: 1 });
+
+    await writeFile(p("a.txt"), "a2");
+    graph.invalidatePath(p("a.txt"));
+    const r = await graph.build(["listing"]);
+    expect([...r.computed].sort()).toEqual(["listing", "page:a"]);
+  });
+
+  it("after a restart, does not recompute a clean node just to read its value", async () => {
+    await writeFile(p("a.txt"), "a1");
+    await writeFile(p("b.txt"), "b1");
+    const g1 = new BuildGraph();
+    defineNodes(g1, { a: 0, b: 0, listing: 0 });
+    await g1.build(["listing"]);
+    const json = JSON.stringify(g1.serialize());
+
+    const g2 = new BuildGraph();
+    const counters = { a: 0, b: 0, listing: 0 };
+    defineNodes(g2, counters);
+    g2.load(JSON.parse(json));
+    await writeFile(p("a.txt"), "a2");
+    await g2.scanLeaves();
+    await g2.build(["listing"]);
+    // page:b is clean: ctx.get would have recomputed it for its value; fingerprint does not
+    expect(counters).toEqual({ a: 1, b: 0, listing: 1 });
+  });
+});

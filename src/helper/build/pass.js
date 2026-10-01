@@ -34,6 +34,7 @@ import { reconcileAll, reconcileByTemplate, isInsideTemplatesFolder, TEMPLATES_F
 import { recurse } from "../recursive-readdir.js";
 import { isHiddenOrSystemPath } from "../hiddenPaths.js";
 import { terminateParserPool } from "../fileRenderer.js";
+import { buildSourceTimestampIndex } from "../sourceTimestamps.js";
 
 const DEFAULT_CONCURRENCY = parseInt(process.env.URSA_BATCH_SIZE || "50", 10);
 /** The fingerprint of a node whose value is null (see graph.js defaultValueFingerprint). */
@@ -52,6 +53,9 @@ const NULL_FINGERPRINT = hashBytes("null");
  * @param {boolean} [opts.jsonOnly]
  * @param {boolean} [opts.explain] - Log, for each recomputed node, the input that moved
  * @param {number} [opts.concurrency]
+ * @param {boolean} [opts.directoryJson] - Write `_directory.json` in every folder (default true)
+ * @param {number} [opts.directoryDepth] - How many levels of `directory` objects each
+ *   `_directory.json` nests (default Infinity: the whole subtree)
  * @param {(msg: string) => void} [opts.log]
  */
 export async function createBuild({
@@ -64,6 +68,8 @@ export async function createBuild({
   jsonOnly = false,
   explain = false,
   concurrency = DEFAULT_CONCURRENCY,
+  directoryJson = true,
+  directoryDepth = Infinity,
   log = (m) => console.log(m),
 }) {
   source = source.replace(/\/+$/, "");
@@ -121,12 +127,17 @@ export async function createBuild({
   }
   graph.setConst("ursa-version", getUrsaVersion());
   graph.setConst("json-only", String(jsonOnly));
+  graph.setConst("directory-json", String(directoryJson !== false));
+  graph.setConst("directory-depth", String(directoryDepth ?? Infinity));
 
   const session = {
     buildId: getAndIncrementBuildId(source),
     now: new Date(),
     gitHash: readGitHash(source),
   };
+
+  // Source last-edited times (one git log per pass, and only if something asks)
+  let timestampIndex = null;
 
   let writtenCount = 0;
   const warned = new Set();
@@ -141,6 +152,7 @@ export async function createBuild({
     },
     onWrite: () => { writtenCount++; },
     noteLegacyHtml: (rel) => { legacyHtmlDocs.add(rel); },
+    sourceTimestamps: () => (timestampIndex ??= buildSourceTimestampIndex(source, { log })),
   };
   const site = createSite(env);
   graph.resolver(site.resolve);
@@ -163,6 +175,7 @@ export async function createBuild({
     const time = (name, start) => { timings[name] = Date.now() - start; };
     warned.clear();
     legacyHtmlDocs.clear();
+    timestampIndex = null;
     writtenCount = 0;
     deletedCount = 0;
     orphanQueue = [];
@@ -390,6 +403,7 @@ export async function createBuild({
   function expensiveRoots(set) {
     const ids = [];
     for (const dir of set.dirs) ids.push(nodeId("dirIndexJson", dir));
+    for (const dir of ["", ...set.dirs]) ids.push(nodeId("directoryJson", dir));
     if (jsonOnly) return ids;
     for (const img of imageRoots(set)) ids.push(nodeId("imagePreview", img));
     ids.push(nodeId("searchIndex"), nodeId("fullTextIndex"), nodeId("recentActivity"));
